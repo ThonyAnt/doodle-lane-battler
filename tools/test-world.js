@@ -87,7 +87,7 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
   ok('then fly at the foe; the whole volley is worth its fixed damage',Math.abs((hp-b.hp)-30)<0.5&&!S.pr.length&&!a.act,{lost:+(hp-b.hp).toFixed(1)});
   const S2=fresh(), c=S2.f[0], d=S2.f[1]; S2.setItem(0,0,{kind:'melee',style:'blade',element:'none',name:'Sword'},20); S2.setItem(1,0,{kind:'melee',style:'fist',element:'none',name:'Gloves'},30);
   c.od=100; d.x=c.x+40; d.face=-1; inp(S2,0,{u:1}); run(S2,0.5); inp(S2,1,{a:1}); run(S2,0.5);
-  ok('a hit during the wind-up breaks it off and gives half the bar back',!c.act&&c.od>=50&&!S2.pr.some(p=>p.st==='fleet'),{od:Math.round(c.od),pr:S2.pr.length});
+  ok('a hit during the wind-up hurts the caster but does not stop the ultimate',!!c.act&&c.act.m==='fleet'&&c.hp<100&&c.hurt===0&&S2.pr.some(p=>p.st==='fleet'),{hp:Math.round(c.hp),pr:S2.pr.length});
 }
 { // 8. every weapon style has its own ultimate, and each is worth the same
   const cast=(kind,style,gap,prep)=>{ const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,{kind,style,element:'none',name:style||kind},60);
@@ -109,6 +109,29 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
     run(S,0.66); inp(S,1,{r:1}); run(S,2.5); ok('walking away from the mark gets clear of most of the meteor',hp-b.hp<30,{lost:+(hp-b.hp).toFixed(1)}); }
   { const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,{kind:'melee',style:'dual',element:'none',name:'Twins'},60); S.setItem(1,0,{kind:'melee',style:'fist',element:'none',name:'Gloves'},30);
     b.x=a.x+40; b.face=-1; a.od=100; S.startUlt(0); run(S,0.12); inp(S,1,{a:1}); run(S,0.4);
-    ok('any ultimate is broken off by a hit before its cast, for half the bar',!a.act&&a.od>=50,{od:Math.round(a.od)}); }
+    ok('a hit before the cast does not break an ultimate',!!a.act&&a.act.m==='ult_dash'&&a.hp<100,{hp:Math.round(a.hp)}); }
+  // 9. an ultimate always plays out
+  const styles=[['melee','blade',300],['melee','spear',300],['ranged','hurl',300],['ranged','staff',300],['melee','hammer',150],['melee','fist',180],['melee','dual',260],['ranged','bow',320],['ranged','gun',300],['ranged','akimbo',260]];
+  { const lasted=[]; for(const [kind,style,gap] of styles){ const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,{kind,style,element:'none',name:style},60); S.setItem(0,1,{kind:'dash',element:'none',name:'Wings'},20);
+      b.x=a.x+gap; a.od=100; S.startUlt(0); const m=a.act.m, dur=a.act.dur; let n=0, whole=true, low=b.hp;
+      // the caster mashes every button and holds directions for the whole cast
+      let last=0; while(a.act&&a.act.m===m&&n<400){ n++; inp(S,0,{l:n%7<3?1:0,r:n%5<2?1:0,d:n%3?1:0,j:n,a:n,b:n,m:n,q:n,u:n}); last=a.act.t; S.step(1/60); if(a.act&&a.act.m===m&&a.act.t<last) whole=false; }
+      lasted.push(style+(whole&&last>=dur-0.03?"":" CUT SHORT at "+last.toFixed(2)+" of "+dur)); }
+    ok('mashing every button during a cast never cuts an ultimate short',lasted.every(s=>!/CUT/.test(s)),lasted.filter(s=>/CUT/.test(s))); }
+  { const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,{kind:'melee',style:'blade',element:'none',name:'Sword'},60); b.x=a.x+300; a.od=100; S.startUlt(0); run(S,0.5);
+    for(const st of toPts(T.hammer,a.x+60,-(a.y+170),0.85,1,0)) S.stroke(0,D.INK.densify(st,4),'#111111'); run(S,0.75);
+    ok('the caster cannot swap weapons by drawing one mid-cast',!!a.act&&a.act.m==='fleet'&&S.items[0][0].style==='blade',S.items[0][0].style);
+    const x=a.x; for(const st of toPts(T.arrow,a.x+60,-(a.y+55),0.95,1,0)) S.stroke(0,D.INK.densify(st,4),'#111111'); run(S,0.7);
+    ok('nor dash out of it with an arrow',Math.abs(a.x-x)<30,Math.round(a.x-x)); }
+  { const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,{kind:'ranged',style:'gun',element:'none',name:'Gun'},60); b.x=a.x+300; a.od=100; S.startUlt(0); run(S,0.4); const x=a.x;
+    for(const st of toPts(T.arrow,a.x+58,-(a.y+55),0.95,1,0)) S.stroke(1,D.INK.densify(st,4),'#111111'); run(S,0.7);
+    ok('the foe cannot fling a caster',!!a.act&&a.act.m==='ult_shoot'&&Math.abs(a.x-x)<40,Math.round(a.x-x));
+    for(const st of toPts(T.x,a.x,-(a.y+55),0.8,1,0)) S.stroke(1,D.INK.densify(st,4),'#111111'); run(S,0.3);
+    ok('or disarm them',!!S.items[0][0]); }
+  { const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,{kind:'melee',style:'blade',element:'none',name:'Sword'},60); b.x=a.x+300; b.od=100; S.startHack(1,1); run(S,1.0); a.od=100; S.startUlt(0); run(S,0.6);
+    ok('the RECYCLE hack misses a fighter who is casting',!!S.items[0][0]&&!!a.act&&a.act.m==='fleet',{item:!!S.items[0][0],act:a.act&&a.act.m}); }
+  { const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,{kind:'melee',style:'hammer',element:'none',name:'Hammer'},60); S.setItem(1,0,{kind:'melee',style:'hammer',element:'none',name:'Hammer'},60);
+    b.x=a.x+70; b.face=-1; a.od=100; S.startUlt(0); const x=a.x; let hits=0; for(let i=0;i<60;i++){ inp(S,1,{a:i}); S.step(1/60); }
+    ok('a caster under attack keeps their footing and finishes',a.hp<100&&!!a.act&&a.act.m==='ult_slam'&&Math.abs(a.x-x)<30,{hp:Math.round(a.hp),dx:Math.round(a.x-x)}); }
 }
 console.log(bad?bad+' failed':'all world rules pass'); process.exit(bad?1:0);

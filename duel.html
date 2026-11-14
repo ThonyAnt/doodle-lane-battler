@@ -728,7 +728,7 @@ const MOVES={
   mine:     {dur:0.32,hits:[0.13],mine:1,dmg:0.5,kb:120,lift:60,lunge:60,end:1},   // the built-in pick: chips walls, floors and drawn shapes
   throw:    {dur:0.22,end:1},
   // The ultimate, paid for with a full overdrive bar: the fighter floats up, copies of the held drawing fan out behind
-  // them one by one, and from `cast` on they fly at the foe in turn. A stunning hit before `cast` breaks it off.
+  // them one by one, and from `cast` on they fly at the foe in turn. Once started it cannot be interrupted (see `casting`).
   fleet:    {dur:1.5,ult:1,fleet:1,cast:0.62,end:1},
   // The other casting moves (see ULTS): a leaping slam, a rushing flurry, a blink-and-cut, a braced shot, and guns out to both sides.
   ult_slam: {dur:1.15,ult:1,cast:0.56,end:1},
@@ -914,6 +914,10 @@ function createDuel(opts){
     objs:[],fields:[],groups:[null,null],hack:null,effects:[],broken:null,breached:false,cells:[],time:0,stop:0};
   const PICK={name:'Pick',kind:'melee',style:'pick',el:'none',cost:0,st:Object.assign(itemStats('melee','none',10),{reach:54,dmg:5})};
   const itemOf=(side,k)=>S.items[side][k]||PUNCH;
+  // An ultimate always plays out once it has started: nothing the caster or the foe does can cut it short. While casting, a
+  // fighter still takes damage but is not staggered, knocked back, flung, disarmed or stunned out of it, and cannot swap
+  // their own weapon or dash away by drawing. Only a knockout ends it early.
+  const casting=f=>!!(f.act&&MOVES[f.act.m].ult);
   S.sheet=(opts&&opts.stage==='sheet')?{}:null;        // the spreadsheet stage (see sheetTick)
   S.inkLeft=side=>Math.round(INK_MAX-S.items[side].reduce((n,it)=>n+(it?it.cost:0),0));
   S.setItem=(side,k,spec,cost)=>{
@@ -1003,14 +1007,14 @@ function createDuel(opts){
       dmg*=tr==='pierce'?0.6:0.15; kx*=0.3; ky*=0.3;
     } else if(el==='water') kx*=1.45;
     // A hit with no stun only nudges: it adds to the target's speed instead of replacing it, and does not lift them.
-    t.hp-=dmg; if(stun>0) t.vx=kx; else{ t.vx+=kx*0.25; ky=0; } if(ky>0){ t.vy=ky; t.ground=false; } else if(ky<0&&!t.ground) t.vy=ky;
+    const firm=casting(t);   // a fighter casting an ultimate takes the damage and stands their ground
+    t.hp-=dmg; if(!firm){ if(stun>0) t.vx=kx; else{ t.vx+=kx*0.25; ky=0; } if(ky>0){ t.vy=ky; t.ground=false; } else if(ky<0&&!t.ground) t.vy=ky; }
     // Hit-stop: a hit that staggers freezes the whole fight (both fighters, shots, the clock) for a few frames, longer the
     // harder it lands. Nothing moves, so it changes how a hit feels and not who wins. w is the hit's weight, 0 to 1.
     const w=blocked?0:Math.min(1,dmg/20+(fin?0.3:0));
     if(stun>0&&!blocked) S.stop=Math.max(S.stop,0.03+0.07*w);
     if(!blocked){
-      if(stun>0){ if(t.act&&MOVES[t.act.m].ult&&t.act.t<MOVES[t.act.m].cast) t.od=Math.max(t.od,50);   // an ultimate broken off gives half the bar back
-        t.hurt=Math.max(t.hurt,stun); t.act=null; t.dash=0; }
+      if(stun>0&&!firm){ t.hurt=Math.max(t.hurt,stun); t.act=null; t.dash=0; }
       if(el==='fire'){ t.burn=2; t.burnDps=dmg*0.15; }
       if(el==='water') t.slow=1.8;
       if(el==='plant'&&by&&by.hp>0) by.hp=Math.min(HP,by.hp+dmg*0.3);
@@ -1182,7 +1186,7 @@ function createDuel(opts){
       if(p.hover){
         // A copy from the ultimate, waiting in the fan. ang is where it points (0 = right, positive = up).
         const o=p.own, a=o.act;
-        if(!a||!MOVES[a.m].ult||o.hp<=0){ S.events.push({e:'puff',x:Math.round(p.x),yd:Math.round(-p.y),col:'#999',n:5}); p.ttl=0; continue; }   // broken off: it dissolves
+        if(!a||!MOVES[a.m].ult||o.hp<=0){ S.events.push({e:'puff',x:Math.round(p.x),yd:Math.round(-p.y),col:'#999',n:5}); p.ttl=0; continue; }   // the caster was knocked out: it dissolves
         // fan: spread above the caster; ring: all round them; rain (fx, fy): a fixed row high above where the foe stood
         const R=p.ring?[104,92,112]:[122,106,64], tx=p.fx!==undefined?p.fx:o.x+Math.sin(p.th)*R[0], ty=p.fx!==undefined?p.fy:o.y+R[2]+Math.cos(p.th)*R[1], q=Math.min(1,dt*14), aim=Math.atan2(e.y+50-p.y,e.x-p.x), rest=p.rest!==undefined?p.rest:Math.PI/2-p.th;
         p.x+=(tx-p.x)*q; p.y+=(ty-p.y)*q;
@@ -1323,20 +1327,21 @@ function createDuel(opts){
     addObj({kind,solid:true,dyn:true,x:b.x,y:b.y,w,h,vx:0,vy:0,local,color,life,owner}); }
   function arrowGlyph(f,R,g){ const dx=R.to.x-R.from.x,dy=R.to.y-R.from.y,l=Math.hypot(dx,dy)||1,u={x:dx/l,y:dy/l},foe=foeOf(f);
     if(!BOARD||S.broken||S.breached){ const w=PL.find(p=>R.to.x>=p.x0&&R.to.x<=p.x1&&-R.to.y<=p.y+6&&-R.to.y>=p.y-150);       // arrow into a window: link there
-      if(w){ const who=D(R.from,chest(foe))<70?foe:f; who.x=(w.x0+w.x1)/2; who.y=w.y; who.vx=who.vy=0; ring(who.x,-(who.y+40),PCOLS[who.side]); log(f,'context: arrow into window \u2192 LINK ('+nameOf(who)+' teleported)'); return fade(g); } }
-    if(D(R.from,chest(f))<75){ f.vx=u.x*950; f.vy=-(u.y*950-120); f.flung=0.25; f.flungBy=f.side; f.ground=false; log(f,'context: arrow from self \u2192 DASH'); return fade(g); }
-    if(D(R.from,chest(foe))<75){ if(!spend(f,18,R.from)) return fizzle(g,'fling needs 18 ink'); foe.vx=u.x*760; foe.vy=-(u.y*760-150); foe.flung=0.6; foe.flungBy=f.side; foe.ground=false; foe.act=null; log(f,'context: arrow from foe \u2192 FLING'); return fade(g); }
+      if(w){ const who=D(R.from,chest(foe))<70?foe:f; if(casting(who)) return fizzle(g,'mid-ultimate'); who.x=(w.x0+w.x1)/2; who.y=w.y; who.vx=who.vy=0; ring(who.x,-(who.y+40),PCOLS[who.side]); log(f,'context: arrow into window \u2192 LINK ('+nameOf(who)+' teleported)'); return fade(g); } }
+    if(D(R.from,chest(f))<75){ if(casting(f)) return fizzle(g,'mid-ultimate'); f.vx=u.x*950; f.vy=-(u.y*950-120); f.flung=0.25; f.flungBy=f.side; f.ground=false; log(f,'context: arrow from self \u2192 DASH'); return fade(g); }
+    if(D(R.from,chest(foe))<75){ if(casting(foe)) return fizzle(g,'they are mid-ultimate'); if(!spend(f,18,R.from)) return fizzle(g,'fling needs 18 ink'); foe.vx=u.x*760; foe.vy=-(u.y*760-150); foe.flung=0.6; foe.flungBy=f.side; foe.ground=false; foe.act=null; log(f,'context: arrow from foe \u2192 FLING'); return fade(g); }
     S.fields.push({a:R.from,b:R.to,u,life:1,max:1,col:g.color}); log(f,'context: free arrow \u2192 WIND corridor'); fade(g); }
   function eraseGlyph(f,p,g){ const foe=foeOf(f);
     const pops=S.objs.filter(o=>o.kind==='popup'); if(pops.length&&pops.some(o=>rectHas(o,p,40))){ for(const o of pops) o.life=0; log(f,'\u2715 closed all pop-ups'); return fade(g); }
     const o=S.objs.find(o=>o.life!==Infinity&&(o.kind==='platform'?Math.abs(p.y-o.y)<18&&p.x>o.x-10&&p.x<o.x+o.w+10:rectHas(o,p,15)));
     if(o){ o.life=0; burst(p.x,p.y,o.color,12); log(f,'\u2715 erased '+o.kind); return fade(g); }
-    if(D(p,chest(foe))<75&&S.items[foe.side][foe.held]){ if(!spend(f,22,p)) return fizzle(g,'disarm needs 22 ink'); const w=S.items[foe.side][foe.held]; S.items[foe.side][foe.held]=null; foe.act=null; burst(p.x,p.y,PCOLS[foe.side],18);
+    if(D(p,chest(foe))<75&&S.items[foe.side][foe.held]){ if(casting(foe)) return fizzle(g,'they are mid-ultimate'); if(!spend(f,22,p)) return fizzle(g,'disarm needs 22 ink'); const w=S.items[foe.side][foe.held]; S.items[foe.side][foe.held]=null; foe.act=null; burst(p.x,p.y,PCOLS[foe.side],18);
       log(f,'\u2715 DISARM \u2014 deleted '+nameOf(foe)+"'s "+w.name); return fade(g); }
     fizzle(g,'nothing to erase'); }
   // A weapon drawn mid-fight replaces the item in hand at once. His recogniser names the type; it maps onto our styles,
   // and (as in his game) the amount of ink drawn sets how heavy and strong it is.
   function forge(f,R,g){
+    if(casting(f)) return fizzle(g,'mid-ultimate');
     const style={sword:'blade',club:'blade',axe:'blade',spear:'spear',hammer:'hammer',mace:'hammer',bow:'bow'}[R.type]||'blade', kind=style==='bow'?'ranged':'melee';
     const inkLen=g.strokes.reduce((n,p)=>n+pathLen(p),0), mass=clamp(inkLen/130,0.6,2.6), cost=clamp(mass*20,12,52), el=elOfColor(g.color), k=f.held;
     const name=(el==='none'?'':{fire:'Fire ',water:'Water ',plant:'Leafy '}[el])+R.type[0].toUpperCase()+R.type.slice(1);
@@ -1350,7 +1355,7 @@ function createDuel(opts){
   S.startHack=(side,idx)=>{ const f=S.f[side], h=HACKS[idx]; if(!h||S.phase!=='fight'||f.od<100||S.hack||f.hp<=0||f.stun>0) return false;
     if(h.id==='breakout'&&(!BOARD||S.broken)){ floatT(f.x,-(f.y+120),BOARD?'already breached':'nothing to break out of',side); return false; }
     f.od=0; S.hack={by:side,target:1-side,def:h,t:h.tele,max:h.tele,counter:counterFor(f,h)}; log(f,'\u25b6 running '+h.name+' \u2014 counter glyph: '+S.hack.counter); return true; };
-  function counterHack(f,key){ const h=S.hack, by=S.f[h.by]; S.hack=null; by.stun=1.2; by.act=null; f.od=Math.min(100,f.od+20);
+  function counterHack(f,key){ const h=S.hack, by=S.f[h.by]; S.hack=null; by.stun=1.2; if(!casting(by)) by.act=null; f.od=Math.min(100,f.od+20);
     flash('COUNTERED!',nameOf(f)+' blocked '+h.def.name+' with '+(key==='null'?'\u2298':key),f.side); const c=chest(by); ring(c.x,c.y,PCOLS[f.side]); fx('shake',{n:8});
     log(f,'\u2605 COUNTERED '+h.def.name+' ('+key+') \u2014 '+nameOf(by)+' stunned'); }
   function execHack(h){ const f=S.f[h.by],t=S.f[h.target],id=h.def.id; fx('shake',{n:6});
@@ -1360,7 +1365,8 @@ function createDuel(opts){
     if(id==='recycle'){ const k=t.held, it=S.items[t.side][k];
       // The weapon is only out of the fight for a few seconds: it comes back when the effect ends, sooner if its owner draws
       // the counter glyph, and at the latest when the round is over.
-      if(it){ S.items[t.side][k]=null; t.act=null; fx('recycle',{side:t.side,slot:k,x:rr(t.x),yd:rr(-(t.y+70))}); log(null,it.name+' moved to Recycle Bin for '+RECYCLE_SECS+' s');
+      if(it&&casting(t)) floatT(t.x,-(t.y+110),'RECYCLE missed: mid-ultimate',h.by);
+      else if(it){ S.items[t.side][k]=null; t.act=null; fx('recycle',{side:t.side,slot:k,x:rr(t.x),yd:rr(-(t.y+70))}); log(null,it.name+' moved to Recycle Bin for '+RECYCLE_SECS+' s');
         const b={side:t.side,k,it}; (S.bins=S.bins||[]).push(b); floatT(t.x,-(t.y+110),it.name+' binned: '+RECYCLE_SECS+'s',t.side);
         S.effects.push({name:h.def.name,by:h.by,target:h.target,counter:'arrow',t:RECYCLE_SECS,end:()=>unbin(b)}); }
       else{ const vx=sgn(40-t.x)*900; t.flung=0.6; t.flungBy=f.side; hurt(t,8,'none',vx,420,f,f.x,undefined,undefined,'slam'); } }
@@ -2360,7 +2366,7 @@ function resetAnim(){ for(const a of anim){ a.name=''; a.pose=null; a.from=null;
 function pickClip(v,i,st,age){
   const f=v.f[i], it=v.items[i][f.held], ranged=it&&it.kind==='ranged';
   if(v.phase==='end'||v.phase==='over'){ if(f.hp<=0) return ['ko']; if(v.winner===i&&f.g) return ['cheer']; }
-  if(f.hurt) return [st.hurtName];
+  if(f.hurt&&!(f.act&&(MOVES[f.act.m.replace(/_b$/,'')]||{}).ult)) return [st.hurtName];   // nothing replaces an ultimate's animation
   if(f.act) return [f.act.m,f.act.t+age*f.act.r];
   if(f.dash) return [ranged?'run_aim':'sprint'];
   if(f.sh) return ['guard'];
