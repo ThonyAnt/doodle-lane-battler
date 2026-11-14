@@ -117,7 +117,7 @@ body.handheld .tc button{height:var(--b);min-width:0;font-size:calc(var(--b)*.36
 body.handheld .tc button.on{box-shadow:none;transform:translateY(4px)}
 body.handheld .tc [data-k="d"],body.handheld .tc [data-k="j"]{height:calc(var(--b)*.62);font-size:calc(var(--b)*.26)}
 body.handheld .tc [data-k="j"] small{display:inline;margin-left:8px}
-body.handheld .tc button small{font-size:13px;max-width:calc(var(--b) - 16px);margin:4px auto 0}
+body.handheld .tc button small{font-size:13px;max-width:calc(var(--b) - 14px);margin:4px auto 0}
 body.handheld .tc[data-side="0"] button{border-color:var(--p1);box-shadow:0 4px 0 var(--p1)} body.handheld .tc[data-side="1"] button{border-color:var(--p2);box-shadow:0 4px 0 var(--p2)}
 body.handheld .tc[data-side] button.on{box-shadow:none}
 .code{letter-spacing:.12em;background:var(--hi);padding:0 8px;border-radius:6px}
@@ -129,7 +129,8 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
 .desk h2{font-family:var(--display);font-weight:400;font-size:22px;margin:0;display:flex;align-items:center;gap:8px}
 .dot{width:12px;height:12px;border-radius:50%;display:inline-block;border:2px solid var(--ink)}
 .slots{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.slot{text-align:left;padding:6px 10px;font-weight:400;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slot{text-align:left;padding:6px 10px;font-weight:400;min-width:0;line-height:1.2;overflow-wrap:anywhere}
+.slot small{display:block;font-size:12px;color:var(--muted)}
 .slot b{font-weight:700}
 .slot[aria-pressed="true"]{background:#fff7d1;box-shadow:inset 0 -4px 0 var(--hi)}
 .padrow{display:flex;gap:10px;align-items:stretch}
@@ -150,7 +151,7 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
 .read b{color:var(--ink)}
 /* What an item turned out to be: its three stats, the trait to pick, tuning, and a way to correct a wrong read. */
 .card{display:flex;flex-direction:column;gap:8px;border-top:1px dashed var(--grid);padding-top:8px}
-.stat{display:grid;grid-template-columns:52px 1fr 30px;align-items:center;gap:8px;font-size:13px;font-variant-numeric:tabular-nums}
+.stat{display:grid;grid-template-columns:70px 1fr 30px;align-items:center;gap:8px;font-size:13px;font-variant-numeric:tabular-nums}
 .stat b{text-align:right}
 .sbar{height:12px;border:2px solid var(--ink);border-radius:6px;background:#eef1f7;overflow:hidden}
 .sbar i{display:block;height:100%;background:var(--ink);transition:width .2s}
@@ -171,7 +172,7 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
 .loitem{display:flex;flex-direction:column;gap:4px;min-width:0}
 .loitem .top{display:flex;align-items:center;gap:8px;min-height:44px}
 .loitem img{width:44px;height:44px;object-fit:contain;flex:none}
-.loitem .nm{font-weight:700;line-height:1.15} .loitem .nm small{display:block;font-weight:400;color:var(--muted)}
+.loitem .nm{font-weight:700;line-height:1.15;overflow-wrap:anywhere;min-width:0} .loitem .nm small{display:block;font-weight:400;color:var(--muted)}
 .loitem.empty{color:var(--muted);justify-content:center}
 .stock{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px;color:var(--muted);border-top:1px dashed var(--grid);padding-top:8px}
 .stock span{flex-basis:100%}
@@ -181,8 +182,8 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
 .tc{flex:1;display:flex;gap:10px;justify-content:space-between;align-items:center;background:var(--card);border:2px solid var(--ink);border-radius:14px;padding:8px 10px;min-width:280px;
   user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 .tc .grp{display:flex;gap:8px}
-.tc button{touch-action:none;min-width:54px;height:58px;font-size:20px;padding:0 8px;border-radius:14px;position:relative;overflow:hidden;line-height:1.05}
-.tc button small{display:block;font-size:11px;font-weight:600;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tc button{touch-action:none;min-width:54px;min-height:58px;font-size:20px;padding:0 8px;border-radius:14px;position:relative;overflow:hidden;line-height:1.05}
+.tc button small{display:block;font-size:11px;font-weight:600;max-width:92px;line-height:1.1;overflow-wrap:anywhere}
 .tc button.on{background:var(--hi);transform:translateY(2px)}
 .tc button .cdfill{position:absolute;left:0;right:0;bottom:0;height:calc(var(--cd,0)*100%);background:rgba(28,37,65,.28);pointer-events:none}
 .tc .keys{font-size:12px;color:var(--muted);text-align:center;flex:1;min-width:90px}
@@ -795,18 +796,30 @@ function buildDesks(){
     };
     el.querySelector('.ready').onclick=()=>{ if(sim) sim.setReady(side); else post({type:'ready'}); };
     const pos=e=>{ const r=d.pad.getBoundingClientRect(); return [Math.round((e.clientX-r.left)*PAD_W/r.width),Math.round((e.clientY-r.top)*PAD_H/r.height)]; };
+    // One stroke at a time, followed by the pointer that started it. A pencil takes over from a touch in progress and, for a
+    // few seconds after it was last used, fingers are ignored, so a palm resting on the screen neither draws nor ends the stroke.
     d.pad.addEventListener('pointerdown',e=>{
       if(d.busy||!view||(view.phase!=='draw'&&!view.practice)||view.ready[side]) return; e.preventDefault();
+      const pen=e.pointerType==='pen', now=performance.now();
+      if(pen) d.penAt=now; else if(e.pointerType==='touch'&&now-(d.penAt||-1e9)<8000) return;
+      if(d.cur){ if(!pen||d.curPen) return; d.strokes.pop(); }
       try{ d.pad.setPointerCapture(e.pointerId); }catch(_){}
-      d.cur={el:d.pen,pts:[pos(e)]}; d.strokes.push(d.cur); updateDesk(d);
+      d.cur={el:d.pen,pts:[pos(e)]}; d.curId=e.pointerId; d.curPen=pen; d.strokes.push(d.cur); updateDesk(d);
     });
     d.pad.addEventListener('pointermove',e=>{
-      if(!d.cur) return; const p=pos(e), q=d.cur.pts[d.cur.pts.length-1];
-      if(Math.hypot(p[0]-q[0],p[1]-q[1])<3) return;
-      if(inkCost(d.strokes)>=budget(d)){ d.cur=null; const b=el.querySelector('.inkbar'); b.classList.remove('full'); void b.offsetWidth; b.classList.add('full'); return; }
-      d.cur.pts.push(p); updateDesk(d);
+      if(!d.cur||e.pointerId!==d.curId) return; if(d.curPen) d.penAt=performance.now();
+      // A fast pencil reports several positions per frame; use all of them so quick strokes keep their shape.
+      const evs=e.getCoalescedEvents?e.getCoalescedEvents():[]; let added=false;
+      for(const ev of evs.length?evs:[e]){
+        const p=pos(ev), q=d.cur.pts[d.cur.pts.length-1];
+        if(Math.hypot(p[0]-q[0],p[1]-q[1])<2) continue;
+        if(inkCost(d.strokes)>=budget(d)){ d.cur=null; d.curId=null; const b=el.querySelector('.inkbar'); b.classList.remove('full'); void b.offsetWidth; b.classList.add('full'); break; }
+        d.cur.pts.push(p); added=true;
+      }
+      if(added||!d.cur) updateDesk(d);
     });
-    const up=()=>{ d.cur=null; }; d.pad.addEventListener('pointerup',up); d.pad.addEventListener('pointercancel',up);
+    const up=e=>{ if(e.pointerId===d.curId){ d.cur=null; d.curId=null; } };
+    d.pad.addEventListener('pointerup',up); d.pad.addEventListener('pointercancel',up); d.pad.addEventListener('lostpointercapture',up);
     updateDesk(d);
   }
 }
@@ -817,7 +830,7 @@ function updateDesk(d){
   const items=view?view.items[d.side]:[null,null], cost=d.strokes.length?inkCost(d.strokes):0, have=budget(d), ready=!!(view&&view.ready[d.side]);
   d.el.querySelectorAll('.slot').forEach(b=>{ const k=+b.dataset.k, it=items[k];
     b.setAttribute('aria-pressed',k===d.k);
-    b.innerHTML=`${'AB'[k]}: `+(it?`<b>${esc(it.name)}</b> · ${it.kind}${it.el!=='none'?' · '+it.el:''} · ${it.cost} ink`:'<b>empty</b> (a punch)'); });
+    b.innerHTML=`${'AB'[k]}: `+(it?`<b>${esc(it.name)}</b><small>${it.kind}${it.el!=='none'?' · '+it.el:''} · ${it.cost} ink</small>`:'<b>empty</b><small>a punch</small>'); });
   d.el.querySelector('.have').style.width=have+'%'; d.el.querySelector('.cost').style.width=Math.min(have,cost)+'%';
   d.el.querySelector('.inkn').textContent=Math.round(Math.min(have,cost))+' / '+have;
   d.el.querySelector('.make').disabled=!d.strokes.length||d.busy||ready;
@@ -830,14 +843,16 @@ function updateDesk(d){
   if(cs!==d.cardSig){ d.cardSig=cs; card.hidden=!it; if(it) card.innerHTML=cardHTML(it,locked,!!d.showStock); d.el.querySelector('.stock').hidden=!!it&&!d.showStock; }
   d.sig=deskSig(d);
 }
-const STAT_ROWS=[['pw','Power'],['rg','Range'],['sp','Speed']];
-const statBars=it=>STAT_ROWS.map(([k,l])=>`<div class="stat ${k}"><span>${l}</span><div class="sbar"><i style="width:${Math.round(it[k]*100/9)}%"></i></div><b>${it[k].toFixed(1)}</b></div>`).join('');
+// The three stats mean something different for things that are not weapons, so they are named for what they do.
+const STAT_NAMES={melee:['Power','Range','Speed'],ranged:['Power','Range','Speed'],bomb:['Power','Blast size','Reload'],
+  shield:['Block time','Mobility','Recharge'],dash:['Impact','Distance','Recharge'],heal:['Healing','Helpings','Recharge']};
+const statBars=it=>['pw','rg','sp'].map((k,n)=>[k,(STAT_NAMES[it.kind]||STAT_NAMES.melee)[n]]).map(([k,l])=>`<div class="stat ${k}"><span>${l}</span><div class="sbar"><i style="width:${Math.round(it[k]*100/9)}%"></i></div><b>${it[k].toFixed(1)}</b></div>`).join('');
 const FIXES=[['melee','blade','Sword'],['melee','spear','Spear or whip'],['melee','hammer','Hammer'],['melee','fist','Fists'],['ranged','bow','Bow'],['ranged','gun','Gun'],['ranged','staff','Magic'],['ranged','hurl','Thrown'],['bomb','','Bomb'],['shield','','Shield'],['dash','','Speed'],['heal','','Healing']];
 function cardHTML(it,locked,showStock){
-  const off=locked?'disabled':'';
+  const off=locked?'disabled':'', weapon=it.kind==='melee'||it.kind==='ranged';
   return `<div class="stats">${statBars(it)}</div>
     <div class="traits">${it.trs.map(t=>`<button class="trait" data-trait="${t}" aria-pressed="${t===it.tr}" ${off}><b>${TRAITS[t].label}</b><small>${TRAITS[t].text}</small></button>`).join('')}</div>
-    <div class="tune"><button data-tune="-1" ${locked||it.tn<=-2?'disabled':''}>◀ Lighter, faster</button><button data-tune="1" ${locked||it.tn>=2?'disabled':''}>Heavier, stronger ▶</button></div>
+    <div class="tune"><button data-tune="-1" ${locked||it.tn<=-2?'disabled':''}>◀ ${weapon?'Lighter, faster':'Ready sooner'}</button><button data-tune="1" ${locked||it.tn>=2?'disabled':''}>${weapon?'Heavier, stronger':'Stronger effect'} ▶</button></div>
     <details class="fix"><summary>Not right? Change what it is</summary><div>${FIXES.map(([k,s,l])=>`<button data-kind="${k}" data-style="${s}" aria-pressed="${it.kind===k&&(it.style||'')===s}" ${off}>${l}</button>`).join('')}</div></details>
     <button class="more">${showStock?'Hide ready-made items':'Swap for a ready-made item'}</button>`;
 }
@@ -909,15 +924,21 @@ function keyTarget(code){
 addEventListener('keydown',e=>{ if(e.target.tagName==='INPUT'||e.repeat&&keyTarget(e.code)){ if(e.target.tagName!=='INPUT') e.preventDefault(); return; }
   const t=keyTarget(e.code); if(!t||!view||view.phase==='draw'||view.phase==='over') return; e.preventDefault(); press(t[0],t[1],true); });
 addEventListener('keyup',e=>{ const t=keyTarget(e.code); if(t) press(t[0],t[1],false); });
-addEventListener('blur',()=>{ for(const s of [0,1]) for(const k of 'lrd') press(s,k,false); });
+addEventListener('blur',releaseAll); document.addEventListener('visibilitychange',()=>{ if(document.hidden) releaseAll(); });
+// Online, a held or released button is one small request that can be lost on a bad connection, which would leave the
+// fighter running. So the current buttons are sent again a few times a second while a round is on.
+setInterval(()=>{ if(net&&net.side>=0&&view&&(view.phase==='fight'||view.phase==='count')) post(Object.assign({type:'input',seq:++net.seq},inp[net.side])); },350);
 // iPad Safari ignores the viewport's no-zoom setting, so stop the zoom gestures by hand: a second tap soon after the first
 // during a fight (the buttons use pointer events, so they still fire), and pinching at any time.
 let lastTap=0;
 document.addEventListener('touchend',e=>{ const now=Date.now(); if(playing&&now-lastTap<450&&e.cancelable) e.preventDefault(); lastTap=now; },{passive:false});
 document.addEventListener('gesturestart',e=>e.preventDefault());
 document.addEventListener('dblclick',e=>{ if(playing) e.preventDefault(); });
+let releasers=[];
+// Let go of every held direction: when a round ends, when the page loses focus, when the controls are rebuilt.
+function releaseAll(){ for(const f of releasers) f(); for(const s of [0,1]) for(const k of 'lrd') press(s,k,false); document.querySelectorAll('.tc button.on').forEach(b=>b.classList.remove('on')); }
 function buildControls(){
-  const box=$('tcs'); box.innerHTML='';
+  const box=$('tcs'); box.innerHTML=''; releasers=[];
   for(const side of [0,1]){
     if(!local[side]) continue;
     const keys=mode==='2p'?(side?'← → move · ↑ jump · ↓ drop · K / L use':'A D move · W jump · S drop · F / G use'):'A D or ← → move · W / Space jump · S drop · F / G use';
@@ -934,7 +955,10 @@ function buildControls(){
     const lift=e=>{ if(e.pointerId===mp){ mp=null; hold(null); } };
     mv.addEventListener('pointerdown',e=>{ e.preventDefault(); if(mp!==null) return; mp=e.pointerId; try{ mv.setPointerCapture(mp); }catch(_){} hold(at(e)); });
     mv.addEventListener('pointermove',e=>{ if(e.pointerId===mp) hold(at(e)); });
-    mv.addEventListener('pointerup',lift); mv.addEventListener('pointercancel',lift); mv.addEventListener('contextmenu',e=>e.preventDefault());
+    mv.addEventListener('pointerup',lift); mv.addEventListener('pointercancel',lift); mv.addEventListener('lostpointercapture',lift); mv.addEventListener('contextmenu',e=>e.preventDefault());
+    // The lift can be missed when the buttons disappear under the thumb (the round ends) or the touch is taken away by the
+    // system, so the window listens for it too.
+    addEventListener('pointerup',lift); addEventListener('pointercancel',lift); releasers.push(()=>{ mp=null; hold(null); });
     el.querySelectorAll('.grp:last-child button').forEach(b=>{
       const k=b.dataset.k, off=()=>{ b.classList.remove('on'); press(side,k,false); };
       b.addEventListener('pointerdown',e=>{ e.preventDefault(); try{ b.setPointerCapture(e.pointerId); }catch(_){} b.classList.add('on'); press(side,k,true); });
@@ -1014,7 +1038,7 @@ function syncUI(){
     lastPhase=v.phase; const drawing=v.phase==='draw';
     playing=!drawing&&v.phase!=='over'; document.body.classList.toggle('playing',playing);
     $('desks').hidden=!(drawing||v.practice); $('tcs').hidden=drawing||v.phase==='over'||!local.some(Boolean);
-    if(!drawing) for(const s of [0,1]) for(const k of 'lrd') if(inp[s][k]&&!sim){ /* keep held keys */ }
+    if(drawing||v.phase==='end'||v.phase==='over') releaseAll();      // nothing stays held from one round into the next
     if(v.phase==='count') document.querySelector('.arenawrap').scrollIntoView({block:'start',behavior:'smooth'});
   }
   for(const d of desk) if(d&&d.sig!==deskSig(d)) updateDesk(d);
