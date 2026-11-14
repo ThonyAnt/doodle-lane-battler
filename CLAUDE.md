@@ -17,7 +17,34 @@ Hackathon MVP. A one-lane battler where every unit is something the player draws
 - Animation: fighters are a keyframed skeleton in the style of `motion-review.html` (the owner's reference; Alan Becker / 火柴人联盟). Clips are data in `anim/*.js` registered with `ANIM.add`; `anim/core.js` samples them (spline interpolation, IK so limbs never stretch, body spin and somersault channels, painted slash trail) and `anim/README.md` is the authoring guide. Preview with `node tools/strip.js <clip> [frames] [out.png]` (needs Chrome) or open `/anim-lab.html`.
 - Attacks are moves in the `MOVES` table inside the rules block (duration, hit or shot times, cancel time, next move). Each move has a clip of the same name whose marks must match; some have a `_b` alternate animation. The vision model returns a `style` for melee (blade, spear, hammer, fist) and ranged (bow, gun, staff, hurl) drawings; each style has its own move set and clip file. Melee styles chain a combo on repeated taps (for example blade1 -> blade2 -> blade3) with running, air and down+attack variants; ranged styles have a shot, quick follow-ups, an air shot and a charged shot. An empty slot fights with the fist set. `STYLE` holds per-style reach, damage and knockback multipliers. `node tools/check-anim.js` verifies clips against `MOVES`.
 - Desktop overlay: `overlay/main.js` (Electron, a dev dependency; `npm run overlay`) opens a transparent, always-on-top, click-through window over the work area and loads `/duel?desk=1`. In that mode (`DESK` in `duel.html`, body class `deskmode`) the page is transparent, one game unit is a fixed number of screen pixels, the arena is as wide as the screen with no platforms (`createDuel({width,plats})`), health shows above heads, and the page tells the app via `window.overlayHost` when to take the mouse. `electron overlay/main.js --selftest=out.png` renders a frame off-screen. Window terrain: `overlay/windows.js` (koffi, Windows only, read-only) lists other apps' windows front to back and computes the visible parts of their top edges; `main.js` polls it every 100 ms and sends changes to the page, which converts them to platforms (`deskTerrain`) and calls `sim.setPlats`, or posts `{type:"plats"}` to the room when it is the big screen (only a watcher may; the server rebroadcasts a `plats` event). `setPlats` carries a fighter standing on a platform whose `id` persists. The header toggle "Draw here / Draw on tablets" (`drawHere`, `drawTablets`) switches any device between the ordinary game and being the big screen of a new room; in the overlay an online room uses the standard 960 stage scaled to the screen. The server itself still has no dependencies.
-- Retro desktop stage (`RETRO` in `duel.html`, body class `retro`; on by default on a wide, fine-pointer screen, off with `?plain=1`): the same "desk-like" machinery as the overlay (`deskLike()`), but the backdrop is an HTML pretend desktop and the terrain comes from the page's own draggable windows (`retroWindow`, `retroEdges`, `retroSync`). Existing parts of the page (header, sketchbook, join/result box, health bars, rules) are moved into those windows once at load. The look and the idea come from Alex's prototype (repo `al371160/hackprinceton-brainstorming-alex`, `prototype/inkshop-duel.html`), as do the figure style (`noodle` option of `ANIM.draw`), the weapon smear (`ANIM.smear`) and the fighter colours. Still to bring across from it: quick shapes drawn mid-fight from the tablets (platform, wall, shield, dash) using its local recogniser, then hacks and counters.
+- InkShop merge (Alex's prototype, repo , file ; our codebase is the base). On a wide fine-pointer screen (, off with ) the page is his InkShop desktop. His code is copied unchanged between  /  markers in three places: the  block in the rules (geometry helpers, glyph templates , , ),  (effects, drawing helpers, tools, menus, ) and  (nested under ); his markup is in  inside . Do not edit inside the markers; re-copy from his file instead.
+- Adapted from his code into the server-run rules (, section "InkShop world"):  -> grouping ->  ->  (platform, wall, crate, block, shield, trap, arrow dash/fling/wind/link, erase, lightning, mid-fight weapon ), ///,  props,  slam damage. Drawn things keep his convention ({x,y}, y DOWN, floor at 0); fighters use ours (height above floor). New: the art board (, , ), the mining move (, , key L), mid-fight  and  meters, inputs , , . Shapes reach clients once as  events with strokes; snapshots carry only ids and positions.
+- The bot () is our fighting logic plus his // adapted (ghost cursor, glyphs, hacks, counters). Server acts added:  (players),  (big screen only). ok   fighters start inside the board, on its floor  [360,60]
+ok   the stage has his three ledges and a crate
+ok   a wall of the board stops a fighter  211
+ok   one swing chips a cell, two break it  {"one":1,"dead":2,"breached":true}
+ok   the fighter walks out through the hole and drops to the desktop  [18,0,["l60","l100","l140"]]
+ok   a flat line becomes a platform  [450,-160,120,11.833333333333325]
+ok   a steep line becomes a wall that blocks movement  [404,415]
+ok   a circle around yourself is a shield  {"t":3.866666666666667,"hp":2,"r":56.48396935768403}
+ok   a zig-zag throws a lightning bolt  ["bolt"]
+ok   an arrow from yourself is a dash  502
+ok   a sword drawn mid-fight is forged into the hand  "Sword"
+ok   a hammer is recognised as a hammer
+ok   no ink, no shape
+ok   a hack needs a full overdrive bar
+ok   POPUPSTORM starts with a telegraph  "x"
+ok   after the telegraph, pop-ups rain down
+ok   drawing the counter glyph cancels the hack and stuns the hacker  {"stun":1.0500000000000005}
+ok   BREAKOUT opens the board  14.899999999999995
+ok   and fighters can leave it  18
+ok   the canvas is patched after 15 seconds and pulls them back in  215
+ok   RECYCLE deletes the foe's weapon
+ok   TRANSFORM shrinks the foe  0.564509844286656
+ok   a fighter flung into a wall at speed takes slam damage  {"hp":91,"x":989}
+ok   an arrow drawn from the foe flings them  629
+all world rules pass tests the world rules.
+- Not merged: his fighter movement and spring rig (the owner wants to combine the rig with our clips later), pick-up weapon items, cursor grab.
 - The arena canvas and item sprites are rendered at the display's pixel density.
 - Bot-vs-bot simulation gives a median round of about 22 s; melee wins most often between bots. Not tested on real tablets.
 

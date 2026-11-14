@@ -12,11 +12,19 @@ Big screen: press **Draw on tablets** in the header (or choose Online, then "Use
 
 Keys: A/D move, W jump, S down, J and K use your two drawings. Tap a blade repeatedly for a 3-hit combo; attack while running, in the air, or holding down for other moves. Bows and guns keep firing as you tap, and down + attack is a charged shot. Second player on one screen: arrows, with , and . to attack. Touch buttons appear under the arena on tablets.
 
-## Retro desktop stage
+## InkShop: the merged game
 
-On a computer, `/duel` is staged on a pretend old desktop, after Alex's InkShop prototype. The menus, the sketchbook, the health bars, a log of what the vision model read and a notes file are draggable windows; the fighters run along the taskbar and the windows' title bars are the platforms. Drag a window and whoever is standing on it rides along; minimise it and they fall. **Esc** or the **Start** button opens the menu mid-fight. With **Draw on tablets** this desktop is the big screen, and its window layout is the room's terrain. Tablets and phones keep the plain layout; add `?plain=1` to get it on a computer.
+On a computer,  is Alex's InkShop prototype (repo ) running on this game's engine. His interface, shape recogniser, hack table and effects are in the page as he wrote them; his mechanics run in this game's server-side rules, so they work for tablet rooms too.
 
-The fighters use the InkShop figure (curved limbs, solid head) and its translucent weapon smear, with this game's authored attack animations.
+- **The fight starts inside the paint program.** The arena is the art board of the InkShop window, with his three sketched ledges and a crate. His Fighters panel shows health, ink and overdrive; the AI Read Log shows what each drawing was read as.
+- **Weapons before the round, quick shapes during it.** You still draw two weapons in the Sketchbook before each round (read by the vision model). During the fight you draw glyphs that take effect at once, read by his recogniser: a flat line is a platform, a steep line a wall, a box a crate, a circle around yourself a shield, a circle around the foe a trap, an arrow from yourself a dash, an arrow from the foe a fling, a zig-zag a lightning bolt, an X erases or disarms, and a weapon shape (sword, spear, hammer, bow) replaces the weapon in your hand. Drawing costs ink, which refills.
+- **How to draw mid-fight.** With a mouse: pick his Pencil, Rectangle or Ellipse tool (B, R, O) and draw on the art board; the Fight tool (F) makes a click an attack. On a tablet: draw on the strip of the arena above the controller.
+- **Hacks.** Dealing and taking damage fills Overdrive. At 100, Q runs the selected hack (1-5 pick): BREAKOUT, RECYCLE, TRANSFORM, POPUPSTORM, OVERCLOCK. Each shows a warning dialog first; the target cancels it by drawing the counter glyph shown, which stuns the hacker.
+- **Getting out.** The art board's walls and floor can be mined: L swings the built-in pick, and S + L digs down. Two hits break a piece. Or run BREAKOUT.exe to open the whole board for 15 seconds. Outside, the desktop's window title bars are platforms.
+- **The bot** is his animator.bot on top of this game's fighting bot: it draws glyphs with a ghost cursor, runs hacks, and counters yours. His CPU skill slider sets how good it is; Time scale slows a local match.
+- Tablets and phones keep Benjamin's layout (with the draw strip and two new buttons, mine and hack); add  for the plain layout on a computer.
+
+What comes from where is marked in the code: ,  and the  block in  hold his code between BEGIN/END verbatim markers. Not merged: his fighter movement and springy animation rig (his Rig Properties sliders are shown but disabled), his pick-up weapon items, and cursor grabs.
 
 ## Desktop overlay (experimental, Windows)
 

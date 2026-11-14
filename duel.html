@@ -104,6 +104,14 @@ body.retro .rwin input{border-radius:0;border:2px solid;border-color:#808080 #ff
 body.retro .stock{border-top:1px solid #808080}
 body.retro #rlog{font:11px/1.5 "Courier New",monospace;white-space:nowrap}
 body.retro #rlog .b{color:#1d3fbf} body.retro #rlog .r{color:#b0121f}
+/* Player view, during a fight: a live strip of the arena to draw quick shapes on with a finger or Pencil. */
+#strip,#stripbar{display:none}
+body.handheld.playing #strip{display:block;position:fixed;left:8px;right:8px;top:44px;width:calc(100vw - 16px);height:calc(100vh - 44px - var(--pad,300px));background:#fff;border:3px solid var(--ink);border-radius:14px;touch-action:none}
+body.handheld.playing h1{display:none}
+body.handheld.playing header{justify-content:flex-end}
+body.handheld.playing #stripbar{display:flex;position:fixed;left:8px;right:170px;top:4px;height:36px;align-items:center;gap:8px;font-weight:700}
+body.handheld.playing #stripbar button{min-width:44px;height:34px;padding:0}
+body.handheld.playing #stripbar #stripInk{margin-left:auto;font-variant-numeric:tabular-nums}
 /* Desktop mode: transparent page, arena across the whole screen, the sketchbook as a floating card. */
 html.deskmode,body.deskmode{background:transparent!important;background-image:none!important;overflow:hidden}
 body.deskmode main{max-width:none;padding:0}
@@ -176,8 +184,11 @@ body.handheld .tc{--b:clamp(74px,13.5vw,136px);background:none;border:0;padding:
 body.handheld .tc .keys{display:none}
 body.handheld .tc .grp{display:grid;grid-template-columns:var(--b) var(--b);gap:12px;pointer-events:auto;touch-action:none}
 body.handheld .tc .grp:first-child{grid-template-areas:"l r" "d d"}
-body.handheld .tc .grp:last-child{grid-template-areas:"j j" "a b"}
+body.handheld .tc .grp:last-child{grid-template-areas:"j j" "a b" "m q"}
 body.handheld .tc [data-k="l"]{grid-area:l} body.handheld .tc [data-k="r"]{grid-area:r} body.handheld .tc [data-k="d"]{grid-area:d}
+body.handheld .tc [data-k="m"]{grid-area:m} body.handheld .tc [data-k="q"]{grid-area:q}
+body.handheld .tc [data-k="m"],body.handheld .tc [data-k="q"]{height:calc(var(--b)*.5);font-size:calc(var(--b)*.22)}
+body.handheld .tc [data-k="m"] small,body.handheld .tc [data-k="q"] small{display:inline;margin-left:6px}
 body.handheld .tc [data-k="a"]{grid-area:a} body.handheld .tc [data-k="b"]{grid-area:b} body.handheld .tc [data-k="j"]{grid-area:j}
 body.handheld .tc button{height:var(--b);min-width:0;font-size:calc(var(--b)*.36);border-width:3px;border-radius:24px;box-shadow:0 4px 0 var(--ink)}
 body.handheld .tc button.on{box-shadow:none;transform:translateY(4px)}
@@ -362,6 +373,8 @@ Window titlebars = platforms
     <div class="overlay" id="overlay" hidden></div>
   </section>
 
+  <canvas id="strip" hidden></canvas>
+  <div id="stripbar" hidden><button id="hackPrev" aria-label="Previous hack">◀</button><span id="hackName"></span><button id="hackNext" aria-label="Next hack">▶</button><span id="stripInk"></span></div>
   <section class="tcs" id="tcs" hidden></section>
   <section class="desks" id="desks"></section>
 
@@ -1021,11 +1034,27 @@ function createDuel(opts){
   return S;
 }
 // A simple opponent: thinks a few times a second and presses the same buttons a player would.
-function makeBot(side){
-  let think=0; const i={l:0,r:0,d:0,j:0,a:0,b:0};
-  return function(S,dt){
-    if(S.phase!=='fight'){ i.l=i.r=0; S.setInput(side,i); return; }
-    think-=dt; if(think>0) return; think=0.2+Math.random()*0.18;
+// The opponent. The fighting is this game's bot. The drawing, hacking and countering are Alex's animator.bot, adapted from
+// his AI.decide(), AI.onHack() and Drawer: the same rules and odds, and a ghost cursor that really traces each glyph
+// stroke by stroke and submits it through S.stroke, exactly as a player's drawing is. skillOf() is his CPU skill, 0..1.
+function makeBot(side,skillOf){
+  let think=0, react=null, hadHack=false; const i={l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0};
+  const {T,toPts,densify,rand,pick,GLYPH_ICON}=INK, COL=['#1d3fbf','#b0121f'][side];
+  const dr={task:null,cur:{x:0,y:-200},vis:false,
+    draw(name,ax,ay,sc,fx){ if(this.task||!T[name]) return false; this.task={strokes:toPts(T[name],ax,ay,sc||1,fx||1,1.1).map(st=>densify(st,4)),si:0,pi:0,down:false,wait:0.05,name}; this.vis=true; return true; },
+    cancel(){ this.task=null; },
+    update(S,dt,d){ const t=this.task; if(!t) return; if(t.wait>0){ t.wait-=dt; return; } const sp=(900+d*900)*dt, st=t.strokes[t.si];
+      if(!t.down){ const q=st[0], dd=Math.hypot(q.x-this.cur.x,q.y-this.cur.y); if(dd>sp){ this.cur.x+=(q.x-this.cur.x)/dd*sp; this.cur.y+=(q.y-this.cur.y)/dd*sp; return; } this.cur={x:q.x,y:q.y}; t.down=true; t.pi=1; return; }
+      let b=sp; while(b>0&&t.pi<st.length){ const p=st[t.pi], dd=Math.hypot(p.x-this.cur.x,p.y-this.cur.y); if(dd<=b){ this.cur={x:p.x,y:p.y}; b-=dd; t.pi++; } else { this.cur.x+=(p.x-this.cur.x)/dd*b; this.cur.y+=(p.y-this.cur.y)/dd*b; b=0; } }
+      if(t.pi>=st.length){ if(!S.stroke(side,st,COL)){ this.task=null; return; } t.down=false; t.si++; t.pi=0; t.wait=0.04; if(t.si>=t.strokes.length) this.task=null; } } };
+  const fn=function(S,dt){
+    const d=skillOf?skillOf():0.55;
+    if(S.phase!=='fight'){ i.l=i.r=0; S.setInput(side,i); dr.task=null; dr.vis=false; react=null; hadHack=false; return; }
+    dr.update(S,dt,d);
+    { // his onHack(): notice a hack aimed at us, then (depending on skill) draw its counter glyph after a reaction delay
+      const me=S.f[side], aimed=!!(S.hack&&S.hack.target===side); if(aimed&&!hadHack) react={t:rand(0.2,0.6)*(1.5-d),go:Math.random()<0.3+0.6*d}; hadHack=aimed;
+      if(react){ react.t-=dt; if(react.t<=0){ const r=react; react=null; if(r.go&&S.hack&&S.hack.target===side){ dr.cancel(); dr.draw(GLYPH_ICON[S.hack.counter]||'null',me.x-me.face*70,-(me.y+150),0.7,1); } } } }
+    think-=dt; if(think>0) return; think=0.35+(0.1-0.35)*d+Math.random()*0.08+0.07;
     const f=S.f[side], e=S.f[1-side], dx=e.x-f.x, dist=Math.abs(dx), dy=e.y-f.y, dir=Math.sign(dx)||1, facing=f.face===dir;
     const incoming=S.pr.some(p=>p.side!==side&&Math.abs(p.x-f.x)<170&&Math.sign(p.vx)===-dir);
     let ideal=260, press=[false,false], melee=false;
@@ -1044,8 +1073,19 @@ function makeBot(side){
     if(Math.random()>0.4){ if(press[0]) i.a++; if(press[1]) i.b++; }
     if((dy>70&&Math.random()<0.55)||(incoming&&Math.random()<0.35)||Math.random()<0.04) i.j++;
     i.d=dy<-60&&Math.random()<0.5?1:0;
+    // his decide(): hacks when the overdrive bar is full, and glyphs for the situation
+    const busy=!!dr.task;
+    if(f.od>=100&&!S.hack&&Math.random()<0.2+0.4*d){ const opts=[2,3]; if(S.cells.length&&!S.broken) opts.push(0); if(S.items[1-side][e.held]) opts.push(1,1); if(S.items[side][f.held]) opts.push(4,4); i.h=pick(opts); i.q++; }
+    else if(!busy&&f.ink2>55&&dist>240&&Math.random()<0.14*d) dr.draw('lightning',f.x+dir*80,-(f.y+110),0.8,dir);
+    else if(!busy&&f.ink2>45&&e.act&&dist<130&&Math.random()<0.25*d) dr.draw('wall',f.x+dir*42,-(f.y+46),0.9);
+    else if(!busy&&f.ink2>40&&e.y>f.y+110&&f.ground&&Math.random()<0.25) dr.draw('platform',f.x+dir*60,-(f.y+95),0.7);
+    else if(!busy&&f.ink2>35&&dist>330&&Math.random()<0.1*d) dr.draw('arrow',f.x+dir*60,-(f.y+55),0.95,dir);
+    // stuck against the art board's frame with the foe on the other side: dig
+    if(S.cells.length&&!S.broken&&f.ground&&Math.abs(f.vx)<20&&(i.l||i.r)&&dist>120&&Math.random()<0.6) i.m++;
     S.setInput(side,i);
   };
+  fn.cursor=()=>dr.vis&&dr.task?dr.cur:null;
+  return fn;
 }
 // Ready-made doodles, in pad coordinates: one of everything a player can draw. Used by the bot and offered in the
 // sketchbook as stock items, so a move set can be tried without drawing or waiting for the vision model.
@@ -1314,7 +1354,7 @@ function buildControls(){
     const keys=mode==='2p'?(side?'← → move · ↑ jump · ↓ down · , and . attack':'A D move · W jump · S down · J and K attack'):'A D or ← → move · W / Space jump · S down · J attack 1 · K attack 2';
     const el=document.createElement('div'); el.className='tc'; el.dataset.side=side;
     el.innerHTML=`<div class="grp"><button data-k="l" aria-label="Move left">◀</button><button data-k="d" aria-label="Down">▼</button><button data-k="r" aria-label="Move right">▶</button></div><div class="keys">${keys}</div>
-      <div class="grp"><button data-k="a"><span class="cdfill"></span>A<small></small></button><button data-k="b"><span class="cdfill"></span>B<small></small></button><button data-k="j" aria-label="Jump">⤒<small>jump</small></button></div>`;
+      <div class="grp"><button data-k="a"><span class="cdfill"></span>A<small></small></button><button data-k="b"><span class="cdfill"></span>B<small></small></button><button data-k="j" aria-label="Jump">⤒<small>jump</small></button><button data-k="m" aria-label="Mine">⛏<small>mine</small></button><button data-k="q" aria-label="Run hack"><span class="cdfill"></span>Q<small>hack</small></button></div>`;
     // Movement is one touch zone: a thumb can slide between left, right and down without lifting, and a touch that lands
     // in the gap between two buttons still counts for the nearest one.
     const mv=el.querySelector('.grp'), mb=[...mv.querySelectorAll('button')]; let mp=null;
@@ -1349,7 +1389,7 @@ function setMode(m){
   local=m==='2p'?[true,true]:[true,false];
   if(deskLike()){ ARENA_W=Math.round(innerWidth/DESK_SCALE); ARENA_PLATS=[]; }
   sim=createDuel({practice:m==='practice',width:ARENA_W,plats:ARENA_PLATS});
-  if(m==='bot'){ bot=makeBot(1); botLoadout().forEach((b,k)=>{ const it=sim.setItem(1,k,b.spec,b.cost); setArt(1,k,b.strokes,it.ver,it.kind,it.style); }); }
+  if(m==='bot'){ bot=makeBot(1,()=>RETRO?FXI.P.diff:0.55); botLoadout().forEach((b,k)=>{ const it=sim.setItem(1,k,b.spec,b.cost); setArt(1,k,b.strokes,it.ver,it.kind,it.style); }); }
   deskTerrain();
   view=sim.snapshot(); buildDesks(); buildControls();
 }
@@ -1602,6 +1642,7 @@ function syncUI(){
   }
   for(const d of desk) if(d&&d.sig!==deskSig(d)) updateDesk(d);
   document.querySelectorAll('.tc').forEach(el=>{ const s=+el.dataset.side;
+    { const q=el.querySelector('[data-k="q"]'), od=v.f[s].od||0; if(q){ q.style.setProperty('--cd',1-od/100); const nm=INK.HACKS[FXI.hackSel].name.replace('.exe',''), sm=q.querySelector('small'); if(sm.textContent!==nm) sm.textContent=nm; } }
     for(const k of [0,1]){ const b=el.querySelector(`[data-k="${'ab'[k]}"]`), it=v.items[s][k], f=v.f[s];
       b.style.setProperty('--cd',f.cd[k]||0); const label=it?it.name+(it.kind==='heal'?' ×'+f.uses[k]:''):'Punch';
       const sm=b.querySelector('small'); if(sm.textContent!==label) sm.textContent=label; } });
@@ -1773,6 +1814,36 @@ function drawFighter(v,i,now,age,dt){
     L.fillText(tag,tx,ty); }
 }
 // World layers. His drawing code works in his coordinates (y down from the floor), so the canvas is shifted to match.
+// The draw strip: the whole arena scaled to the strip's width, floor near the bottom. A stroke drawn on it is sent to the
+// room in arena coordinates, where the rules read it (platform, wall, shield, dash, counters, even a new weapon).
+const strip=$('strip'), SG=strip.getContext('2d'); let stripPen=null, stripK=1, stripFloor=0;
+function drawStrip(v){
+  if(!padView||!playing){ return; }
+  const r=Math.min(3,devicePixelRatio||1), cw=strip.clientWidth, ch=strip.clientHeight; if(!cw||!ch) return;
+  if(strip.width!==Math.round(cw*r)){ strip.width=Math.round(cw*r); strip.height=Math.round(ch*r); }
+  const W=v.w||960, b=v.board, x0=b?b.x0-60:0, x1=b&&!v.breached&&!v.broken?b.x1+60:W, k=cw/(x1-x0), fl=ch-14-(b&&!v.breached&&!v.broken?0:0); stripK=k; stripFloor=fl; strip._x0=x0;
+  const X=x=>(x-x0)*k, Y=yd=>fl+yd*k, g=SG; g.setTransform(r,0,0,r,0,0); g.clearRect(0,0,cw,ch); g.lineCap='round'; g.lineJoin='round';
+  g.strokeStyle='#111'; g.lineWidth=2; g.beginPath(); g.moveTo(0,fl); g.lineTo(cw,fl); g.stroke();
+  if(b){ g.strokeStyle=v.broken?'#f80':'#808080'; g.lineWidth=2; g.strokeRect(X(b.x0),Y(-b.top),(b.x1-b.x0)*k,(b.top-b.floor)*k);
+    const cells=boardCells(b); g.fillStyle='#1a0d05'; for(const [id,hp] of v.cells||[]) if(hp<=0){ const c=cells[id]; if(c) g.fillRect(X(c.x0)-1,Y(-c.y1),(c.x1-c.x0)*k+2,(c.y1-c.y0)*k); } }
+  g.strokeStyle='#8a8f99'; g.lineWidth=3; for(const p of ARENA_PLATS){ g.beginPath(); g.moveTo(X(p.x0),Y(-p.y)); g.lineTo(X(p.x1),Y(-p.y)); g.stroke(); }
+  for(const o of wobj.values()){ g.strokeStyle=o.color||'#555'; g.lineWidth=2; if(o.kind==='platform'){ g.beginPath(); g.moveTo(X(o.x),Y(o.y)); g.lineTo(X(o.x+o.w),Y(o.y)); g.stroke(); } else g.strokeRect(X(o.x),Y(o.y),o.w*k,o.h*k); }
+  for(const sd of [0,1]){ const f=v.f[sd], fx=X(f.x), fy=Y(-f.y), h=88*(f.sc||1)*k; g.strokeStyle=PCOL[sd]; g.fillStyle=PCOL[sd]; g.lineWidth=Math.max(2,5*k);
+    g.beginPath(); g.moveTo(fx,fy); g.lineTo(fx,fy-h*0.7); g.stroke(); g.beginPath(); g.arc(fx,fy-h*0.82,Math.max(4,h*0.17),0,7); g.fill();
+    if(sd===net.side){ g.font='700 12px Karla,sans-serif'; g.textAlign='center'; g.fillText('you',fx,fy-h-6); }
+    if(f.bub){ g.strokeStyle='#2bd'; g.lineWidth=2; g.beginPath(); g.arc(fx,fy-h*0.6,f.bub*k,0,7); g.stroke(); } }
+  g.lineWidth=3; for(const sd of [0,1]) for(const q of wPending[sd]){ g.strokeStyle=q.col; g.beginPath(); q.pts.forEach((p,n)=>n?g.lineTo(X(p.x),Y(p.y)):g.moveTo(X(p.x),Y(p.y))); g.stroke(); }
+  if(stripPen){ g.strokeStyle=PCOL[net.side]; g.beginPath(); stripPen.forEach((p,n)=>n?g.lineTo(X(p.x),Y(p.y)):g.moveTo(X(p.x),Y(p.y))); g.stroke(); }
+  if(v.hack){ const mine=v.hack.target===net.side; g.fillStyle=mine?'#b0121f':'#555'; g.font='700 14px Karla,sans-serif'; g.textAlign='center'; g.fillText((mine?'DRAW TO COUNTER: ':'running: ')+v.hack.name+(mine?'  \u2192  '+({line:'flat line',wall:'steep line',box:'box',circle:'circle',arrow:'arrow',x:'X',zig:'zig-zag',null:'\u2298'}[v.hack.counter]||v.hack.counter)+'  ('+v.hack.t.toFixed(1)+'s)':''),cw/2,20); }
+  const me=v.f[net.side]; $('stripInk').textContent='ink '+(me.ink2===undefined?100:me.ink2)+' \u00b7 overdrive '+(me.od||0)+'%'; $('hackName').textContent=INK.HACKS[FXI.hackSel].name;
+}
+{ const at=e=>{ const r=strip.getBoundingClientRect(); return {x:(e.clientX-r.left)/stripK+(strip._x0||0),y:(e.clientY-r.top-stripFloor)/stripK}; };
+  strip.addEventListener('pointerdown',e=>{ if(!padView||!net||net.side<0) return; e.preventDefault(); try{ strip.setPointerCapture(e.pointerId); }catch(_){} stripPen=[at(e)]; });
+  strip.addEventListener('pointermove',e=>{ if(!stripPen) return; const p=at(e), l=stripPen[stripPen.length-1]; if(Math.hypot(p.x-l.x,p.y-l.y)>=3) stripPen.push(p); });
+  const end=()=>{ if(!stripPen) return; const pts=stripPen; stripPen=null; submitStroke(net.side,pts,PCOL[net.side]); };
+  strip.addEventListener('pointerup',end); strip.addEventListener('pointercancel',end);
+  $('hackPrev').onclick=()=>{ FXI.hackSel=(FXI.hackSel+4)%5; }; $('hackNext').onclick=()=>{ FXI.hackSel=(FXI.hackSel+1)%5; }; }
+const botCursor=()=>bot&&bot.cursor?bot.cursor():null;
 function worldBack(v,now){
   if(v.board&&!RETRO){ const b=v.board; L.save(); L.fillStyle='#fff'; L.strokeStyle='#808080'; L.lineWidth=2; L.beginPath(); L.rect(b.x0,GY-b.top,b.x1-b.x0,b.top-b.floor); L.fill(); L.stroke(); L.restore(); }
   L.save(); L.translate(0,GY);
@@ -1871,7 +1942,7 @@ function frame(now){
   const ts=RETRO?FXI.P.speed:1;                                          // his Time scale slider (local matches)
   if(sim&&!deskPaused){ if(bot){ bot(sim,dt*ts); if(sim.phase==='draw'&&!sim.ready[1]) sim.setReady(1); } sim.step(dt*ts); accept(sim.snapshot()); }
   FXI.step(dt);
-  if(view){ syncUI(); render(now); }
+  if(view){ syncUI(); render(now); if(padView&&net&&net.side>=0){ const tc=document.querySelector('.tcs'); if(tc) document.body.style.setProperty('--pad',(tc.getBoundingClientRect().height+12)+'px'); $('strip').hidden=$('stripbar').hidden=false; drawStrip(view); } }
   requestAnimationFrame(frame);
 }
 if(canRead) fetch('/info').then(r=>r.json()).then(o=>{ serverInfo=o; $('reader').textContent='Drawings read by: '+o.reader; canRead=/OpenAI/.test(o.reader); overlayKey=overlayKey.startsWith('wait')?'':overlayKey; }).catch(()=>{ canRead=false; });

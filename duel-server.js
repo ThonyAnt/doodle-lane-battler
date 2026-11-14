@@ -152,7 +152,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       if(!room){ send(404,{error:'That room has closed.'}); return true; }
       const id=String(body.id||''), side=room.players.get(id);
       const screen=room.watchers.has(id);
-      if((side===undefined||side<0)&&!(screen&&(body.type==='rematch'||body.type==='plats'))){ send(403,{error:'You are not a player in this room.'}); return true; }
+      if((side===undefined||side<0)&&!(screen&&(body.type==='rematch'||body.type==='plats'||body.type==='layout'))){ send(403,{error:'You are not a player in this room.'}); return true; }
       const S=room.sim;
       if(body.type==='plats'){
         // Terrain from the big screen (the desktop overlay sends the tops of real windows). Only the screen may set it.
