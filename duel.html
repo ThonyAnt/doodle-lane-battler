@@ -5199,7 +5199,7 @@ function makeDraggable(w,bar){
   let grab=null;
   bar.addEventListener('pointerdown',e=>{ if(e.target.closest('.rmin,.tb')) return; const r=w.getBoundingClientRect(); grab=[e.clientX-r.left,e.clientY-r.top]; w.style.zIndex=++rTop; try{ bar.setPointerCapture(e.pointerId); }catch(_){} });
   bar.addEventListener('pointermove',e=>{ if(!grab) return; const r=w.getBoundingClientRect();
-    w.style.left=Math.max(40-r.width,Math.min(innerWidth-40,e.clientX-grab[0]))+'px'; w.style.top=Math.max(0,Math.min(innerHeight-TASK_H-22,e.clientY-grab[1]))+'px'; w.style.right='auto'; w.style.transform='none'; });
+    w.style.left=Math.max(40-r.width,Math.min(innerWidth-40,e.clientX-grab[0]))+'px'; w.style.top=Math.max(0,Math.min(innerHeight-TASK_H-22,e.clientY-grab[1]))+'px'; w.style.right='auto'; w.style.bottom='auto'; w.style.transform='none'; });      // a window pinned by its bottom edge would stretch when moved
   const drop=()=>{ grab=null; }; bar.addEventListener('pointerup',drop); bar.addEventListener('pointercancel',drop);
 }
 // One of this game's own panels (setup, sketchbook, join code) as a window, with a button on his taskbar.
