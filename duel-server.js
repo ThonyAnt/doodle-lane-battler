@@ -2,7 +2,7 @@
 // Loaded by server.js. The match rules come from the marked block in duel.html, so there is one copy of them.
 const fs=require('fs'), path=require('path');
 
-const PROMPT="You are the referee of a stick-figure fighting game. The attached image is a quick doodle a player drew as their fighter's weapon or ability.\nDecide what it is and classify it. Reply with JSON only, no other text:\n{\"name\":\"2-3 word name of what was drawn\",\"kind\":\"melee|ranged|bomb|shield|dash|heal\",\"style\":\"blade|spear|hammer|fist|bow|gun|staff|hurl\",\"element\":\"fire|water|plant|none\"}\nRules: kind is \"melee\" for anything swung, stabbed or punched with (sword, axe, hammer, club, fist, claw, whip).\n\"ranged\" for anything that shoots or flies straight (gun, bow, wand, laser, shuriken, arrow).\nstyle is how it is fought with. For melee: \"blade\" for swords, knives, axes and anything with an edge; \"spear\" for spears, lances, tridents, poles and other long thrusting weapons; \"hammer\" for hammers, maces, clubs, bats and other heavy blunt weapons; \"fist\" for gloves, gauntlets, claws, fists and feet. For ranged: \"bow\" for bows, crossbows and slingshots; \"gun\" for guns, cannons, lasers and anything with a trigger; \"staff\" for magic staffs, wands, orbs and spell books; \"hurl\" for things thrown by hand such as shuriken, knives, boomerangs, rocks and cards. For other kinds use \"\".\n\"bomb\" for anything that explodes or splashes over an area (bomb, grenade, flask, meteor, firework).\n\"shield\" for anything that blocks or protects (shield, wall, armour, helmet, umbrella).\n\"dash\" for anything that makes you fast or lets you fly (wings, rocket, boots, skateboard, lightning bolt, spring).\n\"heal\" for anything that restores health (heart, food, drink, bandage, medkit).\nelement is \"fire\" for flames, heat or lava, \"water\" for water or ice, \"plant\" for leaves, wood or vines, otherwise \"none\". Ink colour is a hint (red fire, blue water, green plant) but the content of the drawing decides.\nAlways pick the closest fit, even for a scribble.";
+const PROMPT="You are the referee of a stick-figure fighting game. The attached image is a quick doodle a player drew as their fighter's weapon or ability. It can be anything at all: a real weapon, a tool, an animal, food, furniture, a vehicle, a made-up thing. Work out what it is, then decide how a fighter would use THAT object in a fight.\nReply with JSON only, no other text:\n{\"name\":\"2-3 word name of what was drawn\",\"kind\":\"melee|ranged|bomb|shield|dash|heal\",\"style\":\"blade|spear|hammer|fist|bow|gun|staff|hurl\",\"element\":\"fire|water|plant|none\",\"power\":1-10,\"range\":1-10,\"speed\":1-10,\"traits\":[\"first choice\",\"second choice\"]}\nkind: \"melee\" for anything swung, stabbed or punched with (sword, axe, club, whip, chainsaw, fish, frying pan, guitar). \"ranged\" for anything that shoots, or that you would throw (gun, bow, wand, laser, shuriken, banana, ball, bird). \"bomb\" for anything that explodes or splashes over an area (bomb, grenade, flask, meteor, firework). \"shield\" for anything that blocks or protects (shield, wall, armour, helmet, umbrella, door). \"dash\" for anything that makes you fast or lets you fly (wings, rocket, boots, skateboard, car, horse, lightning bolt). \"heal\" for anything that restores health (heart, food, drink, bandage, medkit).\nstyle is how it is fought with. For melee: \"blade\" for anything with an edge (sword, knife, axe, saw, scissors); \"spear\" for long thin things that thrust or lash (spear, lance, trident, pole, whip, chain, fishing rod); \"hammer\" for heavy blunt things (hammer, mace, club, bat, frying pan, guitar, chair, big fish); \"fist\" for things worn on hands or feet (gloves, claws, boots, paws). For ranged: \"bow\" for bows, crossbows and slingshots; \"gun\" for anything with a trigger or barrel (gun, cannon, laser, hose); \"staff\" for magic (staff, wand, orb, spell book, crystal); \"hurl\" for anything thrown by hand (shuriken, knife, boomerang, rock, card, banana, ball, pie). For other kinds use \"\".\nelement is \"fire\" for flames, heat or lava, \"water\" for water or ice, \"plant\" for leaves, wood or vines, otherwise \"none\". Ink colour is a hint (red fire, blue water, green plant) but the content of the drawing decides.\npower, range and speed describe the object itself, not how well it is drawn: power is how hard one hit lands (a sledgehammer 9, a feather 1), range is how far it reaches or flies (a sniper rifle 10, a spear 7, a knife 2), speed is how quickly it can be used again (a dagger 9, a cannon 2). Make them differ: a real object is never 5, 5, 5. The game rescales them to a fixed total, so only the proportions matter.\ntraits: the two that best suit the object, best first, chosen from: pierce (gets through shields: drills, needles, lasers), heavy (huge knockback: hammers, cannons, trucks), flurry (hits twice: chainsaws, claws, twin blades, machine guns), pull (drags the enemy in: hooks, whips, magnets, lassos, vacuums), blast (bursts on hit: rockets, fireworks, magic), launch (pops the enemy upward: springs, uppercuts, geysers, shovels), lucky (sometimes double damage: dice, cards, anything silly), guard (melee only, protects while swinging: big or armoured weapons), boomerang (ranged only, comes back: boomerangs, yo-yos, bananas, frisbees), bounce (ranged and bomb only, bounces: balls, rubber things, eggs), homing (ranged only, seeks the enemy: birds, bees, missiles, magic), swift (makes you run faster: light or sporty things), thorns (shield only, hurts attackers: spikes, cactus), bubble (shield only, covers all sides: domes, bubbles, shells), cleanse (heal only, cures burning and slowing: medicine, water), feast (heal only, an extra helping: big meals).\nAlways pick the closest fit, even for a scribble. Never refuse and never leave a field out.";
 
 module.exports=function({readBody,KEY,MODEL,BASE}){
   const page=path.join(__dirname,'duel.html'), src=fs.readFileSync(page,'utf8');
@@ -10,16 +10,18 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
     ';return {createDuel,validItem,localGuess,nameFor,inkCost,stockItem,INK_MAX,PAD_W,PAD_H};')();
 
   /* ---------- reading a drawing ---------- */
-  async function askOpenAI(png){
+  async function askOpenAI(png,strokes){
     const r=await fetch(BASE+'/chat/completions',{method:'POST',signal:AbortSignal.timeout(8000),
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+KEY},
-      body:JSON.stringify({model:MODEL,response_format:{type:'json_object'},max_tokens:80,
+      body:JSON.stringify({model:MODEL,response_format:{type:'json_object'},max_tokens:170,
         messages:[{role:'user',content:[{type:'text',text:PROMPT},
           {type:'image_url',image_url:{url:'data:image/png;base64,'+png.toString('base64'),detail:'low'}}]}]})});
     const body=await r.json();
     if(!r.ok) throw new Error((body.error&&body.error.message)||('OpenAI HTTP '+r.status));
-    const spec=D.validItem(JSON.parse(body.choices[0].message.content));
-    if(!spec) throw new Error('reply did not match the item schema');
+    // validItem sorts out an answer that does not fit the kinds or styles, using the drawing's shape if it has to.
+    let reply=null; try{ reply=JSON.parse(body.choices[0].message.content); }catch(e){}
+    const spec=D.validItem(reply&&typeof reply==='object'?reply:{},strokes);
+    if(!spec) throw new Error('reply could not be read');
     if(!spec.name) spec.name=D.nameFor(spec);
     return spec;
   }
@@ -27,7 +29,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   async function readDrawing(png,strokes){
     if(KEY&&isPng(png)){
       const t=Date.now();
-      try{ const spec=await askOpenAI(png); console.log('duel read',Date.now()-t+'ms',JSON.stringify(spec)); return {spec,source:'OpenAI'}; }
+      try{ const spec=await askOpenAI(png,strokes); console.log('duel read',Date.now()-t+'ms',JSON.stringify(spec)); return {spec,source:'OpenAI'}; }
       catch(e){ console.error('duel: OpenAI read failed after',Date.now()-t+'ms:',e.message); }
     }
     return strokes?{spec:D.localGuess(strokes),source:'local guess'}:null;
@@ -158,6 +160,18 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
         room.art[side][slot]={strokes:made.strokes,ver:it.ver,kind:it.kind,style:it.style}; room.dirty=true;
         broadcast(room,'item',{side,slot,strokes:made.strokes,ver:it.ver,kind:it.kind,style:it.style});
         send(200,{name:it.name,kind:it.kind,style:it.style,element:it.el}); return true;
+      }
+      if(body.type==='tweak'){
+        // Change an item already made: what it is, which of its two traits it uses, or its power-for-speed tuning.
+        const slot=body.slot===1?1:0, ch={}, a=room.art[side][slot];
+        if(typeof body.kind==='string'){ ch.kind=body.kind; ch.style=String(body.style||''); }
+        if(typeof body.trait==='string') ch.trait=body.trait;
+        if(Number.isFinite(body.tune)) ch.tune=body.tune;
+        const it=a&&S.tweak(side,slot,ch);
+        if(!it){ send(409,{error:'That cannot be changed now.'}); return true; }
+        Object.assign(a,{ver:it.ver,kind:it.kind,style:it.style}); room.dirty=true;
+        broadcast(room,'item',{side,slot,strokes:a.strokes,ver:it.ver,kind:it.kind,style:it.style});
+        send(200,{}); return true;
       }
       if(body.type==='ready'){ S.setReady(side); room.dirty=true; send(200,{}); return true; }
       if(body.type==='rematch'){
