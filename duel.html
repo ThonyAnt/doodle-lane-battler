@@ -479,6 +479,7 @@ Window titlebars = platforms
         <button id="drawTablets" aria-pressed="false" title="This device becomes the big screen; two tablets or phones draw and play">Draw on tablets</button>
       </div>
       <button id="stageBtn" title="Fight inside a banker's spreadsheet">Stage: desktop</button>
+      <button id="sfxBtn" title="Sound effects on or off">Sound: on</button>
       <button id="restart">Restart</button>
       <a href="/" class="badge lanelink">Lane Battler</a>
       <button id="deskResume" hidden>Resume</button><button id="deskQuit" hidden>Quit</button>
@@ -520,6 +521,7 @@ Window titlebars = platforms
 </main>
 
 <script src="/qrcode.js"></script>
+<script src="/sfx.js"></script>
 <script src="/inkshop.js"></script>
 <script src="/anim/core.js"></script>
 <script src="/anim/rig.js"></script>
@@ -1876,7 +1878,7 @@ async function makeItem(d){
       if(canRead) try{ const r=await fetch('/duel/read',{method:'POST',body:await (await fetch('data:image/png;base64,'+png)).blob()}); if(r.ok){ spec=validItem(await r.json()); source='OpenAI'; } }catch(e){}
       if(!spec){ spec=localGuess(strokes); source='local guess'; }
       const it=sim.setItem(d.side,k,spec,inkCost(strokes)); if(!it) throw new Error('Too late: the round has started.');
-      setArt(d.side,k,strokes,it.ver,it.kind,it.style); accept(sim.snapshot()); spec={name:it.name,kind:it.kind,element:it.el};
+      setArt(d.side,k,strokes,it.ver,it.kind,it.style); accept(sim.snapshot()); if(window.SFX) SFX.play('made'); spec={name:it.name,kind:it.kind,element:it.el};
     }
     read.innerHTML=`<b>${esc(spec.name)}</b>: ${spec.kind}${spec.element!=='none'?', '+spec.element:''} (read by ${esc(source)}). ${HINT[spec.kind]}`;
     d.strokes=[]; if(!(view&&view.items[d.side][1-k])) read.innerHTML+=' Slot '+'AB'[1-k]+' is still empty.';
@@ -1894,7 +1896,7 @@ async function takeStock(d,key){
       const o=await r.json(); d.busy=false; if(!r.ok) throw new Error(o.error||'The server could not add that.'); spec=o;
     }else{
       const it=sim.setItem(d.side,k,made.spec,cost); if(!it) throw new Error('Not enough ink left for that.');
-      setArt(d.side,k,made.strokes,it.ver,it.kind,it.style); accept(sim.snapshot()); spec={name:it.name,kind:it.kind,style:it.style,element:it.el};
+      setArt(d.side,k,made.strokes,it.ver,it.kind,it.style); accept(sim.snapshot()); if(window.SFX) SFX.play('made'); spec={name:it.name,kind:it.kind,style:it.style,element:it.el};
     }
     read.innerHTML=`<b>${esc(spec.name)}</b>: ${spec.kind}${spec.style?' ('+spec.style+')':''}${spec.element!=='none'?', '+spec.element:''}. ${HINT[spec.kind]}`; d.showStock=false;
     d.strokes=[]; if(!(view&&view.items[d.side][1-k])) read.innerHTML+=' Slot '+'AB'[1-k]+' is still empty.';
@@ -2027,7 +2029,7 @@ function joinRoom(code,watch){
   // Once a big screen has been seen the player view stays, so the screen reloading does not flip the layout mid-fight.
   on('players',d=>{ net.present=d.present; net.bot=!!d.bot; net.screen=net.screen||!!d.screen; setPad(); });
   on('state',accept);
-  on('item',d=>{ setArt(d.side,d.slot,d.strokes,d.ver,d.kind,d.style); if(desk[d.side]) updateDesk(desk[d.side]); });
+  on('item',d=>{ if(window.SFX&&!(padView&&net.screen)) SFX.play('made'); setArt(d.side,d.slot,d.strokes,d.ver,d.kind,d.style); if(desk[d.side]) updateDesk(desk[d.side]); });
   on('reset',()=>{ for(const s of [0,1]) art[s]=[null,null]; fx=[]; for(const d of desk) if(d){ d.strokes=[]; d.k=0; } });
   on('plats',d=>{ if(!(deskLike()&&deskEdges&&net.watch)) ARENA_PLATS=d.plats||PLATS; });
   on('hello',()=>{ deskSent=''; rLayoutSent=''; rEdgesSent=''; deskTerrain(); });
@@ -2057,6 +2059,34 @@ function worldEvent(e){
       { const h=document.querySelector('#st-hap'); if(h) h.textContent='Haptics \u2192 '+NAME[e.side]+': '+(e.hap||'thud')+' '+(e.dir||'R')+' '+Math.min(1,Math.max(0.2,e.n/18)).toFixed(2); } break;
   }
 }
+/* ---------- sound ---------- */
+// Sound effects (sfx.js): one sound per game event, plus a few read off the difference between two snapshots (a swing
+// starting, a jump, a landing, a hack, the countdown). A controller phone stays quiet when a big screen is in the room,
+// so the same hit is not heard twice. Everything here checks window.SFX, so the page works without the file.
+const sfxPan=x=>Math.max(-0.7,Math.min(0.7,((x||0)/(ARENA_W||960)*2-1)*0.7));
+function sfxHear(p,v){
+  const X=window.SFX; if(!X||X.muted||(padView&&net&&net.screen)) return;
+  for(const e of v.ev){ const pan=sfxPan(e.x);
+    switch(e.e){
+      case 'hit': X.play(e.ult&&e.fin?'boom':'hit',{pan,w:e.w!==undefined?e.w:Math.min(1,e.n/18),el:e.el}); break;
+      case 'shot': X.play('shot',{pan,st:e.st}); break;
+      case 'boom': X.play('boom',{pan,small:!!e.s}); break;
+      case 'block': case 'quake': case 'dash': case 'heal': case 'zip': case 'ult': case 'slash': case 'ko': case 'go': case 'del': case 'forge': case 'recycle': case 'restore': X.play(e.e,{pan}); break;
+      case 'obj': X.play('glyph',{pan:sfxPan(e.o&&e.o.x)}); break;
+    }
+  }
+  if(!p||!p.f||!v.f) return;
+  for(const s of [0,1]){ const a=p.f[s], b=v.f[s]; if(!a||!b) continue; const pan=sfxPan(b.x);
+    if(b.act&&(!a.act||a.act.m!==b.act.m||b.act.t<a.act.t-0.05)){ const m=MOVES[b.act.m.replace(/_b$/,'')]; if(m&&m.hits) X.play('swing',{pan,w:Math.min(1,(m.dmg||0.6)/1.6)}); }
+    if(v.phase==='fight'||v.practice){ if(b.vy>120&&!b.g&&(a.g||b.vy-a.vy>300)) X.play('jump',{pan}); else if(!a.g&&b.g&&a.vy<-260) X.play('land',{pan}); }
+  }
+  if(v.hack&&!p.hack) X.play('hack');
+  if(v.phase!==p.phase){ if(v.phase==='draw') X.play('round'); else if(v.phase==='over') X.play('win'); }
+  if(v.phase==='count'&&(p.phase!=='count'||Math.ceil(v.t)!==Math.ceil(p.t))) X.play('tick');
+}
+{ const b=$('sfxBtn'), show=()=>{ const on=!!window.SFX&&!SFX.muted; b.textContent='Sound: '+(on?'on':'off'); b.setAttribute('aria-pressed',on); };
+  if(!window.SFX) b.hidden=true; else{ show(); b.onclick=()=>{ SFX.toggle(); show(); }; }
+  document.addEventListener('pointerdown',e=>{ if(window.SFX&&e.target.closest&&e.target.closest('button,[data-m],.xltab,.task,.tool,.glyph')) SFX.play('click'); },true); }
 function accept(v){
   for(const e of v.ev){
     worldEvent(e);
@@ -2081,6 +2111,7 @@ function accept(v){
   for(const id of wobj.keys()) if(!seen.has(id)) wobj.delete(id);
   if(net&&!net.watch&&v.w){ ARENA_W=v.w; }
   sheetLive=!!v.sheet; if(v.sheet){ ARENA_PLATS=v.sheet.plats; ARENA_W=960; }      // on the spreadsheet stage the rules own the platforms
+  sfxHear(view,v);
   view=v; viewAt=performance.now();
 }
 

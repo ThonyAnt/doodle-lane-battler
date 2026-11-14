@@ -113,7 +113,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   return async function handle(req,res,url){
     const p=url.pathname;
     // Animation clip files and the preview lab are plain static files.
-    if(req.method==='GET'&&(/^\/anim\/[a-z_]+\.js$/.test(p)||p==='/anim-lab.html'||p==='/inkshop.js'||p==='/inkshop.css')){
+    if(req.method==='GET'&&(/^\/anim\/[a-z_]+\.js$/.test(p)||p==='/anim-lab.html'||p==='/inkshop.js'||p==='/sfx.js'||p==='/inkshop.css')){
       const file=path.join(__dirname,p.slice(1));
       if(!fs.existsSync(file)){ res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-cache'}); res.end('/* '+p+' is not written yet */'); return true; }
       res.writeHead(200,{'Content-Type':(p.endsWith('.html')?'text/html':p.endsWith('.css')?'text/css':'text/javascript')+'; charset=utf-8','Cache-Control':'no-cache'}); fs.createReadStream(file).pipe(res); return true;
