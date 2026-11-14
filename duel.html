@@ -601,7 +601,7 @@ Q     hack</div>
   <div id="hackMenu" hidden></div>
   <div id="stripbar" hidden><button id="hackPick" aria-haspopup="true" aria-expanded="false">Hack: <b id="hackName"></b> ▾</button><span id="stripInk"></span></div>
   <section class="tcs" id="tcs" hidden></section>
-  <section class="oswin" id="oswin"><div class="oslog" id="osLog"><div class="osl dim">INK-OS 2.0 ready. Type what the machine should change for the next round, like: make the floor lava</div></div>
+  <section class="oswin" id="oswin"><div class="oslog" id="osLog"><div class="osl dim">INK-OS 2.0 ready. Type what the machine should change, like: make the floor lava</div></div>
     <form class="osrow" id="osForm"><span>C:\&gt;</span><input id="osIn" maxlength="140" autocomplete="off" spellcheck="false" placeholder="low gravity   |   reset" aria-label="Tell the machine what to change"><button id="osGo">Run</button></form></section>
   <section class="desks" id="desks"></section>
 
@@ -4230,8 +4230,6 @@ async function osRun(text){
   }catch(err){ osLine('ERROR: the machine did not answer','bad'); }
   osBusy=false; if(sim) sim.setWait(false); $('osIn').disabled=false; $('osGo').disabled=false; $('osIn').focus();
 }
-$('osForm').onsubmit=e=>{ e.preventDefault(); osRun($('osIn').value); };
-$('osIn').addEventListener('keydown',e=>e.stopPropagation());      // typing to the machine is not playing
 // A room's update, told by the server to every device; and, each frame, an update for a match played in this page.
 function osHear(d){ osLive=d&&d.state==='installed'&&d.patch?d.patch:null; osToast=osLive?{name:osLive.name,notes:osLive.notes||[],until:view&&view.phase==='fight'?performance.now()+4200:0}:null; }
 function osTick(now){
@@ -4394,6 +4392,8 @@ function openLink(o){
 
 /* ================= page ================= */
 const $=id=>document.getElementById(id);
+$('osForm').onsubmit=e=>{ e.preventDefault(); osRun($('osIn').value); };      // the INK-OS terminal (see osRun)
+$('osIn').addEventListener('keydown',e=>e.stopPropagation());      // typing to the machine is not playing
 const PEN={none:'#1c2541',fire:'#e2552d',water:'#2a7fd4',plant:'#2f9e56'}, PCOL=['#1d3fbf','#b0121f'], NAME=['Blue','Red'];
 const GY=392, cv=$('arena'), L=cv.getContext('2d');
 // Match the canvas backing store to the screen's real pixels so lines stay sharp on high-density displays.
