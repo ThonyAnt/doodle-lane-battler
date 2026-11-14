@@ -120,7 +120,13 @@ body.handheld.playing #strip{display:block;position:fixed;left:8px;right:8px;top
 body.handheld.playing h1{display:none}
 body.handheld.playing header{justify-content:flex-end}
 body.handheld.playing #stripbar{display:flex;position:fixed;left:8px;right:170px;top:4px;height:36px;align-items:center;gap:8px;font-weight:700}
-body.handheld.playing #stripbar button{min-width:44px;height:34px;padding:0}
+body.handheld.playing #stripbar button{min-width:44px;height:34px;padding:0 12px;white-space:nowrap}
+#hackMenu{display:none}
+body.handheld.playing #hackMenu:not([hidden]){display:grid;gap:6px;position:fixed;left:8px;top:42px;z-index:40;width:min(440px,calc(100vw - 16px));padding:8px;background:var(--card,#fff);border:3px solid var(--ink);border-radius:14px;box-shadow:4px 4px 0 var(--ink)}
+#hackMenu button{display:block;width:100%;min-height:52px;padding:8px 12px;text-align:left;font-size:16px;line-height:1.2}
+#hackMenu button small{display:block;font-size:12px;font-weight:500;opacity:.8;margin-top:2px}
+#hackMenu button[aria-pressed="true"]{background:var(--hi)}
+body.handheld .tc [data-k="q"] small{font-size:11px;max-width:none;white-space:nowrap}
 body.handheld.playing #stripbar #stripInk{margin-left:auto;font-variant-numeric:tabular-nums}
 /* Desktop mode: transparent page, arena across the whole screen, the sketchbook as a floating card. */
 html.deskmode,body.deskmode{background:transparent!important;background-image:none!important;overflow:hidden}
@@ -359,6 +365,8 @@ body.handheld .tc[data-side="1"] [data-k="a"],body.handheld .tc[data-side="1"] [
 body.handheld.playing #strip{border:2px solid;border-color:#808080 #fff #fff #808080;border-radius:0;box-shadow:inset 1px 1px #404040}
 body.handheld.playing #stripbar{color:#fff;text-shadow:1px 1px 0 #000;font:700 13px Tahoma,Verdana,sans-serif}
 body.handheld.playing #stripbar button{text-shadow:none}
+body.handheld.playing #hackMenu:not([hidden]){background:#c3c3c3;border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0;box-shadow:inset -1px -1px #808080,inset 1px 1px #dfdfdf,3px 3px 0 rgba(0,0,0,.28);font:13px Tahoma,Verdana,sans-serif}
+body.handheld.playing #hackMenu button[aria-pressed="true"]{background:#0a246a;color:#fff}
 @media (max-aspect-ratio:1/1){
   body.handheld .desk{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr) auto auto auto auto auto;grid-template-areas:"title" "slots" "pad" "ink" "actions" "read" "card" "stock"}
 }
@@ -502,7 +510,8 @@ Window titlebars = platforms
 
   <section class="loadouts" id="loadouts" hidden></section>
   <canvas id="strip" hidden></canvas>
-  <div id="stripbar" hidden><button id="hackPrev" aria-label="Previous hack">◀</button><span id="hackName"></span><button id="hackNext" aria-label="Next hack">▶</button><span id="stripInk"></span></div>
+  <div id="hackMenu" hidden></div>
+  <div id="stripbar" hidden><button id="hackPick" aria-haspopup="true" aria-expanded="false">Hack: <b id="hackName"></b> ▾</button><span id="stripInk"></span></div>
   <section class="tcs" id="tcs" hidden></section>
   <section class="desks" id="desks"></section>
 
@@ -1814,6 +1823,8 @@ const ultDmg=[null,null], hpGhost=[HP,HP], hpSeen=[HP,HP], hpHold=[0,0];
 const CALM=matchMedia('(prefers-reduced-motion: reduce)').matches, PFLASH=['#b9c6ff','#ffb3b8'];
 // His interface and effects. Built once; the windows only show on the retro desktop, the effects are used everywhere.
 const FXI=makeInkShop(INK,L);
+// The hack Q runs until the player picks another: the storm of error pop-ups, or whatever this device chose last time.
+{ let id='popups'; try{ id=localStorage.getItem('dd-hack')||id; }catch(e){} const n=INK.HACKS.findIndex(h=>h.id===id); FXI.hackSel=n<0?3:n; }
 const wobj=new Map(), wPending=[[],[]], wBolt={}; let wPen=null;
 const cid=(()=>{ const mk=()=>Math.random().toString(36).slice(2,12);
   try{ let v=sessionStorage.getItem('dd-id'); if(!v){ v=mk(); sessionStorage.setItem('dd-id',v); } return v; }catch(e){ return mk(); } })();
@@ -2470,7 +2481,7 @@ function syncUI(){
       if(!it) return `<div class="loitem empty">${'AB'[k]}: nothing yet</div>`; const a=art[s][k];
       return `<div class="loitem"><div class="top">${a&&a.ver===it.ver?`<img alt="" src="${a.sprite.cv.toDataURL()}">`:''}<div class="nm">${esc(it.name)}<small>${TRAITS[it.tr]?TRAITS[it.tr].label:''} · ${it.cost} ink</small></div></div>${statBars(it)}</div>`; }).join('')}</div>`).join(''); }
   document.querySelectorAll('.tc').forEach(el=>{ const s=+el.dataset.side;
-    { const q=el.querySelector('[data-k="q"]'), od=v.f[s].od||0; if(q){ q.style.setProperty('--cd',1-od/100); const nm=INK.HACKS[FXI.hackSel].name.replace('.exe',''), sm=q.querySelector('small'); if(sm.textContent!==nm) sm.textContent=nm; }
+    { const q=el.querySelector('[data-k="q"]'), od=v.f[s].od||0; if(q){ q.style.setProperty('--cd',1-od/100); const nm=padView?INK.HACKS[FXI.hackSel].id:INK.HACKS[FXI.hackSel].name.replace('.exe',''), sm=q.querySelector('small'); if(sm.textContent!==nm) sm.textContent=nm; }
       const u=el.querySelector('[data-k="u"]'); if(u){ const un=ultOf(v.items[s][v.f[s].held]||v.items[s][1-v.f[s].held]).name.toLowerCase(), us=u.querySelector('small'); if(us.textContent!==un) us.textContent=un; u.style.setProperty('--cd',1-od/100); u.classList.toggle('full',od>=100&&v.phase==='fight'&&!!(v.items[s][0]||v.items[s][1])); } }
     for(const k of [0,1]){ const b=el.querySelector(`[data-k="${'ab'[k]}"]`), it=v.items[s][k], f=v.f[s];
       b.style.setProperty('--cd',f.cd[k]||0); const label=it?it.name+(it.kind==='heal'?' ×'+f.uses[k]:''):'Punch';
@@ -2739,7 +2750,13 @@ function drawStrip(v){
   strip.addEventListener('pointermove',e=>{ if(!stripPen) return; const p=at(e), l=stripPen[stripPen.length-1]; if(Math.hypot(p.x-l.x,p.y-l.y)>=3) stripPen.push(p); });
   const end=()=>{ if(!stripPen) return; const pts=stripPen; stripPen=null; submitStroke(net.side,pts,PCOL[net.side]); };
   strip.addEventListener('pointerup',end); strip.addEventListener('pointercancel',end);
-  $('hackPrev').onclick=()=>{ FXI.hackSel=(FXI.hackSel+4)%5; }; $('hackNext').onclick=()=>{ FXI.hackSel=(FXI.hackSel+1)%5; }; }
+  // Choosing the hack on a tablet: the button in the top bar opens the list of all five with what each does. A tap picks
+  // one and closes the list; a tap anywhere else just closes it. The choice is kept for the next visit ("dd-hack").
+  const menu=$('hackMenu'), pick=$('hackPick'), shut=()=>{ menu.hidden=true; pick.setAttribute('aria-expanded','false'); };
+  menu.innerHTML=INK.HACKS.map((h,i)=>'<button data-i="'+i+'"><b>'+h.name+'</b><small>'+h.desc.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</small></button>').join('');
+  pick.onclick=()=>{ if(!menu.hidden) return shut(); menu.hidden=false; pick.setAttribute('aria-expanded','true'); menu.querySelectorAll('button').forEach((b,i)=>b.setAttribute('aria-pressed',i===FXI.hackSel)); };
+  menu.onclick=e=>{ const b=e.target.closest('button'); if(!b) return; FXI.hackSel=+b.dataset.i; try{ localStorage.setItem('dd-hack',INK.HACKS[FXI.hackSel].id); }catch(_){} shut(); };
+  addEventListener('pointerdown',e=>{ if(!menu.hidden&&!e.target.closest('#hackMenu,#hackPick')) shut(); },true); }
 const botCursor=()=>bot&&bot.cursor?bot.cursor():null;
 function worldBack(v,now){
   if(v.board&&!RETRO){ const b=v.board; L.save(); L.fillStyle='#fff'; L.strokeStyle='#808080'; L.lineWidth=2; L.beginPath(); L.rect(b.x0,GY-b.top,b.x1-b.x0,b.top-b.floor); L.fill(); L.stroke(); L.restore(); }
