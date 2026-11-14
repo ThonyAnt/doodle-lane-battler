@@ -137,13 +137,32 @@
   };
   function bone(ctx,pts,w){ ctx.lineWidth=w; ctx.beginPath(); for(let i=0;i<pts.length;i+=2) i?ctx.lineTo(pts[i],pts[i+1]):ctx.moveTo(pts[i],pts[i+1]); ctx.stroke(); }
   // Draw the skeleton for a sample in local units. Caller has translated to the feet and scaled (flip x for facing left).
-  // opts: col, weapon(ctx,sample) callback drawn at the front hand with the weapon angle applied, back(ctx,sample) drawn behind the body.
+  // opts: col, halo (white outline), noodle (the InkShop figure style), weapon(ctx,sample) callback drawn at the front hand with the weapon angle applied, back(ctx,sample) drawn behind the body.
   A.draw=function(ctx,s,opts){
     const p=s.p,col=(opts&&opts.col)||'#111';
     ctx.save();
     ctx.translate(p[4],p[5]); if(s.rot) ctx.rotate(s.rot); if(s.turn!==undefined&&s.turn!==1) ctx.scale(Math.abs(s.turn)<0.08?0.08*(s.turn<0?-1:1):s.turn,1); ctx.translate(-p[4],-p[5]);
     if(opts&&opts.back) opts.back(ctx,s);
-    ctx.strokeStyle=col; ctx.lineCap='round'; ctx.lineJoin='round';
+    if(opts&&opts.noodle){
+      // The InkShop figure (from Alex's prototype): solid-colour limbs drawn as curves bowed through the elbow and knee,
+      // the far-side limbs slightly faded, a gently bellied torso, and a filled round head.
+      const q=(a,b,e)=>{ const k=0.68, mx=(p[a]+p[e])/2, my=(p[a+1]+p[e+1])/2; ctx.moveTo(p[a],p[a+1]); ctx.quadraticCurveTo(p[b]+(p[b]-mx)*k,p[b+1]+(p[b+1]-my)*k,p[e],p[e+1]); };
+      const al=ctx.globalAlpha; ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=7.4; ctx.lineCap='round'; ctx.lineJoin='round';
+      ctx.globalAlpha=al*0.78; ctx.beginPath(); q(4,14,16); q(2,6,8); ctx.stroke(); ctx.globalAlpha=al;
+      ctx.beginPath(); ctx.moveTo(p[4],p[5]); ctx.quadraticCurveTo((p[4]+p[2])/2+9,(p[5]+p[3])/2,p[2],p[3]); ctx.lineTo(p[0],p[1]); ctx.stroke();
+      if(opts.weapon){ ctx.save(); ctx.translate(p[12],p[13]); ctx.rotate(p[22]); opts.weapon(ctx,s); ctx.restore(); ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=7.4; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.globalAlpha=al; }
+      ctx.beginPath(); q(4,18,20); q(2,10,12); ctx.stroke();
+      ctx.beginPath(); ctx.arc(p[0],p[1],14.5,0,7); ctx.fill();
+      ctx.restore(); return;
+    }
+    ctx.lineCap='round'; ctx.lineJoin='round';
+    if(opts&&opts.halo){   // a white outline so the figure reads against any background
+      ctx.strokeStyle='#fff';
+      bone(ctx,[p[4],p[5],p[14],p[15],p[16],p[17]],16); bone(ctx,[p[2],p[3],p[6],p[7],p[8],p[9]],16); bone(ctx,[p[4],p[5],p[18],p[19],p[20],p[21]],16);
+      bone(ctx,[p[2],p[3],p[4],p[5]],17); bone(ctx,[p[2],p[3],p[10],p[11],p[12],p[13]],16);
+      ctx.lineWidth=14; ctx.beginPath(); ctx.ellipse(p[0],p[1],17,19,-0.1,0,7); ctx.stroke();
+    }
+    ctx.strokeStyle=col;
     bone(ctx,[p[4],p[5],p[14],p[15],p[16],p[17]],9.5);
     bone(ctx,[p[2],p[3],p[6],p[7],p[8],p[9]],9.5);
     bone(ctx,[p[4],p[5],p[18],p[19],p[20],p[21]],9.5);
@@ -209,6 +228,19 @@
       streak(0.50,0.93,0.80,Math.max(1.2,W*0.025),0.55*a);
       ctx.restore();
     }
+  };
+
+  // Weapon smear (from Alex's prototype): a translucent fan filling everything the weapon swept in the last moments,
+  // from the hand out to the tip. len = weapon length in local units. Draw before the body.
+  A.smear=function(ctx,clip,t,len,col,alpha){
+    if(typeof clip==='string') clip=A.clips[clip];
+    const span=Math.min(0.15,t); if(span<0.02) return;
+    const n=10, hand=[], tip=[];
+    for(let j=0;j<=n;j++){ const s=A.sample(clip,t-span*j/n), p=s.p, cs=Math.cos(p[22]), sn=Math.sin(p[22]); hand.push(A.xf(s,p[12],p[13])); tip.push(A.xf(s,p[12]+cs*len,p[13]+sn*len)); }
+    ctx.save(); ctx.globalAlpha=alpha===undefined?0.2:alpha; ctx.fillStyle=col||'#111'; ctx.beginPath(); ctx.moveTo(hand[0][0],hand[0][1]);
+    for(const b of tip) ctx.lineTo(b[0],b[1]);
+    for(let j=n;j>=0;j--) ctx.lineTo(hand[j][0],hand[j][1]);
+    ctx.closePath(); ctx.fill(); ctx.restore();
   };
 
   // Stand-in weapons for the lab. In the game the player's own drawing is used instead.

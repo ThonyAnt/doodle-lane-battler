@@ -62,6 +62,17 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   },33);
   setInterval(()=>{ for(const room of rooms.values()) for(const c of room.clients) c.res.write(': ping\n\n'); },15000);
 
+  function cleanPlats(a){
+    if(!Array.isArray(a)||a.length>32) return null;
+    const out=[];
+    for(const p of a){
+      if(!p||![p.x0,p.x1,p.y].every(Number.isFinite)) return null;
+      const x0=Math.max(0,Math.min(6000,Math.round(p.x0))), x1=Math.max(0,Math.min(6000,Math.round(p.x1))), y=Math.round(p.y);
+      if(x1-x0<30||y<26||y>3000) continue;
+      out.push({id:String(p.id||'').slice(0,24),wx:Number.isFinite(p.wx)?Math.round(p.wx):x0,x0,x1,y});
+    }
+    return out;
+  }
   function cleanStrokes(a){
     if(!Array.isArray(a)||!a.length||a.length>80) return null;
     let n=0; const out=[];
@@ -94,10 +105,10 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   return async function handle(req,res,url){
     const p=url.pathname;
     // Animation clip files and the preview lab are plain static files.
-    if(req.method==='GET'&&(/^\/anim\/[a-z_]+\.js$/.test(p)||p==='/anim-lab.html')){
+    if(req.method==='GET'&&(/^\/anim\/[a-z_]+\.js$/.test(p)||p==='/anim-lab.html'||p==='/inkshop.js'||p==='/inkshop.css')){
       const file=path.join(__dirname,p.slice(1));
       if(!fs.existsSync(file)){ res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-cache'}); res.end('/* '+p+' is not written yet */'); return true; }
-      res.writeHead(200,{'Content-Type':(p.endsWith('.html')?'text/html':'text/javascript')+'; charset=utf-8','Cache-Control':'no-cache'}); fs.createReadStream(file).pipe(res); return true;
+      res.writeHead(200,{'Content-Type':(p.endsWith('.html')?'text/html':p.endsWith('.css')?'text/css':'text/javascript')+'; charset=utf-8','Cache-Control':'no-cache'}); fs.createReadStream(file).pipe(res); return true;
     }
     if(p!=='/duel'&&p!=='/duel.html'&&!p.startsWith('/duel/')) return false;
     const send=(code,obj)=>{ res.writeHead(code,{'Content-Type':'application/json','Cache-Control':'no-store'}); res.end(JSON.stringify(obj)); };
@@ -131,6 +142,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       sse(res,'hello',{side,code:room.code,watch});
       room.art.forEach((a,s)=>a.forEach((x,slot)=>{ if(x) sse(res,'item',{side:s,slot,strokes:x.strokes,ver:x.ver,kind:x.kind,style:x.style}); }));
       broadcast(room,'players',roster(room));
+      if(room.plats) sse(res,'plats',{plats:room.plats});
       sse(res,'state',room.sim.snapshot());
       req.on('close',()=>{
         room.clients.delete(client); broadcast(room,'players',roster(room));
@@ -143,12 +155,32 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       const room=rooms.get(String(body.room||'').toUpperCase());
       if(!room){ send(404,{error:'That room has closed.'}); return true; }
       const id=String(body.id||''), side=room.players.get(id);
-      if((side===undefined||side<0)&&!(body.type==='rematch'&&room.watchers.has(id))){ send(403,{error:'You are not a player in this room.'}); return true; }
+      const screen=room.watchers.has(id);
+      if((side===undefined||side<0)&&!(screen&&(body.type==='rematch'||body.type==='plats'||body.type==='layout'))){ send(403,{error:'You are not a player in this room.'}); return true; }
       const S=room.sim;
+      if(body.type==='plats'){
+        // Terrain from the big screen (the desktop overlay sends the tops of real windows). Only the screen may set it.
+        if(!screen){ send(403,{error:'Only the big screen sets the terrain.'}); return true; }
+        const plats=cleanPlats(body.plats); if(!plats){ send(400,{error:'Bad terrain.'}); return true; }
+        room.plats=plats; S.setPlats(plats); broadcast(room,'plats',{plats}); send(200,{}); return true;
+      }
+      if(body.type==='layout'){
+        // The big screen describes its stage: arena width, the art board, and the window ledges.
+        if(!screen){ send(403,{error:'Only the big screen sets the layout.'}); return true; }
+        const plats=cleanPlats(body.plats||[]), b=body.board, w=+body.w;
+        if(!plats||!Number.isFinite(w)||w<600||w>6000){ send(400,{error:'Bad layout.'}); return true; }
+        const board=b&&[b.x0,b.x1,b.floor,b.top].every(Number.isFinite)?{x0:Math.round(b.x0),x1:Math.round(b.x1),floor:Math.round(b.floor),top:Math.round(b.top)}:null;
+        room.layout={w:Math.round(w),board,plats:plats.map(q=>Object.assign({},q))}; room.plats=plats; S.setLayout(room.layout); broadcast(room,'plats',{plats}); room.dirty=true; send(200,{}); return true;
+      }
+      if(body.type==='stroke'){
+        // A shape drawn during the fight: the rules recognise it and decide what it becomes.
+        const a=body.pts; if(!Array.isArray(a)||a.length<2||a.length>600||!a.every(q=>Array.isArray(q)&&Number.isFinite(q[0])&&Number.isFinite(q[1]))){ send(400,{error:'Bad stroke.'}); return true; }
+        S.stroke(side,a.map(q=>({x:Math.max(-200,Math.min(8000,q[0])),y:Math.max(-4000,Math.min(200,q[1]))})),String(body.col||'#111111').slice(0,9)); send(200,{}); return true;
+      }
       if(body.type==='input'){
         // Requests can arrive out of order, so only the newest one counts.
         const seq=+body.seq||0; let c=null; for(const x of room.clients) if(x.id===id) c=x;
-        if(c&&seq>c.seq){ c.seq=seq; S.setInput(side,{l:!!body.l,r:!!body.r,d:!!body.d,j:+body.j||0,a:+body.a||0,b:+body.b||0}); }
+        if(c&&seq>c.seq){ c.seq=seq; S.setInput(side,{l:!!body.l,r:!!body.r,d:!!body.d,j:+body.j||0,a:+body.a||0,b:+body.b||0,m:+body.m||0,q:+body.q||0,h:Math.max(0,Math.min(4,body.h|0))}); }
         send(200,{}); return true;
       }
       if(body.type==='item'){ const [code,out]=await makeItem(room,side,body); send(code,out); return true; }
@@ -177,7 +209,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       }
       if(body.type==='ready'){ S.setReady(side); room.dirty=true; send(200,{}); return true; }
       if(body.type==='rematch'){
-        room.sim=D.createDuel(); room.art=[[null,null],[null,null]]; room.dirty=true; broadcast(room,'reset',{}); send(200,{}); return true;
+        room.sim=D.createDuel(); if(room.layout) room.sim.setLayout(room.layout); else if(room.plats) room.sim.setPlats(room.plats); room.art=[[null,null],[null,null]]; room.dirty=true; broadcast(room,'reset',{}); send(200,{}); return true;
       }
       send(400,{error:'Unknown action.'}); return true;
     }

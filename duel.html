@@ -4,12 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Doodle Duel</title>
+<link rel="stylesheet" href="/inkshop.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Gochi+Hand&family=Karla:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
   --paper:#f3f6fb; --grid:#d3deee; --ink:#1c2541; --muted:#59658a; --hi:#ffd84a; --card:#ffffff;
-  --p1:#2f6fde; --p2:#d9486e; --fire:#e2552d; --water:#2a7fd4; --plant:#2f9e56;
+  --p1:#1d3fbf; --p2:#b0121f; --fire:#e2552d; --water:#2a7fd4; --plant:#2f9e56;
   --display:"Gochi Hand","Comic Sans MS",cursive; --body:"Karla",system-ui,-apple-system,"Segoe UI",sans-serif;
   color-scheme:light;
 }
@@ -50,6 +51,82 @@ body.playing .arenawrap{border-left:0;border-right:0;border-radius:0;box-shadow:
 #clock{font-family:var(--display);font-size:26px;min-width:96px;text-align:center;white-space:nowrap}
 .overlay{position:absolute;inset:46px 0 0 0;display:flex;align-items:center;justify-content:center;padding:12px;background:rgba(243,246,251,.86)}
 .overlay .box{background:var(--card);border:2px solid var(--ink);border-radius:14px;padding:14px 18px;max-width:540px;text-align:center;box-shadow:4px 4px 0 var(--ink)}
+/* Retro desktop: a pretend old desktop as the stage. Grey bevelled windows on teal, a taskbar for a floor. */
+#rdesk,#rtask{display:none}
+html.retro,body.retro{background:#2b7a77!important;font:12px Tahoma,Verdana,"Segoe UI",sans-serif;color:#000}
+body.retro #rdesk,body.retro #rtask{display:none!important}
+body.retro #rdesk-unused{display:block;position:fixed;inset:0 0 34px 0;background:#2b7a77 radial-gradient(ellipse at 70% 30%,#33908c 0,#2b7a77 55%,#215f5d 100%)}
+body.retro .ricon{position:absolute;left:10px;width:78px;text-align:center;color:#fff;text-shadow:1px 1px 0 #000;font-size:11px;user-select:none}
+body.retro .ricon svg{display:block;margin:0 auto 3px}
+body.retro #rtask{display:flex;position:fixed;left:0;right:0;bottom:0;height:34px;background:#c3c3c3;border-top:2px solid #fff;align-items:center;gap:4px;padding:2px 3px;z-index:150}
+body.retro #rtasks{display:flex;gap:3px;flex:1;min-width:0}
+body.retro #rtasks button{width:170px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:400}
+body.retro #rtasks button.up{border-color:#404040 #fff #fff #404040;box-shadow:inset 1px 1px #808080;background:#dedede;font-weight:700}
+body.retro #rstart{font-weight:700;display:flex;gap:5px;align-items:center}
+body.retro #rclock{border:2px solid;border-color:#808080 #fff #fff #808080;padding:3px 10px;font-variant-numeric:tabular-nums}
+body.retro button{font:12px Tahoma,Verdana,"Segoe UI",sans-serif;color:#000;border-radius:0;border:2px solid;border-color:#fff #404040 #404040 #fff;background:#c3c3c3;box-shadow:inset -1px -1px #808080,inset 1px 1px #dfdfdf;padding:3px 10px;min-height:24px}
+body.retro button:hover{background:#cfcfcf}
+body.retro button:active,body.retro button[aria-pressed="true"],body.retro .seg button[aria-pressed="true"]{border-color:#404040 #fff #fff #404040;box-shadow:inset 1px 1px #808080;background:#e4e4e4;color:#000}
+body.retro button.primary{font-weight:700;background:#c3c3c3}
+body.retro button:disabled{color:#808080;text-shadow:1px 1px #fff;opacity:1;background:#c3c3c3}
+body.retro .seg{border:0;border-radius:0;background:none;gap:2px;overflow:visible}
+body.retro .seg button{border:2px solid;border-color:#fff #404040 #404040 #fff;padding:3px 10px}
+.rwin{position:fixed;z-index:10;background:#c3c3c3;padding:2px;border:2px solid;border-color:#fff #404040 #404040 #fff;box-shadow:inset -1px -1px #808080,inset 1px 1px #dfdfdf,3px 3px 0 rgba(0,0,0,.28);display:flex;flex-direction:column;max-width:96vw}
+.rwin[hidden]{display:none!important}
+.rtitle{height:22px;flex:0 0 22px;background:linear-gradient(90deg,#0a246a,#3a6ea5 60%,#a6caf0);color:#fff;font:700 12px Tahoma,Verdana,sans-serif;display:flex;align-items:center;padding:0 3px 0 6px;gap:6px;white-space:nowrap;overflow:hidden;cursor:move;touch-action:none;user-select:none}
+.rtitle .rmin{margin-left:auto;width:18px;min-height:0;height:16px;padding:0;font:700 10px/10px Tahoma;flex:none}
+.rbody{flex:1;min-height:0;overflow:auto;padding:8px;margin-top:2px}
+.rbody.white{background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080}
+body.retro .arenawrap{z-index:200;pointer-events:none}
+body.retro .hud,body.retro .rules{display:none!important}
+body.retro #inkos .task{cursor:default}
+body.retro #inkos #artboard{cursor:crosshair}
+body.retro #inkos .sl.off{opacity:.45}
+body.retro.deskmode .rules-unused{border:0;border-radius:0;padding:0;background:none;font:11px/1.45 "Courier New",monospace;gap:6px}
+body.retro.deskmode header,body.retro.deskmode:not(.menu) header{position:static;transform:none;background:none;border:0;border-radius:0;box-shadow:none;padding:0;max-width:none;display:flex!important;white-space:normal}
+body.retro.deskmode .desks,body.retro.deskmode:not(.menu) .desks{position:static;transform:none;width:auto;display:grid!important}
+body.retro h1{display:none}
+body.retro .badge{border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080;background:#fff;color:#000;font-size:11px;padding:2px 8px}
+body.retro .desk{border:0;border-radius:0;box-shadow:none;background:none;padding:2px}
+body.retro .desk h2,body.retro .overlay h2{font:700 13px Tahoma,Verdana,sans-serif}
+body.retro .pad{border:2px solid;border-color:#808080 #fff #fff #808080;border-radius:0;max-height:38vh}
+body.retro .slot{border-radius:0} body.retro .slot[aria-pressed="true"]{box-shadow:inset 1px 1px #808080;background:#fff}
+body.retro .pen{border-radius:0;width:30px;height:30px;min-height:0} body.retro .pen[aria-pressed="true"]{outline:2px dotted #000;outline-offset:1px}
+body.retro .inkbar,body.retro .bar{border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080;background:#fff}
+body.retro .hud{border:0;padding:2px 4px;gap:10px;min-width:430px}
+body.retro #clock{font:700 15px "Courier New",monospace;background:#000;color:#3f3;padding:2px 8px;min-width:86px}
+body.retro .overlay{position:static;inset:auto;background:none;padding:0;display:block}
+body.retro .overlay[hidden]{display:none}
+body.retro .overlay .box{border:0;border-radius:0;box-shadow:none;background:none;padding:6px;max-width:none}
+body.retro .overlay h2{margin-bottom:6px}
+body.retro .qr{border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080}
+body.retro .rwin input{border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080}
+body.retro .stock{border-top:1px solid #808080}
+body.retro #rlog{font:11px/1.5 "Courier New",monospace;white-space:nowrap}
+body.retro #rlog .b{color:#1d3fbf} body.retro #rlog .r{color:#b0121f}
+/* Player view, during a fight: a live strip of the arena to draw quick shapes on with a finger or Pencil. */
+#strip,#stripbar{display:none}
+body.handheld.playing #strip{display:block;position:fixed;left:8px;right:8px;top:44px;width:calc(100vw - 16px);height:calc(100vh - 44px - var(--pad,300px));background:#fff;border:3px solid var(--ink);border-radius:14px;touch-action:none}
+body.handheld.playing h1{display:none}
+body.handheld.playing header{justify-content:flex-end}
+body.handheld.playing #stripbar{display:flex;position:fixed;left:8px;right:170px;top:4px;height:36px;align-items:center;gap:8px;font-weight:700}
+body.handheld.playing #stripbar button{min-width:44px;height:34px;padding:0}
+body.handheld.playing #stripbar #stripInk{margin-left:auto;font-variant-numeric:tabular-nums}
+/* Desktop mode: transparent page, arena across the whole screen, the sketchbook as a floating card. */
+html.deskmode,body.deskmode{background:transparent!important;background-image:none!important;overflow:hidden}
+body.deskmode main{max-width:none;padding:0}
+body.deskmode .arenawrap{position:fixed;inset:0;border:0;border-radius:0;box-shadow:none;background:transparent;overflow:visible}
+body.deskmode .hud,body.deskmode .rules,body.deskmode .tcs,body.deskmode .lanelink{display:none!important}
+body.deskmode #arena{width:100vw;height:100vh}
+body.deskmode .overlay{inset:0;background:transparent}
+body.deskmode header{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:6;background:var(--card);border:2px solid var(--ink);border-radius:14px;padding:8px 14px;box-shadow:4px 4px 0 var(--ink);margin:0;max-width:94vw;white-space:nowrap}
+body.deskmode .desks{position:fixed;left:50%;top:86px;transform:translateX(-50%);width:min(820px,94vw);z-index:6;margin:0}
+body.deskmode .desk{box-shadow:4px 4px 0 var(--ink)}
+body.deskmode .pad{max-height:34vh}
+body.deskmode:not(.menu) header,body.deskmode:not(.menu) .desks{display:none!important}
+body.handheld #drawHere,body.handheld #drawTablets{display:none}
+#deskHint{display:none}
+body.deskmode #deskHint{display:block;font-size:13px;color:var(--muted)}
 .overlay h2{font-family:var(--display);font-weight:400;font-size:28px;margin:0 0 4px;text-wrap:balance}
 .overlay p{margin:0 0 10px;color:var(--muted)}
 .share{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:center;text-align:left}
@@ -110,8 +187,11 @@ body.handheld .tc{--b:clamp(74px,13.5vw,136px);background:none;border:0;padding:
 body.handheld .tc .keys{display:none}
 body.handheld .tc .grp{display:grid;grid-template-columns:var(--b) var(--b);gap:12px;pointer-events:auto;touch-action:none}
 body.handheld .tc .grp:first-child{grid-template-areas:"l r" "d d"}
-body.handheld .tc .grp:last-child{grid-template-areas:"j j" "a b"}
+body.handheld .tc .grp:last-child{grid-template-areas:"j j" "a b" "m q"}
 body.handheld .tc [data-k="l"]{grid-area:l} body.handheld .tc [data-k="r"]{grid-area:r} body.handheld .tc [data-k="d"]{grid-area:d}
+body.handheld .tc [data-k="m"]{grid-area:m} body.handheld .tc [data-k="q"]{grid-area:q}
+body.handheld .tc [data-k="m"],body.handheld .tc [data-k="q"]{height:calc(var(--b)*.5);font-size:calc(var(--b)*.22)}
+body.handheld .tc [data-k="m"] small,body.handheld .tc [data-k="q"] small{display:inline;margin-left:6px}
 body.handheld .tc [data-k="a"]{grid-area:a} body.handheld .tc [data-k="b"]{grid-area:b} body.handheld .tc [data-k="j"]{grid-area:j}
 body.handheld .tc button{height:var(--b);min-width:0;font-size:calc(var(--b)*.36);border-width:3px;border-radius:24px;box-shadow:0 4px 0 var(--ink)}
 body.handheld .tc button.on{box-shadow:none;transform:translateY(4px)}
@@ -198,6 +278,97 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
 </style>
 </head>
 <body>
+<!-- InkShop interface: markup copied unchanged from prototype/inkshop-duel.html in al371160/hackprinceton-brainstorming-alex (his clock id renamed; his canvas omitted). -->
+<div id="inkos" hidden>
+<div id="desktop">
+  <div class="icon" style="top:12px"><svg width="34" height="32" viewBox="0 0 34 32"><rect x="3" y="2" width="28" height="20" fill="#c3c3c3" stroke="#000"/><rect x="6" y="5" width="22" height="14" fill="#2b5fa8"/><rect x="11" y="23" width="12" height="3" fill="#888"/><rect x="6" y="26" width="22" height="4" fill="#c3c3c3" stroke="#000"/></svg>My Computer</div>
+  <div class="icon" id="bin" style="top:86px"><svg width="34" height="34" viewBox="0 0 34 34"><g class="lid"><rect x="7" y="5" width="20" height="3" fill="#ddd" stroke="#000"/></g><path d="M9 9h16l-2 22H11z" fill="#e8e8e8" stroke="#000"/><path d="M14 12v16M17 12v16M20 12v16" stroke="#777"/></svg>Recycle Bin</div>
+  <div class="icon" style="top:162px"><svg width="34" height="32" viewBox="0 0 34 32"><circle cx="17" cy="16" r="12" fill="#3a8ad8" stroke="#000"/><path d="M8 12c5 3 7-4 11 1s6 2 7 0M10 22c4-2 6 2 10-1" stroke="#3c3" stroke-width="3" fill="none"/></svg>Internet</div>
+  <div class="icon" style="top:236px"><svg width="34" height="32" viewBox="0 0 34 32"><path d="M8 2h13l6 6v22H8z" fill="#fff" stroke="#000"/><path d="M12 22l4-8 3 5 2-3 3 6" stroke="#b0121f" stroke-width="2" fill="none"/></svg>arena.ink</div>
+
+  <div class="win" id="mainwin" style="left:88px;top:6px;width:calc(100vw - 330px);height:calc(100vh - 48px);min-width:880px;min-height:560px">
+    <div class="titlebar"><svg width="14" height="14" viewBox="0 0 14 14"><rect width="14" height="14" fill="#fff"/><path d="M3 11l6-8 2 2-6 8H3z" fill="#b0121f"/></svg><span>InkShop 2.0 — arena.ink &nbsp;[Player vs CPU]</span><span class="score" id="score">P1 0 : 0 CPU</span><div class="btns"><b class="tb">_</b><b class="tb">□</b><b class="tb">×</b></div></div>
+    <div class="menubar" id="menubar"><span data-m="file">File</span><span data-m="edit">Edit</span><span data-m="view">View</span><span data-m="insert">Insert</span><span data-m="hack">Hack</span><span data-m="net">Network</span><span data-m="help">Help</span></div>
+    <div class="main-body">
+      <div class="toolbox">
+        <div class="tools" id="tools"></div>
+        <div class="swatch bevel"><i id="fgsw" style="left:6px;top:5px;background:#111;z-index:1"></i><i style="left:18px;top:14px;background:#fff"></i></div>
+      </div>
+      <div class="center">
+        <div class="timeline inset">
+          <div class="lnames"><div>Timeline</div><div>👁 Rig</div><div>👁 Ink</div></div>
+          <div class="frames" id="frames"><div class="row" style="top:16px"></div><div class="row" style="top:32px"></div><div id="playhead"></div></div>
+        </div>
+        <div id="artboard" class="inset"><span class="stagelabel">Stage · 1 · Scene "Arena"</span></div>
+        <div class="palette">
+          <div class="cur inset"><i id="cursw" style="background:#111"></i></div>
+          <div class="colors" id="colors"></div>
+          <div class="hint" id="hint">WASD move · mouse draws/aims · right-click / J attack · E grab/throw · Q hack</div>
+        </div>
+      </div>
+      <div class="panel">
+        <fieldset><legend>Fighters</legend>
+          <div class="pcard"><div class="nm" style="color:#1d3fbf"><span>P1 · You</span><span id="p1st"></span></div>
+            <div class="bar hp"><i id="p1hp"></i><span>HP</span></div><div class="bar ink"><i id="p1ink"></i><span>INK</span></div><div class="bar od" id="p1odb"><i id="p1od"></i><span>OVERDRIVE</span></div>
+            <div class="wtext" id="p1w">Weapon: fists</div></div>
+          <div class="pcard"><div class="nm" style="color:#b0121f"><span>CPU · animator.bot</span><span id="cpst"></span></div>
+            <div class="bar hp"><i id="cphp"></i><span>HP</span></div><div class="bar ink"><i id="cpink"></i><span>INK</span></div><div class="bar od" id="cpodb"><i id="cpod"></i><span>OVERDRIVE</span></div>
+            <div class="wtext" id="cpw">Weapon: fists</div></div>
+        </fieldset>
+        <fieldset><legend>Hack.exe — Q to run</legend><div class="hacks" id="hacks"></div></fieldset>
+        <fieldset><legend>Rig Properties</legend>
+          <div class="sl"><span>Jelly</span><input type="range" id="s-jelly" min="0" max="1" step=".01"><span id="v-jelly"></span></div>
+          <div class="sl"><span>Stretch</span><input type="range" id="s-stretch" min="0" max="1" step=".01"><span id="v-stretch"></span></div>
+          <div class="sl"><span>Flab</span><input type="range" id="s-flab" min="0" max="1" step=".01"><span id="v-flab"></span></div>
+          <div class="sl"><span>Exaggerate</span><input type="range" id="s-exag" min=".5" max="2" step=".01"><span id="v-exag"></span></div>
+          <div class="sl"><span>Time scale</span><input type="range" id="s-speed" min=".2" max="1.5" step=".01"><span id="v-speed"></span></div>
+          <div class="sl"><span>CPU skill</span><input type="range" id="s-diff" min="0" max="1" step=".01"><span id="v-diff"></span></div>
+          <div class="chk"><label><input type="checkbox" id="c-onion"> Onion skin</label><label><input type="checkbox" id="c-rig"> Show rig</label></div>
+        </fieldset>
+        <fieldset><legend>AI Read Log</legend><div id="log" class="inset"></div></fieldset>
+        <fieldset><legend>Glyph Sheet</legend><div class="glyphs" id="glyphs"></div></fieldset>
+      </div>
+    </div>
+    <div class="statusbar"><div id="st-tool">Tool: Fight</div><div id="st-xy">0, 0</div><div id="st-hap">Haptics: idle</div><div id="st-net">Mode: Player vs CPU · NetLink: local sim</div><div id="st-fps">-- fps</div></div>
+  </div>
+
+  <div class="win small" id="netwin" style="right:12px;top:54px;width:216px;height:196px">
+    <div class="titlebar"><span>📡 NetLink 98</span><div class="btns"><b class="tb">_</b><b class="tb">×</b></div></div>
+    <div class="body">
+      <div class="netrow"><input type="radio" name="nm" checked id="nm-cpu"><label for="nm-cpu">Player vs CPU <b>(active)</b></label></div>
+      <div class="netrow"><input type="radio" name="nm" id="nm-host"><label for="nm-host">Host room</label></div>
+      <div class="netrow"><input type="radio" name="nm" id="nm-join"><label for="nm-join">Join room</label></div>
+      <div class="netrow">Room: <span class="mono inset" style="padding:0 4px;background:#fff">INK-7Q3F</span></div>
+      <div class="mono" style="font-size:10px;color:#444;line-height:13px">peers: P1(local) · CPU(sim)<br>sim 120Hz · snap 20Hz · pred ✓<br>pkts: input, stroke, snapshot</div>
+      <div style="margin-top:5px"><span class="btn" id="net-go">Connect…</span></div>
+    </div>
+  </div>
+  <div class="win small" id="noteswin" style="right:12px;top:274px;width:216px;height:190px">
+    <div class="titlebar"><span>📝 notes.txt - Notepad</span><div class="btns"><b class="tb">_</b><b class="tb">×</b></div></div>
+    <div class="body mono" style="font-size:10px;line-height:13px;white-space:pre">CONTROLS
+A/D run   W/Space jump  S drop
+Mouse: draw (B L R O tools)
+Fight tool (F): click=attack,
+  drag self=fling, drag foe=grab
+Right-click / J = attack @cursor
+E pick up / throw weapon
+Q run hack · 1-5 pick hack
+Window titlebars = platforms
+  after BREAKOUT.exe</div>
+  </div>
+</div>
+<div id="taskbar"><div id="start"><svg width="16" height="14" viewBox="0 0 16 14"><path d="M1 2l6-1v6H1zM8 1l7-1v7H8zM1 8h6v5l-6-1zM8 8h7v6l-7-1z" fill="#c22"/><path d="M8 1l7-1v7H8z" fill="#2a2"/><path d="M1 8h6v5l-6-1z" fill="#26c"/><path d="M8 8h7v6l-7-1z" fill="#eb0"/></svg>Start</div>
+  <div class="task on">🖌 InkShop 2.0 - arena.ink</div><div class="task">📡 NetLink 98</div><div class="task">📝 notes.txt</div><div id="ink-clock" class="inset">12:00 AM</div></div>
+<div class="menu bevel" id="menu" hidden></div>
+<div id="toast"></div>
+
+</div>
+<div id="rdesk" hidden>
+  <div class="ricon" style="top:14px"><svg width="34" height="30" viewBox="0 0 34 30"><path d="M2 8h11l3 3h16v17H2z" fill="#f5d76e" stroke="#000"/><path d="M2 12h30" stroke="#000"/></svg>My Sketches</div>
+  <div class="ricon" style="top:88px"><svg width="30" height="32" viewBox="0 0 30 32"><path d="M6 9h18l-2 21H8z" fill="#dfe6ee" stroke="#000"/><path d="M3 9h24M11 9V5h8v4M11 14v12M15 14v12M19 14v12" stroke="#000" fill="none"/></svg>Recycle Bin</div>
+  <div class="ricon" style="top:164px"><svg width="28" height="34" viewBox="0 0 28 34"><path d="M3 2h15l7 7v23H3z" fill="#fff" stroke="#000"/><path d="M18 2v7h7" fill="none" stroke="#000"/><path d="M8 24l4-9 4 6 3-3 2 6" fill="none" stroke="#b0121f" stroke-width="2"/></svg>arena.ink</div>
+</div>
+<div id="rtask" hidden><button id="rstart" title="Game menu (Esc)"><svg width="14" height="16" viewBox="0 0 14 16"><path d="M7 1c3 5 5 7 5 10a5 5 0 0 1-10 0c0-3 2-5 5-10z" fill="#1d3fbf" stroke="#000"/></svg>Start</button><div id="rtasks"></div><span id="rclock"></span></div>
 <main>
   <header>
     <h1>Doodle Duel</h1>
@@ -210,8 +381,14 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
         <button id="modeOnline" aria-pressed="false">Online</button>
         <button id="modePractice" aria-pressed="false">Practice</button>
       </div>
+      <div class="seg" role="group" aria-label="Where the drawing happens">
+        <button id="drawHere" aria-pressed="true" title="Draw and play on this device">Draw here</button>
+        <button id="drawTablets" aria-pressed="false" title="This device becomes the big screen; two tablets or phones draw and play">Draw on tablets</button>
+      </div>
       <button id="restart">Restart</button>
-      <a href="/" class="badge">Lane Battler</a>
+      <a href="/" class="badge lanelink">Lane Battler</a>
+      <button id="deskResume" hidden>Resume</button><button id="deskQuit" hidden>Quit</button>
+      <span id="deskHint">Esc or Ctrl+Alt+D: this menu</span>
     </div>
   </header>
 
@@ -226,13 +403,15 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
   </section>
 
   <section class="loadouts" id="loadouts" hidden></section>
+  <canvas id="strip" hidden></canvas>
+  <div id="stripbar" hidden><button id="hackPrev" aria-label="Previous hack">◀</button><span id="hackName"></span><button id="hackNext" aria-label="Next hack">▶</button><span id="stripInk"></span></div>
   <section class="tcs" id="tcs" hidden></section>
   <section class="desks" id="desks"></section>
 
   <ul class="rules">
     <li><b>Draw two things</b> before each round: a sword, a bow, a bomb, a shield, wings, a snack. You share 100 ink between them, and more ink means a stronger item.</li>
     <li><b>Fight live:</b> move, double jump, and use your two drawings. An empty slot is a punch. First to 2 rounds wins.</li>
-    <li><b>How to trigger each move</b> (A and B are your two drawings; F and G on a keyboard, K and L for the second player):
+    <li><b>How to trigger each move</b> (A and B are your two drawings: <b>J</b> and <b>K</b> on a keyboard; with two players on one keyboard the second player uses <b>,</b> and <b>.</b>):
       <br>· <b>Combo:</b> stand still and tap the button again and again. Swords, spears and hammers chain 3 moves, fists chain 4.
       <br>· <b>Running attack:</b> hold a direction until you are sprinting, then press.
       <br>· <b>Air attack:</b> jump, then press.
@@ -246,6 +425,7 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
 </main>
 
 <script src="/qrcode.js"></script>
+<script src="/inkshop.js"></script>
 <script src="/anim/core.js"></script>
 <script src="/anim/locomotion.js"></script>
 <script src="/anim/blade.js"></script>
@@ -418,6 +598,7 @@ const MOVES={
   hurl_quick: {dur:0.22,shots:[0.08],cancel:0.18,next:'hurl_quick',dmg:0.45,speed:820,grav:160,stun:0},
   hurl_air:   {dur:0.36,shots:[0.10,0.18,0.26],aims:[0.2,0.55,0.9],dmg:0.5,speed:780,stun:0.1,end:1},
   hurl_power: {dur:0.66,shots:[0.42],dmg:1.9,speed:1050,kbMul:2,end:1},
+  mine:     {dur:0.32,hits:[0.13],mine:1,dmg:0.5,kb:120,lift:60,lunge:60,end:1},   // the built-in pick: chips walls, floors and drawn shapes
   throw:    {dur:0.22,end:1}
 };
 // What a melee or ranged drawing is fought with. Each style has its own moves and animation set.
@@ -426,28 +607,160 @@ const MELEE_STYLES=['blade','spear','hammer','fist'], RANGED_STYLES=['bow','gun'
 // The damage numbers come from a round-robin of all eight styles with equal stats, trait and ink, played by the bot with
 // steady button presses added; each was adjusted until every style won about half its rounds. They even out the bot's play,
 // which is a guess at how people play, so expect to retune after watching real matches.
-const STYLE={blade:{reach:1,dmg:0.97,kb:1},spear:{reach:1.4,dmg:0.58,kb:0.9},hammer:{reach:1.05,dmg:1.46,kb:1.3},fist:{reach:0.62,dmg:0.79,kb:0.9},
+const STYLE={pick:{reach:1,dmg:1,kb:1},blade:{reach:1,dmg:0.97,kb:1},spear:{reach:1.4,dmg:0.58,kb:0.9},hammer:{reach:1.05,dmg:1.46,kb:1.3},fist:{reach:0.62,dmg:0.79,kb:0.9},
   bow:{reach:1,dmg:1.3,kb:1},gun:{reach:1,dmg:1.55,kb:1},staff:{reach:1,dmg:1.03,kb:1},hurl:{reach:1,dmg:1.55,kb:1}};
 const MUZZLE={bow:[40,72],gun:[48,71],staff:[66,70],hurl:[46,68]};
 const styleOf=(kind,style)=>kind==='melee'?(MELEE_STYLES.includes(style)?style:'blade'):kind==='ranged'?(RANGED_STYLES.includes(style)?style:'gun'):'';
 const ALT=['blade1','blade2','bow_shot','bow_quick','gun_shot','gun_rapid','spear1','spear2','hammer1','hammer2','fist1','fist3','staff_shot','staff_quick','hurl_shot','hurl_quick'];   // moves with a second animation, name + '_b'
+/* ===== InkShop (Alex's prototype) =====
+   Everything between BEGIN and END is copied unchanged from prototype/inkshop-duel.html in
+   al371160/hackprinceton-brainstorming-alex: his geometry helpers, glyph templates, shape recogniser and hack table.
+   Points are {x,y} with y pointing DOWN, as in his game. Only this wrapper and the export list are ours. */
+const INK=(()=>{
+/* --- BEGIN verbatim --- */
+const PI=Math.PI,TAU=PI*2,INK_PX=0.085;
+const clamp=(v,a,b)=>v<a?a:v>b?b:v,lerp=(a,b,t)=>a+(b-a)*t,rand=(a=0,b=1)=>a+Math.random()*(b-a);
+const sgn=v=>v<0?-1:1,D=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),pick=a=>a[Math.floor(Math.random()*a.length)];
+function segDist(p,a,b){const vx=b.x-a.x,vy=b.y-a.y,l=vx*vx+vy*vy||1;const t=clamp(((p.x-a.x)*vx+(p.y-a.y)*vy)/l,0,1);return Math.hypot(p.x-a.x-vx*t,p.y-a.y-vy*t)}
+function segX(a,b,c,d){const r={x:b.x-a.x,y:b.y-a.y},s={x:d.x-c.x,y:d.y-c.y};const den=r.x*s.y-r.y*s.x;if(Math.abs(den)<1e-6)return null;
+ const t=((c.x-a.x)*s.y-(c.y-a.y)*s.x)/den,u=((c.x-a.x)*r.y-(c.y-a.y)*r.x)/den;if(t<-.08||t>1.08||u<-.08||u>1.08)return null;return{x:a.x+r.x*t,y:a.y+r.y*t,t,u}}
+const pathLen=p=>{let l=0;for(let i=1;i<p.length;i++)l+=D(p[i],p[i-1]);return l};
+function bbox(p){let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const q of p){x0=Math.min(x0,q.x);y0=Math.min(y0,q.y);x1=Math.max(x1,q.x);y1=Math.max(y1,q.y)}return{x:x0,y:y0,w:x1-x0,h:y1-y0}}
+function resample(pts,n){const L=pathLen(pts);if(L===0)return Array(n).fill(pts[0]);const I=L/(n-1);const out=[{...pts[0]}];let acc=0;const p=pts.map(q=>({...q}));
+ for(let i=1;i<p.length;i++){const d=D(p[i-1],p[i]);if(acc+d>=I&&d>0){const t=(I-acc)/d;const q={x:p[i-1].x+t*(p[i].x-p[i-1].x),y:p[i-1].y+t*(p[i].y-p[i-1].y)};out.push(q);p.splice(i,0,q);acc=0}else acc+=d}
+ while(out.length<n)out.push({...pts[pts.length-1]});return out.slice(0,n)}
+function densify(pts,step=4){const out=[pts[0]];for(let i=1;i<pts.length;i++){const a=pts[i-1],b=pts[i],n=Math.max(1,Math.ceil(D(a,b)/step));for(let k=1;k<=n;k++)out.push({x:lerp(a.x,b.x,k/n),y:lerp(a.y,b.y,k/n)})}return out}
+const centroid=p=>{let x=0,y=0;for(const q of p){x+=q.x;y+=q.y}return{x:x/p.length,y:y/p.length}};
+const rectHas=(r,p,m=0)=>p.x>=r.x-m&&p.x<=r.x+r.w+m&&p.y>=r.y-m&&p.y<=r.y+r.h+m;
+const overlap=(a,b)=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
+
+const circ=(cx,cy,r,n=30,a0=0,a1=TAU)=>{const o=[];for(let i=0;i<=n;i++){const a=a0+(a1-a0)*i/n;o.push([cx+Math.cos(a)*r,cy+Math.sin(a)*r])}return o};
+const T={
+ platform:[[[-60,0],[60,0]]],
+ wall:[[[0,-42],[0,42]]],
+ crate:[[[-22,-22],[22,-22],[22,22],[-22,22],[-22,-21]]],
+ pot:[circ(0,0,22)],
+ shield:[circ(0,0,60,36)],
+ arrow:[[[-60,0],[60,0]],[[38,-18],[60,0],[38,18]]],
+ x:[[[-28,-28],[28,28]],[[28,-28],[-28,28]]],
+ null:[circ(0,0,32),[[-30,30],[30,-30]]],
+ lightning:[[[-60,-8],[-34,12],[-8,-12],[18,12],[44,-10],[70,8]]],
+ sword:[[[0,42],[0,-62]],[[-16,22],[16,22]]],
+ spear:[[[0,52],[0,-58]],[[-9,-55],[0,-78],[9,-55],[-9,-55]]],
+ hammer:[[[0,46],[0,-40]],[[-20,-40],[20,-40],[20,-64],[-20,-64],[-20,-41]]],
+ mace:[[[0,46],[0,-40]],circ(0,-55,15,24)],
+ axe:[[[0,46],[0,-52]],circ(4,-40,21,16,-1.35,1.35)],
+ bow:[circ(-20,0,50,22,-1.2,1.2),[[-20+50*Math.cos(1.2),50*Math.sin(1.2)],[-20+50*Math.cos(1.2),-50*Math.sin(1.2)]]],
+};
+const toPts=(tmpl,ax,ay,sc=1,fx=1,jit=0)=>tmpl.map(s=>s.map(([x,y])=>({x:ax+x*sc*fx+rand(-jit,jit),y:ay+y*sc+rand(-jit,jit)})));
+
+function feats(raw){const pts=raw.length>1?raw:[raw[0],raw[0]];const L=pathLen(pts),bb=bbox(pts),diag=Math.hypot(bb.w,bb.h);
+ const a=pts[0],b=pts[pts.length-1],chord=D(a,b),straight=L>0?chord/L:0;const closed=L>50&&chord<Math.max(14,L*.2);
+ const r0=resample(pts,40),r=r0.map((p,i)=>i===0||i===r0.length-1?p:{x:(r0[i-1].x+p.x*2+r0[i+1].x)/4,y:(r0[i-1].y+p.y*2+r0[i+1].y)/4});const corners=[];
+ for(let i=2;i<r.length-2;i++){const v1={x:r[i].x-r[i-2].x,y:r[i].y-r[i-2].y},v2={x:r[i+2].x-r[i].x,y:r[i+2].y-r[i].y};
+  const ang=Math.atan2(v1.x*v2.y-v1.y*v2.x,v1.x*v2.x+v1.y*v2.y);
+  if(Math.abs(ang)>1.05){const c={i,ang,p:r[i],t:i/(r.length-1)};const last=corners[corners.length-1];
+   if(!last||i-last.i>3)corners.push(c);else if(Math.abs(ang)>Math.abs(last.ang))corners[corners.length-1]=c}}
+ const rc=[];for(let i=2;i<r0.length-2;i++){const v1={x:r0[i].x-r0[i-2].x,y:r0[i].y-r0[i-2].y},v2={x:r0[i+2].x-r0[i].x,y:r0[i+2].y-r0[i].y};
+  const ang=Math.atan2(v1.x*v2.y-v1.y*v2.x,v1.x*v2.x+v1.y*v2.y);if(Math.abs(ang)>.8){const l=rc[rc.length-1];if(!l||i-l.i>3)rc.push({i,ang});else if(Math.abs(ang)>Math.abs(l.ang))rc[rc.length-1]={i,ang}}}
+ const c=centroid(r);const rs=r.map(p=>D(p,c));const mr=rs.reduce((s,v)=>s+v,0)/rs.length;
+ const sd=Math.sqrt(rs.reduce((s,v)=>s+(v-mr)**2,0)/rs.length);
+ return{pts,r,L,bb,diag,a,b,chord,straight,closed,corners,raw:rc,c,mr,round:mr?sd/mr:1}}
+const angDiff=(A,B)=>{let d=Math.abs(Math.atan2(A.b.y-A.a.y,A.b.x-A.a.x)-Math.atan2(B.b.y-B.a.y,B.b.x-B.a.x))%PI;return Math.min(d,PI-d)};
+function singleArrow(f){if(f.closed||!f.corners.length||f.corners.length>4||f.corners[0].t<.55)return null;const ci=f.corners[0].i;
+ const shaft=f.r.slice(0,ci+1);const sl=pathLen(shaft);if(sl<f.L*.5||D(f.r[0],f.r[ci])/sl<.93)return null;
+ return{shape:'arrow',conf:.82,from:f.r[0],to:f.r[ci]}}
+function isZig(f){const c=f.raw;if(f.closed||c.length<3||f.straight<.25||f.straight>.92)return false;let ch=0;for(let i=1;i<c.length;i++)if(sgn(c[i].ang)!==sgn(c[i-1].ang))ch++;return ch>=2}
+function isX(A,B){if(A.straight<.85||B.straight<.85||A.L<28||B.L<28)return false;if(Math.min(A.L,B.L)/Math.max(A.L,B.L)<.4)return false;
+ const p=segX(A.a,A.b,B.a,B.b);return p&&p.t>.2&&p.t<.8&&p.u>.2&&p.u<.8&&angDiff(A,B)>.6?p:false}
+function isNull(C,Lf){if(!C.closed||C.corners.length>1||Lf.straight<.8||Lf.L<C.mr*1.2)return null;
+ const m={x:(Lf.a.x+Lf.b.x)/2,y:(Lf.a.y+Lf.b.y)/2};return D(m,C.c)<C.mr*.55?{shape:'null',conf:.9,c:C.c}:null}
+function twoArrow(M,V){if(M.straight<.88||M.closed||V.closed||V.corners.length!==1||V.L>M.L*.8)return null;const cp=V.corners[0].p,tol=Math.max(22,M.L*.2);
+ if(D(cp,M.b)<tol)return{shape:'arrow',conf:.88,from:M.a,to:M.b};if(D(cp,M.a)<tol)return{shape:'arrow',conf:.88,from:M.b,to:M.a};return null}
+function axisEnds(pts){const c=centroid(pts);let sxx=0,syy=0,sxy=0;for(const p of pts){const dx=p.x-c.x,dy=p.y-c.y;sxx+=dx*dx;syy+=dy*dy;sxy+=dx*dy}
+ const a=.5*Math.atan2(2*sxy,sxx-syy),ux=Math.cos(a),uy=Math.sin(a);let mn=1e9,mx=-1e9,pmn,pmx;
+ for(const p of pts){const t=(p.x-c.x)*ux+(p.y-c.y)*uy;if(t<mn){mn=t;pmn=p}if(t>mx){mx=t;pmx=p}}
+ let n0=0,n1=0;for(const p of pts){const t=(p.x-c.x)*ux+(p.y-c.y)*uy;if(t<mn+(mx-mn)*.3)n0++;if(t>mx-(mx-mn)*.3)n1++}
+ return n1>=n0?{grip:pmn,head:pmx}:{grip:pmx,head:pmn}}
+function weaponMulti(F){const main=F.reduce((m,f)=>f.chord>m.chord?f:m,F[0]);const others=F.filter(f=>f!==main);
+ if(main.straight>.75){const ux=(main.b.x-main.a.x)/main.chord,uy=(main.b.y-main.a.y)/main.chord;
+  for(const o of others){const om={x:(o.a.x+o.b.x)/2,y:(o.a.y+o.b.y)/2};const t=((om.x-main.a.x)*ux+(om.y-main.a.y)*uy)/main.chord;
+   const side=p=>sgn((p.x-main.a.x)*uy-(p.y-main.a.y)*ux);
+   if(o.straight>.7&&o.L<main.L*.65&&angDiff(main,o)>.8&&side(o.a)!==side(o.b)&&(t<.42||t>.58)&&t>-.1&&t<1.1){
+    const gripEnd=t<.5?main.a:main.b,headEnd=t<.5?main.b:main.a;return{shape:'weapon',type:'sword',conf:.84,gripEnd,headEnd,gripT:Math.min(t,1-t)*.55}}
+   const dA=D(o.c,main.a),dB=D(o.c,main.b),dEnd=Math.min(dA,dB);
+   if(dEnd<Math.max(30,main.L*.35)){const headEnd=dA<dB?main.a:main.b,gripEnd=dA<dB?main.b:main.a;
+    if(o.closed){const cn=o.corners.length;const type=cn>=3?'hammer':cn===2?'spear':'mace';return{shape:'weapon',type,conf:.8,gripEnd,headEnd}}
+    if(o.corners.length<=1&&o.straight<.8)return{shape:'weapon',type:'axe',conf:.74,gripEnd,headEnd}}}}
+ for(const arc of F){if(arc.closed||arc.straight<.2||arc.straight>.88||arc.corners.length>1)continue;const tol=Math.max(22,arc.chord*.3);
+  for(const o of F){if(o!==arc&&o.straight>.85&&((D(o.a,arc.a)<tol&&D(o.b,arc.b)<tol)||(D(o.a,arc.b)<tol&&D(o.b,arc.a)<tol))){
+   const arcMid=arc.r[20],stringMid={x:(o.a.x+o.b.x)/2,y:(o.a.y+o.b.y)/2};return{shape:'weapon',type:'bow',conf:.86,arcMid,stringMid}}}}
+ const e=axisEnds(F.flatMap(f=>f.r));return{shape:'weapon',type:'club',conf:.5,gripEnd:e.grip,headEnd:e.head}}
+function recognize(strokes){const F=strokes.map(feats);
+ if(F.length===1){const f=F[0];if(f.L<20)return{shape:'scribble',conf:.2};
+  if(!f.closed&&f.straight>.9&&f.corners.length<=1){const a=Math.abs(Math.atan2(f.b.y-f.a.y,f.b.x-f.a.x));const deg=Math.min(a,PI-a)*180/PI;
+   return deg<38?{shape:'platform',conf:.97-deg/150,f}:{shape:'wall',conf:.9,f}}
+  const ar=singleArrow(f);if(ar)return ar;
+  if(f.closed){const cn=f.corners.length;if(cn>=3)return f.diag<130?{shape:'crate',conf:.86,f}:{shape:'block',conf:.8,f};
+   if(cn===2&&f.diag<90)return{shape:'crate',conf:.6,f};return{shape:'circle',conf:clamp(1-f.round*2.5,.5,.97),f}}
+  if(isZig(f))return{shape:'lightning',conf:.85,f};
+  if(f.L>150){const e=axisEnds(f.r);return{shape:'weapon',type:'club',conf:.45,gripEnd:e.grip,headEnd:e.head}}
+  return{shape:'scribble',conf:.3}}
+ if(F.length===2){const[A,B]=F;const x=isX(A,B);if(x)return{shape:'x',conf:.9,p:x};
+  const n=isNull(A,B)||isNull(B,A);if(n)return n;const ar=twoArrow(A,B)||twoArrow(B,A);if(ar)return ar}
+ return weaponMulti(F)}
+const KEY={platform:'line',wall:'wall',crate:'box',block:'box',circle:'circle',arrow:'arrow',x:'x',null:'null',lightning:'zig',weapon:'weapon'};
+const GLYPH_ICON={line:'platform',wall:'wall',box:'crate',circle:'pot',arrow:'arrow',x:'x',null:'null',zig:'lightning'};
+
+const HACKS=[
+ {id:'breakout',name:'BREAKOUT.exe',desc:'Burn out of the canvas — fight on the desktop (15s)',counter:'box',tele:1.5},
+ {id:'recycle',name:'RECYCLE.exe',desc:"Send the foe's weapon to the Recycle Bin",counter:'arrow',tele:1.3},
+ {id:'transform',name:'TRANSFORM.exe',desc:'Free-transform foe to 55% size (6s)',counter:'circle',tele:1.2},
+ {id:'popups',name:'POPUPSTORM.exe',desc:'Rain error dialogs on the foe',counter:'x',tele:1.2},
+ {id:'overclock',name:'OVERCLOCK.exe',desc:'Hack your weapon: +60% dmg, glitch trails (8s). Counter = weapon weakness',counter:'weapon',tele:1.0},
+];
+/* --- END verbatim --- */
+return {PI,TAU,INK_PX,clamp,lerp,rand,sgn,D,pick,segDist,segX,pathLen,bbox,resample,densify,centroid,rectHas,overlap,circ,T,toPts,feats,recognize,KEY,GLYPH_ICON,HACKS};
+})();
+// The art board's frame as cells that can be mined away: 40-unit pieces of the two walls and the floor, plus a solid
+// ceiling. b = {x0,x1,floor,top} in game units (heights above the world floor).
+function boardCells(b){
+  if(!b) return []; const out=[], H=40; let id=0;
+  for(let y=b.floor;y<b.top-1;y+=H) for(const side of ['l','r']) out.push({id:id++,side,x0:side==='l'?b.x0-10:b.x1,x1:side==='l'?b.x0:b.x1+10,y0:y,y1:Math.min(b.top,y+H),hp:2});
+  if(b.floor>12) for(let x=b.x0-10;x<b.x1+9;x+=H) out.push({id:id++,side:'f',x0:x,x1:Math.min(b.x1+10,x+H),y0:b.floor-10,y1:b.floor,hp:2});
+  out.push({id:id++,side:'c',x0:b.x0-10,x1:b.x1+10,y0:b.top,y1:b.top+10,hp:99});
+  return out;
+}
+// Which glyph cancels an OVERCLOCK of each fighting style (his table, keyed by our styles).
+const STYLE_COUNTER={blade:'wall',fist:'wall',pick:'wall',spear:'circle',bow:'circle',gun:'circle',staff:'circle',hurl:'circle',hammer:'arrow'};
+function elOfColor(hex){ const m=/^#?([0-9a-f]{6})$/i.exec(hex||''); if(!m) return ELS.includes(hex)?hex:'none';
+  const n=parseInt(m[1],16), r=n>>16, g=(n>>8)&255, b=n&255; return r>g*1.35&&r>b*1.35?'fire':b>r*1.25&&b>=g?'water':g>r*1.2&&g>b*1.2?'plant':'none'; }
 function createDuel(opts){
   let acc=0, nextId=1; const STEP=1/60, r1=v=>Math.round(v*10)/10;
+  let W=Math.max(600,(opts&&opts.width)||AW), PL=(opts&&opts.plats)||PLATS, BOARD=null, SOL=[];  // arena size; the default is the 960-wide stage
   const PUNCH={name:'Fists',kind:'melee',style:'fist',el:'none',cost:0,st:Object.assign(itemStats('melee','none',6),{reach:58,dmg:5})};
-  const fresh=side=>({side,x:side?AW-220:220,y:0,vx:0,vy:0,face:side?-1:1,hp:HP,ground:true,jumps:0,jq:0,buf:[0,0],cd:[0,0],cdMax:[1,1],
-    act:null,shield:0,hurt:0,burn:0,burnDps:0,slow:0,dash:0,dashHit:false,dashItem:null,drop:0,uses:[3,3],held:0});
+  // In a layout with an art board the fighters start inside it; otherwise in the middle of the arena.
+  const fresh=side=>({side,x:BOARD?BOARD.x0+(BOARD.x1-BOARD.x0)*(side?0.8:0.2):W/2+(side?260:-260),y:BOARD?BOARD.floor:0,vx:0,vy:0,face:side?-1:1,hp:HP,ground:true,jumps:0,jq:0,buf:[0,0],cd:[0,0],cdMax:[1,1],
+    act:null,shield:0,hurt:0,burn:0,burnDps:0,slow:0,dash:0,dashHit:false,dashItem:null,drop:0,uses:[3,3],held:0,
+    ink2:100,od:0,stun:0,trap:0,flung:0,flungBy:-1,overclock:0,scale:1,scaleGoal:1,bubble:null,mcd:0,mbuf:0});
   const S={phase:'draw',t:45,round:1,wins:[0,0],ready:[false,false],items:[[null,null],[null,null]],f:[fresh(0),fresh(1)],pr:[],events:[],
-    winner:-1,champ:-1,ver:0,practice:!!(opts&&opts.practice),inp:[{l:0,r:0,d:0},{l:0,r:0,d:0}],cnt:[{j:0,a:0,b:0},{j:0,a:0,b:0}]};
+    winner:-1,champ:-1,ver:0,practice:!!(opts&&opts.practice),inp:[{l:0,r:0,d:0},{l:0,r:0,d:0}],cnt:[{j:0,a:0,b:0,m:0,q:0},{j:0,a:0,b:0,m:0,q:0}],
+    objs:[],fields:[],groups:[null,null],hack:null,effects:[],broken:null,breached:false,cells:[],time:0};
+  const PICK={name:'Pick',kind:'melee',style:'pick',el:'none',cost:0,st:Object.assign(itemStats('melee','none',10),{reach:54,dmg:5})};
   const itemOf=(side,k)=>S.items[side][k]||PUNCH;
   S.inkLeft=side=>Math.round(INK_MAX-S.items[side].reduce((n,it)=>n+(it?it.cost:0),0));
   S.setItem=(side,k,spec,cost)=>{
     if(S.phase!=='draw'&&S.phase!=='count'&&!S.practice) return null;
     const other=S.items[side][1-k]; cost=Math.min(cost,INK_MAX-(other?other.cost:0)); if(cost<MIN_COST-0.5) return null;
+    return S.items[side][k]=buildItem(spec,cost);
+  };
+  // Every item, however it is made (drawn before the round, taken ready-made, or forged mid-fight), gets its stats and trait here.
+  function buildItem(spec,cost){
     const style=styleOf(spec.kind,spec.style), tune=Math.max(-2,Math.min(2,Math.round(+spec.tune||0)));
     const raw={power:clampStat(spec.power),range:clampStat(spec.range),speed:clampStat(spec.speed)}, stats=balanceStats(raw,tune);
     const traits=traitChoices(spec.kind,spec.traits,spec.name), trait=traits.includes(spec.trait)?spec.trait:traits[0];
-    return S.items[side][k]={name:spec.name||nameFor(spec),kind:spec.kind,style,el:spec.element,cost,raw,tune,stats,trait,traits,st:itemStats(spec.kind,spec.element,cost,stats),ver:++S.ver};
-  };
+    return {name:spec.name||nameFor(spec),kind:spec.kind,style,el:spec.element,cost,raw,tune,stats,trait,traits,st:itemStats(spec.kind,spec.element,cost,stats),ver:++S.ver};
+  }
   // Change an item that is already made, while still drawing: what it is, which of its two traits it uses, or its tuning.
   S.tweak=(side,k,ch)=>{
     const it=S.items[side][k]; if(!it||!ch||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
@@ -459,6 +772,19 @@ function createDuel(opts){
   };
   const usesFor=side=>[0,1].map(k=>{ const it=S.items[side][k]; return it&&it.kind==='heal'?it.st.uses+(it.trait==='feast'?1:0):3; });
   const carries=(side,tr)=>S.items[side].some(it=>it&&it.trait===tr);
+  // Replace the platforms mid-match (the desktop overlay does this as real windows move). Platforms may carry an id and
+  // wx, the left edge of the thing they belong to: a fighter standing on one is carried along when it moves, and falls
+  // if it is no longer under their feet.
+  S.setPlats=list=>{
+    const old=PL; PL=list;
+    for(const f of S.f){
+      if(!f.ground||f.on==null) continue;
+      const a=old.find(p=>p.id===f.on&&f.x>=p.x0-6&&f.x<=p.x1+6&&Math.abs(f.y-p.y)<3); if(!a) continue;
+      const dx=((list.find(p=>p.id===f.on)||a).wx||0)-(a.wx||0), nx=Math.max(18,Math.min(W-18,f.x+dx));
+      const b=list.find(p=>p.id===f.on&&nx>=p.x0-6&&nx<=p.x1+6);
+      if(b){ f.x=nx; f.y=b.y; f.vy=0; }
+    }
+  };
   S.clearItem=(side,k)=>{ if(S.phase==='draw') S.items[side][k]=null; };
   S.setReady=side=>{ if(S.phase==='draw') S.ready[side]=true; };
   // l, r, d are held buttons; j, a, b are running press counts so a quick tap is never lost.
@@ -467,19 +793,24 @@ function createDuel(opts){
     if(i.j!==c.j){ c.j=i.j; if(S.phase==='fight') f.jq=Math.min(2,f.jq+1); }
     if(i.a!==c.a){ c.a=i.a; f.buf[0]=0.32; }
     if(i.b!==c.b){ c.b=i.b; f.buf[1]=0.32; }
+    if(i.m!==undefined&&i.m!==c.m){ c.m=i.m; f.mbuf=0.3; }                    // the mining tool
+    if(i.q!==undefined&&i.q!==c.q){ c.q=i.q; S.startHack(side,i.h|0); }       // run the selected hack
   };
-  function hurt(t,dmg,el,kx,ky,by,fromX,stun,tr){
+  function hurt(t,dmg,el,kx,ky,by,fromX,hap,stun,tr){
     if(stun===undefined) stun=0.2;
-    const blocked=t.shield>0&&(t.shieldTr==='bubble'||Math.sign(fromX-t.x)===t.face);
+    if(t.bubble){ dmg*=0.35; kx*=0.4; ky*=0.4; t.bubble.hp--; ring(t.x,-(t.y+55),'#2bd'); if(t.bubble.hp<=0) t.bubble=null; }
+    if(by){ if(by.overclock>0){ dmg*=1.6; kx*=1.3; } if(by.scale<0.8) dmg*=0.6; }
     if(tr==='lucky') dmg*=Math.random()<1/6?2:0.9;        // the damage traits are each worth about 8%
     if(tr==='blast') dmg*=1.08;
     if(tr==='flurry') dmg*=1.08;
     if(tr==='heavy') kx*=1.6;
     if(tr==='pull') kx*=-0.85;
     if(tr==='launch') ky=ky>0?ky*1.5:ky===0?240:ky;
-    if(t.act&&itemOf(t.side,t.act.k).trait==='guard') dmg*=0.92;
+    if(t.act&&t.act.m!=='mine'&&itemOf(t.side,t.act.k).trait==='guard') dmg*=0.92;
+    t.od=Math.min(100,t.od+dmg*0.9); if(by) by.od=Math.min(100,by.od+dmg*1.3);
+    const blocked=t.shield>0&&(t.shieldTr==='bubble'||Math.sign(fromX-t.x)===t.face);
     if(blocked){
-      if(t.shieldTr==='thorns'&&by&&by!==t){ const n=dmg*0.35; by.hp-=n; S.events.push({e:'hit',x:Math.round(by.x),y:Math.round(by.y+52),n:Math.max(1,Math.round(n)),el:'none',side:by.side}); }
+      if(t.shieldTr==='thorns'&&by&&by!==t){ const n=dmg*0.35; by.hp-=n; S.events.push({e:'hit',x:Math.round(by.x),y:Math.round(by.y+52),n:Math.max(1,Math.round(n)),el:'none',side:by.side,hap:'thud',dir:'R'}); }
       dmg*=tr==='pierce'?0.6:0.15; kx*=0.3; ky*=0.3;
     } else if(el==='water') kx*=1.45;
     // A hit with no stun only nudges: it adds to the target's speed instead of replacing it, and does not lift them.
@@ -490,14 +821,15 @@ function createDuel(opts){
       if(el==='water') t.slow=1.8;
       if(el==='plant'&&by&&by.hp>0) by.hp=Math.min(HP,by.hp+dmg*0.3);
     }
-    if(tr==='flurry'&&!blocked) for(const dy of [44,66]) S.events.push({e:'hit',x:Math.round(t.x),y:Math.round(t.y+dy),n:Math.max(1,Math.round(dmg/2)),el,side:t.side});
-    else S.events.push({e:blocked?'block':'hit',x:Math.round(t.x),y:Math.round(t.y+52),n:Math.max(1,Math.round(dmg)),el,side:t.side});
+    const ev={el,side:t.side,hap:hap||'thud',dir:kx<0?'L':'R'};
+    if(tr==='flurry'&&!blocked) for(const dy of [44,66]) S.events.push(Object.assign({e:'hit',x:Math.round(t.x),y:Math.round(t.y+dy),n:Math.max(1,Math.round(dmg/2))},ev));
+    else S.events.push(Object.assign({e:blocked?'block':'hit',x:Math.round(t.x),y:Math.round(t.y+52),n:Math.max(1,Math.round(dmg))},ev));
     if(tr==='blast'&&!blocked) S.events.push({e:'boom',x:Math.round(t.x),y:Math.round(t.y+45),n:26,el,s:1});
   }
   // Begin a move: the fighter is committed until it ends or chains.
   function startMove(f,k,m){
-    const it=itemOf(f.side,k), M=MOVES[m], p=it.st.p;
-    f.act={k,m,v:ALT.includes(m)&&Math.random()<0.5?1:0,t:0,dur:M.dur,rate:(it.st.rate||1)/(it.kind==='ranged'?0.75+0.25*p:0.85+0.15*p),done:0,lunged:false};
+    const it=m==='mine'?PICK:itemOf(f.side,k), M=MOVES[m], p=it.st.p;
+    f.act={k,m,v:ALT.includes(m)&&Math.random()<0.5?1:0,t:0,dur:M.dur,rate:(it.st.rate||1)*(f.overclock>0?1/0.7:1)/(it.kind==='ranged'?0.75+0.25*p:0.85+0.15*p),done:0,lunged:false};
     f.buf[k]=0; f.held=k;
     if(M.carry) f.vx=f.face*Math.max(Math.abs(f.vx),M.carry);
     if(M.dive&&!f.ground){ f.vy=-M.dive; f.vx=f.face*Math.max(Math.abs(f.vx),M.dive*0.5); }
@@ -525,15 +857,16 @@ function createDuel(opts){
   }
   // Advance the fighter's current move: lunges, hits, shots, chaining and the end.
   function act(f,dt){
-    const a=f.act, M=MOVES[a.m], it=itemOf(f.side,a.k), st=it.st, e=S.f[1-f.side], k=a.k, sty=STYLE[it.style]||STYLE.blade;
+    const a=f.act, M=MOVES[a.m], it=a.m==='mine'?PICK:itemOf(f.side,a.k), st=it.st, e=S.f[1-f.side], k=a.k, sty=STYLE[it.style]||STYLE.blade;
     a.t+=dt*a.rate;
     if(M.lunge&&!a.lunged&&a.t>=(M.lungeAt||0.04)){ a.lunged=true; if(f.ground) f.vx=f.face*Math.max(Math.abs(f.vx)*0.5,M.lunge); }
     const marks=M.hits||M.shots||[];
     while(a.done<marks.length&&a.t>=marks[a.done]){
       if(M.hits){
+        if(M.mine&&!a.mined){ a.mined=true; mineHit(f); }
         const dx=(e.x-f.x)*f.face, reach=st.reach*(M.reach||1)*sty.reach;
         if(M.quake&&!a.quaked){ a.quaked=true; S.events.push({e:'quake',x:Math.round(f.x+f.face*reach*0.7),y:Math.round(f.y),n:Math.round(reach)}); }
-        if(dx>-14&&dx<reach+14&&Math.abs(e.y-f.y)<(M.tall||72)){ a.done++; hurt(e,st.dmg*M.dmg*sty.dmg,it.el,f.face*M.kb*sty.kb*(0.7+0.3*st.p)*(st.push||1),M.lift,f,f.x,undefined,it.trait); continue; }
+        if(dx>-14&&dx<reach+14&&Math.abs(e.y-f.y)<(M.tall||72)){ a.done++; hurt(e,st.dmg*M.dmg*sty.dmg,it.el,f.face*M.kb*sty.kb*(0.7+0.3*st.p)*(st.push||1),M.lift,f,f.x,undefined,undefined,it.trait); continue; }
         if(a.t<marks[a.done]+0.07) break;      // the blade stays dangerous for a moment
         a.done++;
       }else{
@@ -548,37 +881,59 @@ function createDuel(opts){
     }
     if(!f.act||f.act!==a) return;                       // a trade knocked us out of the move
     if(M.next&&f.buf[k]>0&&a.t>=M.cancel){ startMove(f,k,M.next); return; }
-    if(a.t>=a.dur){ f.act=null; if(M.hits||M.shots) f.cd[k]=f.cdMax[k]=M.end?st.cd:st.cd*0.45; }
+    if(a.t>=a.dur){ f.act=null; if(M.mine) f.mcd=0.1; else if(M.hits||M.shots) f.cd[k]=f.cdMax[k]=M.end?st.cd:st.cd*0.45; }
   }
   function control(f,dt){
     const inp=S.inp[f.side], e=S.f[1-f.side];
     for(const k of [0,1]){ f.cd[k]=Math.max(0,f.cd[k]-dt); f.buf[k]=Math.max(0,f.buf[k]-dt); }
     f.shield=Math.max(0,f.shield-dt); f.hurt=Math.max(0,f.hurt-dt); f.slow=Math.max(0,f.slow-dt); f.drop=Math.max(0,f.drop-dt);
     if(f.burn>0){ f.burn-=dt; f.hp-=f.burnDps*dt; }
+    for(const k of ['stun','trap','flung','overclock','mcd','mbuf']) if(f[k]>0) f[k]=Math.max(0,f[k]-dt);
+    if(f.bubble){ f.bubble.t-=dt; if(f.bubble.t<=0) f.bubble=null; }
+    f.scale+=(f.scaleGoal-f.scale)*Math.min(1,dt*8); f.ink2=Math.min(100,f.ink2+7*dt);
     if(f.act) act(f,dt);
     if(f.dash>0){
       f.dash-=dt; f.vy=0;
-      if(!f.dashHit&&Math.abs(e.x-f.x)<36&&Math.abs(e.y-f.y)<70){ f.dashHit=true; hurt(e,f.dashItem.st.dmg,f.dashItem.el,f.face*f.dashItem.st.kb,200,f,f.x,undefined,f.dashItem.trait); }
+      if(!f.dashHit&&Math.abs(e.x-f.x)<36&&Math.abs(e.y-f.y)<70){ f.dashHit=true; hurt(e,f.dashItem.st.dmg,f.dashItem.el,f.face*f.dashItem.st.kb,200,f,f.x,undefined,undefined,f.dashItem.trait); }
       if(f.dash<=0) f.vx*=0.35;
     }else{
-      const stunned=f.hurt>0, dir=stunned?0:inp.r-inp.l;
+      const stunned=f.hurt>0||f.stun>0||f.trap>0, dir=stunned?0:inp.r-inp.l;
       if(stunned){ f.vx*=Math.max(0,1-3*dt); f.jq=0; }
       else{
         if(dir&&!f.act) f.face=dir;
         // While committed to a move the fighter can only drift.
-        const max=RUN_SPEED*(f.slow>0?0.55:1)*(f.shield>0?(f.shieldMove||0.6):1)*(carries(f.side,'swift')?1.12:1), a=(f.act?(f.ground?900:500):(f.ground?2600:1500))*dt, want=f.act?dir*max*0.3:dir*max;
-        f.vx+=Math.max(-a,Math.min(a,want-f.vx));
-        if(f.jq>0){ f.jq--; if(!f.act&&(f.ground||f.jumps<2)){ f.vy=f.ground?640:560; f.jumps=f.ground?1:2; f.ground=false; } }
+        const max=RUN_SPEED*(f.slow>0?0.55:1)*(f.shield>0?(f.shieldMove||0.6):1)*(carries(f.side,'swift')?1.12:1)*(f.overclock>0?1.18:1)*(f.scale<0.85?0.85:1), a=(f.act?(f.ground?900:500):(f.ground?2600:1500))*dt, want=f.act?dir*max*0.3:dir*max;
+        if(f.flung<=0) f.vx+=Math.max(-a,Math.min(a,want-f.vx));          // a flung fighter keeps its momentum
+        if(f.jq>0){ f.jq--; if(!f.act&&(f.ground||f.jumps<2)){ if(!f.ground) puff(f.x,-f.y,PCOLS[f.side],6); f.vy=f.ground?640:560; f.jumps=f.ground?1:2; f.ground=false; } }
         if(inp.d&&f.ground&&f.y>0&&!f.act&&f.buf[0]<=0&&f.buf[1]<=0) f.drop=0.22;
         for(const k of [0,1]) if(f.buf[k]>0&&f.cd[k]<=0&&!f.act) use(f,k);
+        if(f.mbuf>0&&f.mcd<=0&&!f.act){ f.mbuf=0; startMove(f,f.held,'mine'); }
       }
       f.vy-=1750*dt;
     }
-    const py=f.y; f.x+=f.vx*dt; f.y+=f.vy*dt; let land=false;
-    if(f.y<=0){ f.y=0; land=true; }
-    else if(f.vy<=0&&f.drop<=0) for(const p of PLATS) if(py>=p.y&&f.y<=p.y&&f.x>=p.x0-6&&f.x<=p.x1+6){ f.y=p.y; land=true; break; }
+    // Move, then push out of anything solid: art-board cells, drawn walls and blocks, crates and pop-ups.
+    const hw=11, hh=88*f.scale, px=f.x, py=f.y; let land=false;
+    const down=y=>{ if(!f.ground&&f.vy<-380) puff(f.x,-y,'#999',Math.min(10,-f.vy/120)); if(f.flung>0&&f.vy<-800) impact(f,-f.vy); f.y=y; land=true; };
+    f.x+=f.vx*dt;
+    for(const o of SOL){
+      if(f.x+hw<=o.x0||f.x-hw>=o.x1||f.y+hh<=o.y0||f.y>=o.y1-4) continue;
+      if(o.obj&&o.obj.dyn) o.obj.vx+=(f.vx*0.9-o.obj.vx)*0.5;
+      if(f.flung>0) impact(f,Math.abs(f.vx));
+      f.x=px<(o.x0+o.x1)/2?o.x0-hw:o.x1+hw; f.vx=0;
+    }
+    if(f.x<18){ if(f.flung>0) impact(f,Math.abs(f.vx)); f.x=18; f.vx=Math.max(0,f.vx); }
+    if(f.x>W-18){ if(f.flung>0) impact(f,Math.abs(f.vx)); f.x=W-18; f.vx=Math.min(0,f.vx); }
+    f.y+=f.vy*dt;
+    for(const o of SOL){
+      if(f.x+hw<=o.x0||f.x-hw>=o.x1) continue;
+      if(f.vy<=0&&py>=o.y1-6&&f.y<o.y1){ down(o.y1); f.on=null; }
+      else if(f.vy>0&&py+hh<=o.y0+8&&f.y+hh>o.y0){ f.y=o.y0-hh; f.vy=0; }
+    }
+    if(!land){
+      if(f.y<=0){ down(0); f.on=null; }
+      else if(f.vy<=0&&f.drop<=0) for(const p of oneWays()) if(py>=p.y&&f.y<=p.y&&f.x>=p.x0-6&&f.x<=p.x1+6){ down(p.y); f.on=p.id; break; }
+    }
     if(land){ f.vy=0; f.jumps=0; } f.ground=land;
-    if(f.x<18){ f.x=18; f.vx=Math.max(0,f.vx); } if(f.x>AW-18){ f.x=AW-18; f.vx=Math.min(0,f.vx); }
   }
   function projectiles(dt){
     for(const p of S.pr){
@@ -586,26 +941,212 @@ function createDuel(opts){
       p.ttl-=dt; p.safe=Math.max(0,(p.safe||0)-dt); p.vy-=(p.grav||0)*dt;
       if(p.tr==='homing'&&p.k==='shot') p.vy+=Math.max(-1500,Math.min(1500,(e.y+50-p.y)*10))*dt;
       p.x+=p.vx*dt; p.y+=p.vy*dt;
-      if(p.tr==='bounce'&&!p.wall&&(p.x<6||p.x>AW-6)){ p.wall=1; p.vx=-p.vx; p.x=Math.max(6,Math.min(AW-6,p.x)); }
-      const touch=!p.safe&&Math.abs(p.x-e.x)<18+10*(p.big||0)&&p.y>e.y-4-10*(p.big||0)&&p.y<e.y+94;
+      if(p.tr==='bounce'&&!p.wall&&(p.x<6||p.x>W-6)){ p.wall=1; p.vx=-p.vx; p.x=Math.max(6,Math.min(W-6,p.x)); }
+      const touch=!p.safe&&Math.abs(p.x-e.x)<18+10*(p.big||0)&&p.y>e.y-4-10*(p.big||0)&&p.y<e.y+94*e.scale;
       const turn=()=>{ p.back=1; p.vx=-p.vx; p.vy=0; p.grav=0; p.safe=0.3; p.ttl=p.life; };       // a boomerang comes back once
-      if(p.k==='shot'){
-        if(touch){ hurt(e,p.dmg,p.el,Math.sign(p.vx)*p.kb,90,S.f[p.side],p.x-Math.sign(p.vx)*30,p.stun,p.tr); if(p.tr==='boomerang'&&!p.back) turn(); else p.ttl=0; }
+      const wall=SOL.find(o=>p.x>o.x0&&p.x<o.x1&&p.y>o.y0&&p.y<o.y1);
+      if(wall&&p.k!=='bomb'){
+        if(wall.obj&&wall.obj.dyn){ wall.obj.vx+=p.vx*0.25; wall.obj.vy-=120; } fx('spark',{x:Math.round(p.x),yd:Math.round(-p.y),col:PEN_COL[p.el]||'#fc0'});
+        // a bouncy shot comes back off a wall once, and a boomerang turns round at it; anything else stops there
+        if(p.tr==='bounce'&&!p.wall){ p.wall=1; p.x-=p.vx*dt; p.vx=-p.vx; } else if(p.tr==='boomerang'&&!p.back){ p.x-=p.vx*dt; turn(); } else p.ttl=0;
+        continue;
+      }
+      if(e.bubble&&p.k!=='bomb'&&Math.hypot(p.x-e.x,p.y-(e.y+55))<e.bubble.r){ p.vx*=-1; p.vy*=-0.5; p.side=e.side; e.bubble.hp--; if(e.bubble.hp<=0) e.bubble=null; ring(p.x,-p.y,'#2bd'); log(e,'shield reflected a projectile'); continue; }
+      if(p.k!=='bomb'){
+        if(touch){ hurt(e,p.dmg,p.el,Math.sign(p.vx)*p.kb,90,S.f[p.side],p.x-Math.sign(p.vx)*30,undefined,p.stun,p.tr); if(p.tr==='boomerang'&&!p.back) turn(); else p.ttl=0; }
         else if(p.y<=0){ if(p.tr==='bounce'&&!p.hop){ p.hop=1; p.y=1; p.vy=Math.abs(p.vy)*0.7+170; } else p.ttl=0; }
         if(p.ttl<=0&&p.tr==='boomerang'&&!p.back) turn();
-      }else if(p.tr==='bounce'&&!p.hop&&!touch&&p.ttl>0&&p.y<=0){ p.hop=1; p.y=1; p.vy=Math.abs(p.vy)*0.55+150; p.vx*=0.8; }
-      else if(touch||p.y<=0||p.ttl<=0){
+      }else if(p.tr==='bounce'&&!p.hop&&!touch&&!wall&&p.ttl>0&&p.y<=0){ p.hop=1; p.y=1; p.vy=Math.abs(p.vy)*0.55+150; p.vx*=0.8; }
+      else if(touch||wall||p.y<=0||p.ttl<=0){
         const by=Math.max(0,p.y);
         for(const g of S.f){
           const d=Math.hypot(g.x-p.x,g.y+45-by); if(d>=p.radius+20) continue;
           const fall=1-0.5*Math.min(1,d/p.radius), own=g.side===p.side;
-          hurt(g,p.dmg*fall*(own?0.4:1),p.el,(Math.sign(g.x-p.x)||1)*p.kb*fall,260*fall,own?null:S.f[p.side],p.x,undefined,own?undefined:p.tr);
+          hurt(g,p.dmg*fall*(own?0.4:1),p.el,(Math.sign(g.x-p.x)||1)*p.kb*fall,260*fall,own?null:S.f[p.side],p.x,undefined,undefined,own?undefined:p.tr);
         }
         S.events.push({e:'boom',x:Math.round(p.x),y:Math.round(by),n:Math.round(p.radius),el:p.el}); p.ttl=0;
       }
-      if(p.x<-30||p.x>AW+30) p.ttl=0;
+      if(p.x<-30||p.x>W+30) p.ttl=0;
     }
     S.pr=S.pr.filter(p=>p.ttl>0);
+  }
+  /* ---------- InkShop world (adapted from Alex's prototype) ----------
+     His world is in screen pixels with y pointing down; ours has heights above the floor. Everything that is DRAWN keeps
+     his convention ({x,y}, y down, floor at 0) so his geometry runs unchanged; fighters are converted at the seams. */
+  const {clamp,lerp,rand,sgn,D,pick,pathLen,bbox,centroid,rectHas,overlap,segDist,recognize,KEY,INK_PX,HACKS}=INK;
+  const PCOLS=['#1d3fbf','#b0121f'], PEN_COL={none:'#fc0',fire:'#e2552d',water:'#2a7fd4',plant:'#2f9e56'}, rr=v=>Math.round(v);
+  let oid=1;
+  const chest=f=>({x:f.x,y:-(f.y+55*f.scale)}), bodyRect=f=>({x:f.x-11,y:-(f.y+88*f.scale),w:22,h:88*f.scale}), foeOf=f=>S.f[1-f.side], nameOf=f=>f.side?'Red':'Blue';
+  const fx=(e,o)=>S.events.push(Object.assign({e},o));
+  const ring=(x,yd,col)=>fx('ring',{x:rr(x),yd:rr(yd),col}), burst=(x,yd,col,n)=>fx('burst',{x:rr(x),yd:rr(yd),col,n}), puff=(x,yd,col,n)=>fx('puff',{x:rr(x),yd:rr(yd),col,n:rr(n)});
+  const floatT=(x,yd,text,side)=>fx('float',{x:rr(x),yd:rr(yd),text,side}), flash=(text,sub,side)=>fx('flash',{text,sub,side}), log=(f,msg)=>fx('log',{side:f?f.side:-1,msg});
+  // Everything solid, as boxes in our coordinates (heights above the floor).
+  function solids(){
+    const out=[];
+    if(BOARD&&!S.broken) for(const c of S.cells) if(c.hp>0) out.push(c);
+    for(const o of S.objs) if(o.solid) out.push({x0:o.x,x1:o.x+o.w,y0:-(o.y+o.h),y1:-o.y,obj:o});
+    return out;
+  }
+  // Ledges you can jump up through: window title bars, drawn platforms, and the art board's floor once it is breached.
+  function oneWays(){
+    const a=PL.slice(); for(const o of S.objs) if(o.kind==='platform') a.push({x0:o.x,x1:o.x+o.w,y:-o.y,id:'o'+o.id});
+    if(BOARD&&S.broken&&BOARD.floor>12) a.push({x0:BOARD.x0,x1:BOARD.x1,y:BOARD.floor});
+    return a;
+  }
+  // The stage each round: inside an art board, his three sketched ledges and a crate.
+  function resetWorld(){
+    S.objs=[]; S.fields=[]; S.groups=[null,null]; S.hack=null; S.effects=[]; S.broken=null; S.breached=false; S.cells=boardCells(BOARD); fx('clear',{});
+    if(!BOARD) return;
+    const b=BOARD, w=b.x1-b.x0, fl=-b.floor;
+    const sk=(x0,x1,y)=>{ const pts=INK.densify([{x:x0,y},{x:x1,y:y+rand(-2,2)}],6).map(p=>({x:p.x,y:p.y+rand(-1.2,1.2)})); addObj({kind:'platform',x:x0,y,w:x1-x0,strokes:[pts],color:'#8a8f99',life:Infinity}); };
+    sk(b.x0+w*0.1,b.x0+w*0.32,fl-120); sk(b.x0+w*0.68,b.x0+w*0.9,fl-120); sk(b.x0+w*0.4,b.x0+w*0.6,fl-215);
+    spawnCrate(INK.toPts(INK.T.crate,b.x0+w*0.5,fl-19,0.85,1,0.8),'#8a8f99',-1,'crate',Infinity);
+  }
+  // Where things are: the arena width, the art board (or none), and the ledges. Sent by whatever is showing the fight.
+  S.setLayout=L=>{
+    if(!L) return; const idle=S.phase==='draw'||S.phase==='count'||S.practice;
+    if(L.plats) S.setPlats(L.plats);
+    if(!idle&&S.cells.length) return;                                   // the board is not rebuilt in the middle of a fight
+    if(L.w) W=Math.max(600,L.w);
+    const b=L.board; BOARD=b&&b.x1-b.x0>300&&b.top-b.floor>180?{x0:rr(b.x0),x1:rr(b.x1),floor:Math.max(0,rr(b.floor)),top:rr(b.top)}:null;
+    S.f=[fresh(0),fresh(1)]; S.pr=[]; resetWorld();
+  };
+  const addObj=o=>{ o.id=oid++; S.objs.push(o);
+    fx('obj',{o:{id:o.id,kind:o.kind,x:rr(o.x),y:rr(o.y),w:rr(o.w),h:rr(o.h||0),color:o.color,side:o.owner,dyn:o.dyn?1:0,perm:o.life===Infinity?1:0,msg:o.msg,strokes:(o.local||o.strokes||[]).map(st=>st.map(p=>[rr(p.x),rr(p.y)]))}}); return o; };
+  /* -- drawing pipeline (his endStroke / finalize / applyGlyph, with ink and ownership kept on the server) -- */
+  S.stroke=(side,pts,color)=>{
+    const f=S.f[side]; if(S.phase!=='fight'||f.hp<=0||!Array.isArray(pts)||pts.length<2) return false;
+    const L=pathLen(pts), cost=L*INK_PX; if(L<8) return false;
+    if(f.ink2<cost){ floatT(pts[0].x,pts[0].y,'not enough ink',side); return false; }
+    f.ink2-=cost; f.od=Math.min(100,f.od+L*0.012);
+    const bb=bbox(pts), g=S.groups[side];
+    if(g&&S.time-g.t<0.9&&bb.x<g.bb.x+g.bb.w+45&&bb.x+bb.w>g.bb.x-45&&bb.y<g.bb.y+g.bb.h+45&&bb.y+bb.h>g.bb.y-45){ g.strokes.push(pts); g.bb=bbox(g.strokes.flat()); g.t=S.time; }
+    else{ if(g) finalize(side); S.groups[side]={strokes:[pts],color,t:S.time,bb}; }
+    fx('stroke',{side,col:color,pts:pts.map(p=>[rr(p.x),rr(p.y)])}); return true;
+  };
+  function finalize(side){ const g=S.groups[side]; if(!g) return; S.groups[side]=null; fx('read',{side}); applyGlyph(S.f[side],recognize(g.strokes),g); }
+  const LABEL={platform:'PLATFORM',wall:'WALL',crate:'CRATE',block:'BLOCK',circle:'CIRCLE',arrow:'ARROW',x:'ERASE \u2715',null:'NULL \u2298',lightning:'LIGHTNING',scribble:'unreadable scribble'};
+  function applyGlyph(f,R,g){ const key=KEY[R.shape],all=g.strokes.flat(),c=centroid(all),foe=foeOf(f),side=f.side;
+    const label=R.shape==='weapon'?R.type.toUpperCase():LABEL[R.shape];
+    // --- counters first
+    if(S.hack&&S.hack.target===side&&(key===S.hack.counter||key==='null')){ if(key==='null'&&!spend(f,20,c)) return fizzle(g,'\u2298 needs 20 ink'); counterHack(f,key); return fade(g); }
+    for(const e of S.effects){ if(e.target===side&&(key===e.counter||key==='null')&&D(c,chest(S.f[e.by]))<240){ if(key==='null'&&!spend(f,20,c)) break;
+      e.t=0; log(f,'patched '+e.name+' with '+(key==='null'?'\u2298':key)+' glyph'); flash('PATCHED',e.name+' terminated',side); return fade(g); } }
+    log(f,'drew \u2192 '+label+' ('+Math.round(R.conf*100)+'%)'); floatT(c.x,g.bb.y-10,label+' '+Math.round(R.conf*100)+'%',side);
+    switch(R.shape){
+      case 'scribble': return fizzle(g,'?');
+      case 'platform': { const ff=R.f, x0=Math.min(ff.a.x,ff.b.x), x1=Math.max(ff.a.x,ff.b.x); addObj({kind:'platform',x:x0,y:(ff.a.y+ff.b.y)/2,w:Math.max(30,x1-x0),strokes:g.strokes,color:g.color,life:12,owner:side}); return; }
+      case 'wall': { const b=g.bb; addObj({kind:'wall',solid:true,x:b.x+b.w/2-5,y:b.y,w:10,h:Math.max(30,b.h),strokes:g.strokes,color:g.color,life:8,owner:side}); return; }
+      case 'crate': return spawnCrate(g.strokes,g.color,side,'crate',14);
+      case 'block': { const b=g.bb; addObj({kind:'block',solid:true,x:b.x,y:b.y,w:Math.min(b.w,220),h:Math.min(b.h,200),strokes:g.strokes,color:g.color,life:6,owner:side}); return; }
+      case 'circle': { const ff=R.f; if(D(chest(f),ff.c)<ff.mr+12){ f.bubble={t:4,hp:2,r:clamp(ff.mr,44,72)}; ring(ff.c.x,ff.c.y,'#2bd'); log(f,'context: circle around self \u2192 SHIELD'); return fade(g); }
+        if(D(chest(foe),ff.c)<ff.mr+12){ if(!spend(f,20,c)) return fizzle(g,'trap needs 20 ink'); foe.trap=1.6; log(f,'context: circle around foe \u2192 TRAP'); return fade(g); }
+        return spawnCrate(g.strokes,g.color,side,'pot',14); }
+      case 'arrow': return arrowGlyph(f,R,g);
+      case 'x': return eraseGlyph(f,R.p,g);
+      case 'null': return fizzle(g,'nothing to null');
+      case 'lightning': { const ff=R.f, a=Math.atan2(ff.b.y-ff.a.y,ff.b.x-ff.a.x);
+        S.pr.push({id:nextId++,k:'bolt',side,slot:f.held,x:f.x+f.face*18,y:f.y+62,vx:Math.cos(a)*1150,vy:-Math.sin(a)*1150,grav:0,dmg:10,el:'none',kb:260,ttl:1.1}); return fade(g); }
+      case 'weapon': return forge(f,R,g);
+    } }
+  function spend(f,n,at){ if(f.ink2<n){ floatT(at.x,at.y,'need '+n+' ink',f.side); return false; } f.ink2-=n; return true; }
+  function fade(g){ fx('ghost',{col:g.color,strokes:g.strokes.map(st=>st.map(p=>[rr(p.x),rr(p.y)]))}); }
+  function fizzle(g,msg){ fade(g); const c=centroid(g.strokes.flat()); floatT(c.x,c.y,msg,-1); }
+  function spawnCrate(strokes,color,owner,kind,life){ const b=bbox(strokes.flat()); const w=clamp(b.w,18,90),h=clamp(b.h,18,90);
+    const local=strokes.map(st=>st.map(p=>({x:(p.x-b.x)*w/Math.max(b.w,1),y:(p.y-b.y)*h/Math.max(b.h,1)})));
+    addObj({kind,solid:true,dyn:true,x:b.x,y:b.y,w,h,vx:0,vy:0,local,color,life,owner}); }
+  function arrowGlyph(f,R,g){ const dx=R.to.x-R.from.x,dy=R.to.y-R.from.y,l=Math.hypot(dx,dy)||1,u={x:dx/l,y:dy/l},foe=foeOf(f);
+    if(!BOARD||S.broken||S.breached){ const w=PL.find(p=>R.to.x>=p.x0&&R.to.x<=p.x1&&-R.to.y<=p.y+6&&-R.to.y>=p.y-150);       // arrow into a window: link there
+      if(w){ const who=D(R.from,chest(foe))<70?foe:f; who.x=(w.x0+w.x1)/2; who.y=w.y; who.vx=who.vy=0; ring(who.x,-(who.y+40),PCOLS[who.side]); log(f,'context: arrow into window \u2192 LINK ('+nameOf(who)+' teleported)'); return fade(g); } }
+    if(D(R.from,chest(f))<75){ f.vx=u.x*950; f.vy=-(u.y*950-120); f.flung=0.25; f.flungBy=f.side; f.ground=false; log(f,'context: arrow from self \u2192 DASH'); return fade(g); }
+    if(D(R.from,chest(foe))<75){ if(!spend(f,18,R.from)) return fizzle(g,'fling needs 18 ink'); foe.vx=u.x*760; foe.vy=-(u.y*760-150); foe.flung=0.6; foe.flungBy=f.side; foe.ground=false; foe.act=null; log(f,'context: arrow from foe \u2192 FLING'); return fade(g); }
+    S.fields.push({a:R.from,b:R.to,u,life:1,max:1,col:g.color}); log(f,'context: free arrow \u2192 WIND corridor'); fade(g); }
+  function eraseGlyph(f,p,g){ const foe=foeOf(f);
+    const pops=S.objs.filter(o=>o.kind==='popup'); if(pops.length&&pops.some(o=>rectHas(o,p,40))){ for(const o of pops) o.life=0; log(f,'\u2715 closed all pop-ups'); return fade(g); }
+    const o=S.objs.find(o=>o.life!==Infinity&&(o.kind==='platform'?Math.abs(p.y-o.y)<18&&p.x>o.x-10&&p.x<o.x+o.w+10:rectHas(o,p,15)));
+    if(o){ o.life=0; burst(p.x,p.y,o.color,12); log(f,'\u2715 erased '+o.kind); return fade(g); }
+    if(D(p,chest(foe))<75&&S.items[foe.side][foe.held]){ if(!spend(f,22,p)) return fizzle(g,'disarm needs 22 ink'); const w=S.items[foe.side][foe.held]; S.items[foe.side][foe.held]=null; foe.act=null; burst(p.x,p.y,PCOLS[foe.side],18);
+      log(f,'\u2715 DISARM \u2014 deleted '+nameOf(foe)+"'s "+w.name); return fade(g); }
+    fizzle(g,'nothing to erase'); }
+  // A weapon drawn mid-fight replaces the item in hand at once. His recogniser names the type; it maps onto our styles,
+  // and (as in his game) the amount of ink drawn sets how heavy and strong it is.
+  function forge(f,R,g){
+    const style={sword:'blade',club:'blade',axe:'blade',spear:'spear',hammer:'hammer',mace:'hammer',bow:'bow'}[R.type]||'blade', kind=style==='bow'?'ranged':'melee';
+    const inkLen=g.strokes.reduce((n,p)=>n+pathLen(p),0), mass=clamp(inkLen/130,0.6,2.6), cost=clamp(mass*20,12,52), el=elOfColor(g.color), k=f.held;
+    // how each recognised weapon leans (power, range, speed) and the two traits it is offered; the first is used
+    const lean={sword:[5,5,5,'flurry','guard'],club:[6,4,5,'heavy','lucky'],axe:[7,4,4,'blast','heavy'],spear:[4,7,4,'pierce','pull'],hammer:[8,4,3,'heavy','launch'],mace:[7,5,3,'launch','lucky'],bow:[6,7,2,'pierce','homing']}[R.type]||[5,5,5];
+    const it=S.items[f.side][k]=buildItem({name:(el==='none'?'':{fire:'Fire ',water:'Water ',plant:'Leafy '}[el])+R.type[0].toUpperCase()+R.type.slice(1),kind,style,element:el,
+      power:lean[0],range:lean[1],speed:lean[2],traits:lean.slice(3),trait:lean[3]},cost);
+    f.act=null; f.cd[k]=0;
+    fx('forge',{side:f.side,slot:k,kind,style,ver:it.ver,strokes:g.strokes.map(st=>({el,pts:st.map(p=>[rr(p.x),rr(p.y)])}))});
+    log(f,'  '+R.type+': m'+mass.toFixed(1)+' \u2192 '+style+' in slot '+'AB'[k]); fade(g);
+  }
+  /* -- hacks (his startHack / counterHack / execHack / patchCanvas) -- */
+  const counterFor=(f,h)=>h.id==='overclock'?STYLE_COUNTER[itemOf(f.side,f.held).style]||'wall':h.counter;
+  S.startHack=(side,idx)=>{ const f=S.f[side], h=HACKS[idx]; if(!h||S.phase!=='fight'||f.od<100||S.hack||f.hp<=0||f.stun>0) return false;
+    if(h.id==='breakout'&&(!BOARD||S.broken)){ floatT(f.x,-(f.y+120),BOARD?'already breached':'nothing to break out of',side); return false; }
+    f.od=0; S.hack={by:side,target:1-side,def:h,t:h.tele,max:h.tele,counter:counterFor(f,h)}; log(f,'\u25b6 running '+h.name+' \u2014 counter glyph: '+S.hack.counter); return true; };
+  function counterHack(f,key){ const h=S.hack, by=S.f[h.by]; S.hack=null; by.stun=1.2; by.act=null; f.od=Math.min(100,f.od+20);
+    flash('COUNTERED!',nameOf(f)+' blocked '+h.def.name+' with '+(key==='null'?'\u2298':key),f.side); const c=chest(by); ring(c.x,c.y,PCOLS[f.side]); fx('shake',{n:8});
+    log(f,'\u2605 COUNTERED '+h.def.name+' ('+key+') \u2014 '+nameOf(by)+' stunned'); }
+  function execHack(h){ const f=S.f[h.by],t=S.f[h.target],id=h.def.id; fx('shake',{n:6});
+    if(id==='breakout'){ const b=BOARD, right=f.x>(b.x0+b.x1)/2; S.broken={t:15,by:h.by,hole:{x:right?b.x1:b.x0,y:-clamp(f.y+50,b.floor+60,b.top-60)}};
+      f.vx=(right?1:-1)*700; f.vy=500; f.flung=0.3; f.flungBy=f.side; f.ground=false; S.effects.push({name:h.def.name,by:h.by,target:h.target,counter:'box',t:15,end:patchCanvas});
+      flash('CANVAS BREACHED','window titlebars are platforms',f.side); }
+    if(id==='recycle'){ const k=t.held, it=S.items[t.side][k];
+      if(it){ S.items[t.side][k]=null; t.act=null; fx('recycle',{side:t.side,slot:k,x:rr(t.x),yd:rr(-(t.y+70))}); log(null,it.name+' moved to Recycle Bin'); }
+      else{ const vx=sgn(40-t.x)*900; t.flung=0.6; t.flungBy=f.side; hurt(t,8,'none',vx,420,f,f.x,'slam'); } }
+    if(id==='transform'){ t.scaleGoal=0.55; S.effects.push({name:h.def.name,by:h.by,target:h.target,counter:'circle',t:6,end:()=>{ t.scaleGoal=1; }}); }
+    if(id==='popups'){ const top=BOARD&&!S.broken?-BOARD.top+10:-(t.y+420); for(let i=0;i<4;i++) addObj({kind:'popup',solid:true,dyn:true,heavy:true,x:t.x-65+rand(-90,90),y:top-20-i*95,w:130,h:62,vx:0,vy:150,life:5,owner:f.side,msg:pick(['Ink.dll not found','Stack overflow','Out of memory','Illegal operation','Abort, Retry, Fail?'])});
+      S.effects.push({name:h.def.name,by:h.by,target:h.target,counter:'x',t:5,end:()=>{ for(const o of S.objs) if(o.kind==='popup') o.life=0; }}); }
+    if(id==='overclock'){ f.overclock=8; S.effects.push({name:h.def.name,by:h.by,target:h.target,counter:h.counter,t:8,end:()=>{ f.overclock=0; }}); }
+    log(f,'\u25a0 '+h.def.name+' executed'); }
+  function patchCanvas(){ if(!S.broken) return; S.broken=null; const b=BOARD; if(!b) return;
+    for(const f of S.f){ if(!(f.x>b.x0&&f.x<b.x1&&f.y>=b.floor-2&&f.y<b.top)){ f.x=clamp(f.x,b.x0+30,b.x1-30); f.y=b.floor; f.vx=f.vy=0; } }
+    flash('CANVAS PATCHED','back inside the art board',-1);
+    for(const o of S.objs) if(o.dyn&&!(o.x>b.x0&&o.x<b.x1)) o.life=0; }
+  /* -- slam damage (his impact): a flung fighter that hits something hard is hurt by it -- */
+  function impact(f,sp){ if(sp>850&&f.flung>0&&f.hp>0){ const d=(sp-850)/60; f.flung=0; hurt(f,d,'none',0,120,f.flungBy===f.side||f.flungBy<0?null:S.f[f.flungBy],f.x,'slam'); } }
+  /* -- props (his stepBody): crates, pots and pop-ups fall, pile up and can be shoved -- */
+  function stepBody(o,dt){ o.vy=Math.min(o.vy+2100*dt*(o.kind==='popup'?0.6:1),1500); o.vx*=Math.pow(0.12,dt);
+    const b=BOARD, mid=o.x+o.w/2, inB=b&&!S.broken&&mid>b.x0&&mid<b.x1&&-(o.y+o.h)>=b.floor-14, B=inB?{l:b.x0,r:b.x1,floor:-b.floor}:{l:0,r:W,floor:0};
+    o.x+=o.vx*dt; if(o.x<B.l){ o.x=B.l; o.vx*=-0.3; } if(o.x+o.w>B.r){ o.x=B.r-o.w; o.vx*=-0.3; }
+    for(const q of S.objs){ if(q===o||!q.solid||q.dyn) continue; if(overlap(o,q)){ o.x=o.x+o.w/2<q.x+q.w/2?q.x-o.w:q.x+q.w; o.vx*=-0.2; } }
+    const py=o.y+o.h; o.y+=o.vy*dt;
+    for(const q of S.objs){ if(q===o||!q.solid) continue; if(overlap(o,q)&&o.vy>=0&&py<=q.y+6){ o.y=q.y-o.h; o.vy=0; } }
+    if(o.vy>=0) for(const p of oneWays()){ const yd=-p.y; if(mid>p.x0&&mid<p.x1&&py<=yd+1&&o.y+o.h>=yd){ o.y=yd-o.h; o.vy=0; } }
+    if(o.y+o.h>B.floor){ o.y=B.floor-o.h; o.vy=0; }
+    if(o.kind==='popup'&&o.vy>200&&!o.hitDone){ const t=S.f[1-o.owner]; if(overlap(o,bodyRect(t))){ o.hitDone=true; hurt(t,7,'none',sgn(t.x-o.x-o.w/2)*200,150,S.f[o.owner],o.x+o.w/2,'slam'); } } }
+  /* -- the mining tool (new): one swing chips whatever is in front, or underfoot while holding down -- */
+  function mineHit(f){
+    const inp=S.inp[f.side], dn=inp.d&&f.ground, R=64, cy=f.y+44*f.scale; let best=null, bd=1e9;
+    const consider=(t,x,y,kind)=>{ const d=Math.hypot(x-f.x,y-cy); if(d<bd){ bd=d; best={t,x,y,kind}; } };
+    if(BOARD&&!S.broken) for(const c of S.cells){ if(c.hp<=0||c.side==='c') continue;
+      if(c.side==='f'){ if(dn&&Math.abs(f.y-c.y1)<8&&f.x>=c.x0-14&&f.x<=c.x1+14) consider(c,(c.x0+c.x1)/2,c.y1,'cell'); }
+      else if(!dn){ const mx=(c.x0+c.x1)/2, dx=(mx-f.x)*f.face; if(dx>-8&&dx<R&&c.y1>f.y&&c.y0<f.y+88) consider(c,mx,clamp(cy,c.y0,c.y1),'cell'); } }
+    for(const o of S.objs){ const x0=o.x,x1=o.x+o.w,y1=-o.y,y0=o.kind==='platform'?y1-6:-(o.y+o.h);
+      if(dn&&Math.abs(f.y-y1)<8&&f.x>=x0-8&&f.x<=x1+8) consider(o,clamp(f.x,x0,x1),y1,'obj');
+      else if(!dn&&o.kind!=='platform'){ const mx=clamp(f.x+f.face*24,x0,x1), dx=(mx-f.x)*f.face; if(dx>-10&&dx<R&&y1>f.y-4&&y0<f.y+88) consider(o,mx,clamp(cy,y0,y1),'obj'); } }
+    if(!best) return;
+    const t=best.t; if(t.hp===undefined) t.hp={wall:2,block:3,crate:2,pot:2}[t.kind]||1;
+    t.hp--; puff(best.x,-best.y,'#999',6); fx('chip',{x:rr(best.x),yd:rr(-best.y)});
+    if(t.hp>0) return;
+    burst(best.x,-best.y,'#777',14);
+    if(best.kind==='obj'){ t.life=0; log(f,'mined through a '+t.kind); }
+    else{ log(f,'mined through the art board'); if(!S.breached){ S.breached=true; flash('CANVAS BREACHED','mined a way out',f.side); } }
+  }
+  function world(dt){
+    for(const side of [0,1]){ const g=S.groups[side]; if(g&&S.time-g.t>0.6) finalize(side); }
+    // a flung fighter slamming into the other one hurts them (his body-collision rule)
+    for(const f of S.f){ const o=foeOf(f); if(f.flung>0&&o.hp>0&&D(chest(f),chest(o))<34){ const sp=Math.hypot(f.vx,f.vy); if(sp>480){ hurt(o,sp/90,'none',sgn(f.vx)*sp*0.5,200,f.flungBy===o.side?null:f,f.x,'slam'); f.flung=0; f.vx*=-0.3; } } }
+    for(const o of S.objs){ if(o.dyn) stepBody(o,dt); if(o.life!==Infinity) o.life-=dt; } S.objs=S.objs.filter(o=>o.life>0);
+    for(const fd of S.fields){ fd.life-=dt;
+      for(const f of S.f) if(segDist(chest(f),fd.a,fd.b)<55){ f.vx+=fd.u.x*2800*dt; f.vy-=fd.u.y*2800*dt; if(f.ground&&fd.u.y<-0.3){ f.vy+=300; f.ground=false; } f.flung=Math.max(f.flung,0.1); }
+      for(const o of S.objs) if(o.dyn){ const c={x:o.x+o.w/2,y:o.y+o.h/2}; if(segDist(c,fd.a,fd.b)<60){ o.vx+=fd.u.x*2400*dt; o.vy+=fd.u.y*2400*dt; } } }
+    S.fields=S.fields.filter(q=>q.life>0);
+    if(S.hack){ S.hack.t-=dt; if(S.hack.t<=0){ const h=S.hack; S.hack=null; execHack(h); } }
+    for(const e of S.effects){ e.t-=dt; if(e.t<=0&&!e.ended){ e.ended=true; e.end(); } } S.effects=S.effects.filter(e=>!e.ended);
+    if(S.broken) S.broken.t=Math.max(0,S.broken.t-dt);
   }
   function tick(dt){
     if(S.phase==='over') return;
@@ -614,16 +1155,17 @@ function createDuel(opts){
       for(const f of S.f){ f.hp=Math.max(1,f.hp); f.rest=f.hurt>0||f.burn>0?0:(f.rest||0)+dt; if(f.rest>1.5){ f.hp=HP; f.uses=usesFor(f.side); } }
     }
     S.t-=dt;
-    if(S.phase==='draw'){ if((S.ready[0]&&S.ready[1])||S.t<=0){ S.phase='count'; S.t=3; S.f=[fresh(0),fresh(1)]; for(const f of S.f) f.uses=usesFor(f.side); S.pr=[]; } return; }
+    if(S.phase==='draw'){ if((S.ready[0]&&S.ready[1])||S.t<=0){ S.phase='count'; S.t=3; S.f=[fresh(0),fresh(1)]; for(const f of S.f) f.uses=usesFor(f.side); S.pr=[]; resetWorld(); } return; }
     if(S.phase==='count'){ if(S.t<=0){ S.phase='fight'; S.t=ROUND_TIME; S.events.push({e:'go'}); } return; }
     if(S.phase==='end'){
       if(S.t>0) return;
       if(S.winner>=0&&S.wins[S.winner]>=WINS){ S.phase='over'; S.champ=S.winner; }
-      else{ S.round++; S.phase='draw'; S.t=25; S.ready=[false,false]; S.f=[fresh(0),fresh(1)]; S.pr=[]; }
+      else{ S.round++; S.phase='draw'; S.t=25; S.ready=[false,false]; S.f=[fresh(0),fresh(1)]; S.pr=[]; resetWorld(); }
       return;
     }
+    S.time+=dt; SOL=solids();
     for(const f of S.f) control(f,dt);
-    projectiles(dt);
+    projectiles(dt); world(dt);
     const a=S.f[0], b=S.f[1], d0=a.hp<=0, d1=b.hp<=0;
     if(!S.practice&&(d0||d1||S.t<=0)){
       S.winner=d0&&d1?-1:d0?1:d1?0:Math.abs(a.hp-b.hp)<0.5?-1:a.hp>b.hp?0:1;
@@ -633,22 +1175,43 @@ function createDuel(opts){
   }
   S.step=dt=>{ acc+=Math.min(0.25,dt); while(acc>=STEP){ acc-=STEP; tick(STEP); } };
   S.snapshot=()=>({phase:S.phase,t:+S.t.toFixed(2),round:S.round,wins:S.wins,ready:S.ready,winner:S.winner,champ:S.champ,ink:[S.inkLeft(0),S.inkLeft(1)],practice:S.practice,
+    w:W,board:BOARD,broken:S.broken&&{t:r1(S.broken.t),hole:S.broken.hole},breached:S.breached,cells:S.cells.filter(c=>c.hp<2&&c.side!=='c').map(c=>[c.id,c.hp]),
+    objs:S.objs.map(o=>[o.id,r1(o.x),r1(o.y),o.life===Infinity?-1:r1(o.life)]),fields:S.fields.map(q=>({a:q.a,b:q.b,u:q.u,life:r1(q.life),max:q.max,col:q.col})),
+    hack:S.hack&&{by:S.hack.by,target:S.hack.target,name:S.hack.def.name,desc:S.hack.def.desc,t:+S.hack.t.toFixed(2),max:S.hack.max,counter:S.hack.counter},
+    fxs:S.effects.map(e=>({by:e.by,target:e.target,counter:e.counter,name:e.name})),
     items:S.items.map(a=>a.map(it=>it&&{name:it.name,kind:it.kind,style:it.style,el:it.el,cost:Math.round(it.cost),ver:it.ver,sz:Math.round(it.st.size),
       pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune})),
     f:S.f.map(f=>({x:r1(f.x),y:r1(f.y),vx:Math.round(f.vx),vy:Math.round(f.vy),face:f.face,hp:Math.max(0,r1(f.hp)),g:f.ground?1:0,
       act:f.act?{k:f.act.k,m:f.act.m+(f.act.v?'_b':''),t:+f.act.t.toFixed(3),r:+f.act.rate.toFixed(2)}:null,
       sh:f.shield>0?1:0,hurt:f.hurt>0?1:0,burn:f.burn>0?1:0,slow:f.slow>0?1:0,dash:f.dash>0?1:0,held:f.held,
-      cd:[+(f.cd[0]/f.cdMax[0]).toFixed(2),+(f.cd[1]/f.cdMax[1]).toFixed(2)],uses:f.uses})),
+      cd:[+(f.cd[0]/f.cdMax[0]).toFixed(2),+(f.cd[1]/f.cdMax[1]).toFixed(2)],uses:f.uses,
+      ink2:Math.round(f.ink2),od:Math.round(f.od),stun:f.stun>0?1:0,trap:f.trap>0?1:0,bub:f.bubble?Math.round(f.bubble.r):0,oc:f.overclock>0?1:0,sc:+f.scale.toFixed(2),fl:f.flung>0?1:0})),
     pr:S.pr.map(p=>({id:p.id,k:p.k,st:p.st,big:p.big,side:p.side,slot:p.slot,x:r1(p.x),y:r1(p.y),vx:Math.round(p.vx),vy:Math.round(p.vy),el:p.el})),
     ev:S.events.splice(0)});
   return S;
 }
 // A simple opponent: thinks a few times a second and presses the same buttons a player would.
-function makeBot(side){
-  let think=0; const i={l:0,r:0,d:0,j:0,a:0,b:0};
-  return function(S,dt){
-    if(S.phase!=='fight'){ i.l=i.r=0; S.setInput(side,i); return; }
-    think-=dt; if(think>0) return; think=0.2+Math.random()*0.18;
+// The opponent. The fighting is this game's bot. The drawing, hacking and countering are Alex's animator.bot, adapted from
+// his AI.decide(), AI.onHack() and Drawer: the same rules and odds, and a ghost cursor that really traces each glyph
+// stroke by stroke and submits it through S.stroke, exactly as a player's drawing is. skillOf() is his CPU skill, 0..1.
+function makeBot(side,skillOf){
+  let think=0, react=null, hadHack=false; const i={l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0};
+  const {T,toPts,densify,rand,pick,GLYPH_ICON}=INK, COL=['#1d3fbf','#b0121f'][side];
+  const dr={task:null,cur:{x:0,y:-200},vis:false,
+    draw(name,ax,ay,sc,fx){ if(this.task||!T[name]) return false; this.task={strokes:toPts(T[name],ax,ay,sc||1,fx||1,1.1).map(st=>densify(st,4)),si:0,pi:0,down:false,wait:0.05,name}; this.vis=true; return true; },
+    cancel(){ this.task=null; },
+    update(S,dt,d){ const t=this.task; if(!t) return; if(t.wait>0){ t.wait-=dt; return; } const sp=(900+d*900)*dt, st=t.strokes[t.si];
+      if(!t.down){ const q=st[0], dd=Math.hypot(q.x-this.cur.x,q.y-this.cur.y); if(dd>sp){ this.cur.x+=(q.x-this.cur.x)/dd*sp; this.cur.y+=(q.y-this.cur.y)/dd*sp; return; } this.cur={x:q.x,y:q.y}; t.down=true; t.pi=1; return; }
+      let b=sp; while(b>0&&t.pi<st.length){ const p=st[t.pi], dd=Math.hypot(p.x-this.cur.x,p.y-this.cur.y); if(dd<=b){ this.cur={x:p.x,y:p.y}; b-=dd; t.pi++; } else { this.cur.x+=(p.x-this.cur.x)/dd*b; this.cur.y+=(p.y-this.cur.y)/dd*b; b=0; } }
+      if(t.pi>=st.length){ if(!S.stroke(side,st,COL)){ this.task=null; return; } t.down=false; t.si++; t.pi=0; t.wait=0.04; if(t.si>=t.strokes.length) this.task=null; } } };
+  const fn=function(S,dt){
+    const d=skillOf?skillOf():0.55;
+    if(S.phase!=='fight'){ i.l=i.r=0; S.setInput(side,i); dr.task=null; dr.vis=false; react=null; hadHack=false; return; }
+    dr.update(S,dt,d);
+    { // his onHack(): notice a hack aimed at us, then (depending on skill) draw its counter glyph after a reaction delay
+      const me=S.f[side], aimed=!!(S.hack&&S.hack.target===side); if(aimed&&!hadHack) react={t:rand(0.2,0.6)*(1.5-d),go:Math.random()<0.3+0.6*d}; hadHack=aimed;
+      if(react){ react.t-=dt; if(react.t<=0){ const r=react; react=null; if(r.go&&S.hack&&S.hack.target===side){ dr.cancel(); dr.draw(GLYPH_ICON[S.hack.counter]||'null',me.x-me.face*70,-(me.y+150),0.7,1); } } } }
+    think-=dt; if(think>0) return; think=0.35+(0.1-0.35)*d+Math.random()*0.08+0.07;
     const f=S.f[side], e=S.f[1-side], dx=e.x-f.x, dist=Math.abs(dx), dy=e.y-f.y, dir=Math.sign(dx)||1, facing=f.face===dir;
     const incoming=S.pr.some(p=>p.side!==side&&Math.abs(p.x-f.x)<170&&Math.sign(p.vx)===-dir);
     let ideal=260, press=[false,false], melee=false, far=0;
@@ -668,8 +1231,19 @@ function makeBot(side){
     if(Math.random()>0.4){ if(press[0]) i.a++; if(press[1]) i.b++; }
     if((dy>70&&Math.random()<0.55)||(incoming&&Math.random()<0.35)||Math.random()<0.04) i.j++;
     i.d=dy<-60&&Math.random()<0.5?1:0;
+    // his decide(): hacks when the overdrive bar is full, and glyphs for the situation
+    const busy=!!dr.task;
+    if(f.od>=100&&!S.hack&&Math.random()<0.2+0.4*d){ const opts=[2,3]; if(S.cells.length&&!S.broken) opts.push(0); if(S.items[1-side][e.held]) opts.push(1,1); if(S.items[side][f.held]) opts.push(4,4); i.h=pick(opts); i.q++; }
+    else if(!busy&&f.ink2>55&&dist>240&&Math.random()<0.14*d) dr.draw('lightning',f.x+dir*80,-(f.y+110),0.8,dir);
+    else if(!busy&&f.ink2>45&&e.act&&dist<130&&Math.random()<0.25*d) dr.draw('wall',f.x+dir*42,-(f.y+46),0.9);
+    else if(!busy&&f.ink2>40&&e.y>f.y+110&&f.ground&&Math.random()<0.25) dr.draw('platform',f.x+dir*60,-(f.y+95),0.7);
+    else if(!busy&&f.ink2>35&&dist>330&&Math.random()<0.1*d) dr.draw('arrow',f.x+dir*60,-(f.y+55),0.95,dir);
+    // stuck against the art board's frame with the foe on the other side: dig
+    if(S.cells.length&&!S.broken&&f.ground&&Math.abs(f.vx)<20&&(i.l||i.r)&&dist>120&&Math.random()<0.6) i.m++;
     S.setInput(side,i);
   };
+  fn.cursor=()=>dr.vis&&dr.task?dr.cur:null;
+  return fn;
 }
 // Ready-made doodles, in pad coordinates: one of everything a player can draw. Used by the bot and offered in the
 // sketchbook as stock items, so a move set can be tried without drawing or waiting for the vision model.
@@ -705,13 +1279,51 @@ function botLoadout(){
 
 /* ================= page ================= */
 const $=id=>document.getElementById(id);
-const PEN={none:'#1c2541',fire:'#e2552d',water:'#2a7fd4',plant:'#2f9e56'}, PCOL=['#2f6fde','#d9486e'], NAME=['Blue','Red'];
+const PEN={none:'#1c2541',fire:'#e2552d',water:'#2a7fd4',plant:'#2f9e56'}, PCOL=['#1d3fbf','#b0121f'], NAME=['Blue','Red'];
 const GY=392, cv=$('arena'), L=cv.getContext('2d');
 // Match the canvas backing store to the screen's real pixels so lines stay sharp on high-density displays.
+// Desktop mode: set by the overlay app (overlay/main.js), which loads this page with ?desk=1 in a transparent window.
+const DESK=new URLSearchParams(location.search).has('desk'), DESK_SCALE=1.15, host=window.overlayHost||null;
+// Retro desktop: on a computer the game is staged on a pretend old desktop (after Alex's InkShop prototype). The menus,
+// sketchbook, health bars and notes are draggable windows, the fighters run along the taskbar, and the windows' title
+// bars are the platforms. It shares the overlay's machinery; only the backdrop and where the window edges come from differ.
+// Tablets and phones keep the plain layout, and ?plain=1 turns it off.
+const RETRO=!DESK&&!new URLSearchParams(location.search).has('plain')&&innerWidth>=900&&!matchMedia('(pointer:coarse)').matches, TASK_H=32;
+const deskLike=()=>DESK||RETRO, floorGap=()=>RETRO?TASK_H:0;
+let ARENA_W=960, ARENA_PLATS=PLATS, deskStage=true, deskEdges=null, deskSent='', deskMenu=false, deskPaused=false, deskLive=null, OY=0;
+if(deskLike()){ document.documentElement.classList.add('deskmode'); document.body.classList.add('deskmode'); }
+if(RETRO){ document.documentElement.classList.add('retro'); document.body.classList.add('retro'); }
+// One game unit in screen pixels: fixed for a match on this computer, and stretched to the screen for the standard stage.
+const deskSc=()=>deskStage?Math.min(1.6,innerWidth/960):DESK_SCALE;
+// Real windows as terrain. The overlay app reports the visible top edges of the other apps' windows in screen pixels;
+// here they become platforms in game units. They replace the stage's fixed platforms.
+function deskTerrain(){
+  if(!deskLike()||!deskEdges) return;
+  if(typeof net!=='undefined'&&net&&!net.watch) return;      // a player in someone else's room uses that room's terrain
+  fitCanvas(); const sc=deskSc(), out=[];
+  for(const e of deskEdges){
+    const y=Math.round((innerHeight-floorGap()-e.y)/sc-6), x0=Math.max(0,Math.round(e.x0/sc-OX)), x1=Math.min(ARENA_W,Math.round(e.x1/sc-OX));
+    if(y>=26&&x1-x0>=30) out.push({id:e.id,wx:Math.round(e.wx/sc-OX),x0,x1,y});
+  }
+  ARENA_PLATS=out;
+  if(typeof sim!=='undefined'&&sim) sim.setPlats(out);
+  // As the big screen of a room, pass the terrain to the server, which runs that match.
+  else if(typeof net!=='undefined'&&net&&net.watch){ const j=JSON.stringify(out); if(j!==deskSent){ deskSent=j; post({type:'plats',plats:out}); } }
+}
 // During a fight the arena fills the window's width. If that would make it taller than the screen allows, the height is
 // capped and the view simply shows more floor either side of the arena (OX), so nothing is stretched and the rules do not change.
 let VS=1, OX=0, VW=960, playing=false, bigScreen=false, padView=false;
 function fitCanvas(){
+  if(deskLike()){
+    // One game unit is a fixed number of screen pixels, the floor is the bottom edge of the window (the top of the taskbar),
+    // and the arena is as wide as the screen.
+    const r=Math.min(3,window.devicePixelRatio||1), w=Math.round(innerWidth*r), h=Math.round(innerHeight*r);
+    if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
+    // A local match uses a screen-wide arena at a fixed size. An online room uses the standard 960-wide stage with its
+    // platforms, enlarged to fill the screen's width (within reason) and centred.
+    const sc=deskSc();
+    VS=sc*r; VW=innerWidth/sc; OX=Math.max(0,(VW-ARENA_W)/2); OY=h-(GY+6)*VS-floorGap()*r; return;
+  }
   const r=Math.min(3,window.devicePixelRatio||1), cw=cv.clientWidth||960, full=cw*440/960;
   const ch=Math.round(playing?Math.max(240,Math.min(full,window.innerHeight*(bigScreen?0.86:0.64))):full);
   if(cv.style.height!==ch+'px') cv.style.height=ch+'px';
@@ -722,7 +1334,10 @@ function fitCanvas(){
 new ResizeObserver(fitCanvas).observe(cv); fitCanvas();
 let mode='bot', sim=null, bot=null, view=null, viewAt=0, net=null, local=[true,false], fx=[], shake=0, serverInfo={}, canRead=location.protocol.startsWith('http');
 const art=[[null,null],[null,null]], artStrokes=[[null,null],[null,null]], desk=[null,null];
-const inp=[0,1].map(()=>({l:0,r:0,d:0,j:0,a:0,b:0}));
+const inp=[0,1].map(()=>({l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0}));
+// His interface and effects. Built once; the windows only show on the retro desktop, the effects are used everywhere.
+const FXI=makeInkShop(INK,L);
+const wobj=new Map(), wPending=[[],[]], wBolt={}; let wPen=null;
 const cid=(()=>{ const mk=()=>Math.random().toString(36).slice(2,12);
   try{ let v=sessionStorage.getItem('dd-id'); if(!v){ v=mk(); sessionStorage.setItem('dd-id',v); } return v; }catch(e){ return mk(); } })();
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -758,7 +1373,7 @@ function buildSprite(strokes,axis){
   const g=can.getContext('2d'); g.translate(m-x0*k,m-y0*k); g.scale(k,k); drawStrokes(g,R,31/k);
   return {cv:can,w:can.width,h:can.height};
 }
-function setArt(side,k,strokes,ver,kind,style){ artStrokes[side][k]=strokes||null; art[side][k]=strokes?{ver,sprite:buildSprite(strokes,(kind==='melee'&&style!=='fist')||style==='staff')}:null; }
+function setArt(side,k,strokes,ver,kind,style){ artStrokes[side][k]=strokes||null; art[side][k]=strokes?{ver,strokes,sprite:buildSprite(strokes,(kind==='melee'&&style!=='fist')||style==='staff')}:null; }
 function sprite(side,k,size,grip){
   const a=art[side][k]; if(!a) return false; const sp=a.sprite, sc=size/Math.max(sp.w,sp.h);
   L.drawImage(sp.cv,grip?-14*sc:-sp.w*sc/2,-sp.h*sc/2,sp.w*sc,sp.h*sc); return true;
@@ -826,7 +1441,11 @@ function buildDesks(){
 // Ink available for the slot being drawn: the full pot minus what the other slot already holds.
 function budget(d){ const o=view&&view.items[d.side][1-d.k]; return INK_MAX-(o?o.cost:0); }
 function updateDesk(d){
-  const g=d.g; g.setTransform(2,0,0,2,0,0); g.fillStyle='#fff'; g.fillRect(0,0,PAD_W,PAD_H); drawStrokes(g,d.strokes,5);
+  const g=d.g; g.setTransform(2,0,0,2,0,0); g.fillStyle='#fff'; g.fillRect(0,0,PAD_W,PAD_H);
+  // With nothing being drawn, the pad shows what is already in the selected slot.
+  const held=!d.strokes.length&&art[d.side][d.k]&&view&&view.items[d.side][d.k]?art[d.side][d.k]:null;
+  drawStrokes(g,held?held.strokes:d.strokes,5);
+  if(held){ g.fillStyle='#59658a'; g.font='600 13px Karla,system-ui,sans-serif'; g.textAlign='left'; g.fillText('In slot '+'AB'[d.k]+' now. Draw here to replace it.',10,PAD_H-10); }
   const items=view?view.items[d.side]:[null,null], cost=d.strokes.length?inkCost(d.strokes):0, have=budget(d), ready=!!(view&&view.ready[d.side]);
   d.el.querySelectorAll('.slot').forEach(b=>{ const k=+b.dataset.k, it=items[k];
     b.setAttribute('aria-pressed',k===d.k);
@@ -883,10 +1502,10 @@ async function makeItem(d){
       if(canRead) try{ const r=await fetch('/duel/read',{method:'POST',body:await (await fetch('data:image/png;base64,'+png)).blob()}); if(r.ok){ spec=validItem(await r.json()); source='OpenAI'; } }catch(e){}
       if(!spec){ spec=localGuess(strokes); source='local guess'; }
       const it=sim.setItem(d.side,k,spec,inkCost(strokes)); if(!it) throw new Error('Too late: the round has started.');
-      setArt(d.side,k,strokes,it.ver,it.kind,it.style); spec={name:it.name,kind:it.kind,element:it.el};
+      setArt(d.side,k,strokes,it.ver,it.kind,it.style); accept(sim.snapshot()); spec={name:it.name,kind:it.kind,element:it.el};
     }
     read.innerHTML=`<b>${esc(spec.name)}</b>: ${spec.kind}${spec.element!=='none'?', '+spec.element:''} (read by ${esc(source)}). ${HINT[spec.kind]}`;
-    d.strokes=[]; const other=view&&view.items[d.side][1-k]; if(!other) d.k=1-k;
+    d.strokes=[]; if(!(view&&view.items[d.side][1-k])) read.innerHTML+=' Slot '+'AB'[1-k]+' is still empty.';
   }catch(e){ read.textContent=e.message; }
   d.busy=false; updateDesk(d);
 }
@@ -901,29 +1520,33 @@ async function takeStock(d,key){
       const o=await r.json(); d.busy=false; if(!r.ok) throw new Error(o.error||'The server could not add that.'); spec=o;
     }else{
       const it=sim.setItem(d.side,k,made.spec,cost); if(!it) throw new Error('Not enough ink left for that.');
-      setArt(d.side,k,made.strokes,it.ver,it.kind,it.style); spec={name:it.name,kind:it.kind,style:it.style,element:it.el};
+      setArt(d.side,k,made.strokes,it.ver,it.kind,it.style); accept(sim.snapshot()); spec={name:it.name,kind:it.kind,style:it.style,element:it.el};
     }
     read.innerHTML=`<b>${esc(spec.name)}</b>: ${spec.kind}${spec.style?' ('+spec.style+')':''}${spec.element!=='none'?', '+spec.element:''}. ${HINT[spec.kind]}`; d.showStock=false;
-    d.strokes=[]; if(!(view&&view.items[d.side][1-k])&&!view.practice) d.k=1-k;
+    d.strokes=[]; if(!(view&&view.items[d.side][1-k])) read.innerHTML+=' Slot '+'AB'[1-k]+' is still empty.';
   }catch(e){ d.busy=false; read.textContent=e.message; }
   updateDesk(d);
 }
 const HINT={melee:'Tap again and again for a combo; down + attack is a special; try it running or in the air.',ranged:'Tap to keep firing; hold down and press for a charged shot.',bomb:'Lobbed in an arc; mind the blast.',shield:'Blocks hits from the front for a moment.',dash:'A burst of speed that rams.',heal:'Restores health, 3 uses a round.'};
 
 /* ---------- controls ---------- */
-const KEYS1={KeyA:'l',KeyD:'r',KeyW:'j',KeyS:'d',KeyF:'a',KeyG:'b'}, KEYS2={ArrowLeft:'l',ArrowRight:'r',ArrowUp:'j',ArrowDown:'d',KeyK:'a',KeyL:'b'};
+// Player one attacks with J and K. On a shared keyboard player two uses the arrows with , and . (or numpad 1 and 2).
+// L is the mining tool and Q runs the selected hack (1-5 pick one).
+const KEYS1={KeyA:'l',KeyD:'r',KeyW:'j',KeyS:'d',KeyJ:'a',KeyK:'b',KeyL:'m',KeyQ:'q'}, KEYS2={ArrowLeft:'l',ArrowRight:'r',ArrowUp:'j',ArrowDown:'d',Comma:'a',Period:'b',Slash:'m',ShiftRight:'q',Numpad1:'a',Numpad2:'b',Numpad3:'m'}, SOLO={Space:'j',KeyG:'b'};
 function press(side,k,down){
   const i=inp[side];
-  if('lrd'.includes(k)){ if(i[k]===(down?1:0)) return; i[k]=down?1:0; } else if(down) i[k]++; else return;
+  if('lrd'.includes(k)){ if(i[k]===(down?1:0)) return; i[k]=down?1:0; } else if(down){ i[k]++; if(k==='q') i.h=FXI.hackSel; } else return;
   if(sim) sim.setInput(side,i); else if(net&&net.side===side) post(Object.assign({type:'input',seq:++net.seq},i));
 }
 function keyTarget(code){
   if(mode==='2p') return KEYS1[code]?[0,KEYS1[code]]:KEYS2[code]?[1,KEYS2[code]]:null;
-  const k=KEYS1[code]||KEYS2[code]||(code==='Space'?'j':null); return k?[mySide(),k]:null;
+  const k=KEYS1[code]||KEYS2[code]||SOLO[code]; return k?[mySide(),k]:null;
 }
 addEventListener('keydown',e=>{ if(e.target.tagName==='INPUT'||e.repeat&&keyTarget(e.code)){ if(e.target.tagName!=='INPUT') e.preventDefault(); return; }
   const t=keyTarget(e.code); if(!t||!view||view.phase==='draw'||view.phase==='over') return; e.preventDefault(); press(t[0],t[1],true); });
 addEventListener('keyup',e=>{ const t=keyTarget(e.code); if(t) press(t[0],t[1],false); });
+addEventListener('keydown',e=>{ if(e.target.tagName==='INPUT'||e.repeat) return; if(/^Digit[1-5]$/.test(e.code)) FXI.hackSel=+e.code.slice(5)-1;
+  if(RETRO){ const tk={KeyF:'fight',KeyB:'pencil',KeyR:'rect',KeyO:'ellipse'}[e.code]; if(tk) FXI.setTool(tk); } });
 addEventListener('blur',releaseAll); document.addEventListener('visibilitychange',()=>{ if(document.hidden) releaseAll(); });
 // Online, a held or released button is one small request that can be lost on a bad connection, which would leave the
 // fighter running. So the current buttons are sent again a few times a second while a round is on.
@@ -941,10 +1564,10 @@ function buildControls(){
   const box=$('tcs'); box.innerHTML=''; releasers=[];
   for(const side of [0,1]){
     if(!local[side]) continue;
-    const keys=mode==='2p'?(side?'← → move · ↑ jump · ↓ drop · K / L use':'A D move · W jump · S drop · F / G use'):'A D or ← → move · W / Space jump · S drop · F / G use';
+    const keys=mode==='2p'?(side?'← → move · ↑ jump · ↓ down · , and . attack':'A D move · W jump · S down · J and K attack'):'A D or ← → move · W / Space jump · S down · J attack 1 · K attack 2';
     const el=document.createElement('div'); el.className='tc'; el.dataset.side=side;
     el.innerHTML=`<div class="grp"><button data-k="l" aria-label="Move left">◀</button><button data-k="d" aria-label="Down">▼</button><button data-k="r" aria-label="Move right">▶</button></div><div class="keys">${keys}</div>
-      <div class="grp"><button data-k="a"><span class="cdfill"></span>A<small></small></button><button data-k="b"><span class="cdfill"></span>B<small></small></button><button data-k="j" aria-label="Jump">⤒<small>jump</small></button></div>`;
+      <div class="grp"><button data-k="a"><span class="cdfill"></span>A<small></small></button><button data-k="b"><span class="cdfill"></span>B<small></small></button><button data-k="j" aria-label="Jump">⤒<small>jump</small></button><button data-k="m" aria-label="Mine">⛏<small>mine</small></button><button data-k="q" aria-label="Run hack"><span class="cdfill"></span>Q<small>hack</small></button></div>`;
     // Movement is one touch zone: a thumb can slide between left, right and down without lifting, and a touch that lands
     // in the gap between two buttons still counts for the nearest one.
     const mv=el.querySelector('.grp'), mb=[...mv.querySelectorAll('button')]; let mp=null;
@@ -973,12 +1596,17 @@ function resetLocal(){
   for(const s of [0,1]){ art[s]=[null,null]; Object.assign(inp[s],{l:0,r:0,d:0}); } fx=[]; view=null; resetAnim();
 }
 function setMode(m){
+  deskMenu=false;
   mode=m; for(const b of ['Bot','2p','Online','Practice']) $('mode'+b).setAttribute('aria-pressed',m===b.toLowerCase());
   if(net){ net.es.close(); net=null; } setScreen(false); setPad(); sim=null; bot=null; resetLocal(); lastPhase=''; overlayKey='';
-  if(m==='online'){ local=[false,false]; view=createDuel().snapshot(); buildDesks(); buildControls(); const code=(location.hash||'').slice(1).toUpperCase(); if(/^[A-Z]{4}$/.test(code)) joinRoom(code,watched()===code); return; }
+  deskStage=m==='online'&&!RETRO; deskSent=''; rEdgesSent=''; rLayoutSent=''; wobj.clear(); wPending[0]=[]; wPending[1]=[];
+  if(m==='online'){ local=[false,false]; ARENA_W=960; ARENA_PLATS=PLATS; view=createDuel().snapshot(); buildDesks(); buildControls(); const code=(location.hash||'').slice(1).toUpperCase(); if(/^[A-Z]{4}$/.test(code)) joinRoom(code,watched()===code); return; }
   if(location.hash) history.replaceState(null,'',location.pathname);
-  local=m==='2p'?[true,true]:[true,false]; sim=createDuel({practice:m==='practice'});
-  if(m==='bot'){ bot=makeBot(1); botLoadout().forEach((b,k)=>{ const it=sim.setItem(1,k,b.spec,b.cost); setArt(1,k,b.strokes,it.ver,it.kind,it.style); }); }
+  local=m==='2p'?[true,true]:[true,false];
+  if(deskLike()){ ARENA_W=Math.round(innerWidth/DESK_SCALE); ARENA_PLATS=[]; }
+  sim=createDuel({practice:m==='practice',width:ARENA_W,plats:ARENA_PLATS});
+  if(m==='bot'){ bot=makeBot(1,()=>RETRO?FXI.P.diff:0.55); botLoadout().forEach((b,k)=>{ const it=sim.setItem(1,k,b.spec,b.cost); setArt(1,k,b.strokes,it.ver,it.kind,it.style); }); }
+  deskTerrain();
   view=sim.snapshot(); buildDesks(); buildControls();
 }
 $('modeBot').onclick=()=>setMode('bot'); $('mode2p').onclick=()=>setMode('2p'); $('modeOnline').onclick=()=>setMode('online'); $('modePractice').onclick=()=>setMode('practice');
@@ -988,10 +1616,14 @@ function post(body){ if(!net) return; fetch('/duel/act',{method:'POST',headers:{
 // Big screen: this device shows the fight and the join code while two other devices play.
 // The room it is showing is remembered for this tab, so a reload comes back as the screen and not as a player.
 const watched=()=>{ try{ return sessionStorage.getItem('dd-watch')||''; }catch(e){ return ''; } };
-function setScreen(on){ bigScreen=on; document.body.classList.toggle('screen',on); fitCanvas(); }
+function setScreen(on){ bigScreen=on; document.body.classList.toggle('screen',on); $('drawHere').setAttribute('aria-pressed',!on); $('drawTablets').setAttribute('aria-pressed',on); fitCanvas(); }
+// Where the drawing happens. 'Draw here' is the ordinary game on this device. 'Draw on tablets' makes this device the big screen
+// of a new room: it shows the join code and then the fight, while two tablets or phones draw and play.
+$('drawTablets').onclick=()=>{ if(net&&net.watch) return; setMode('online'); createRoom(true); };
+$('drawHere').onclick=()=>{ if(net&&net.watch) setMode('bot'); };
 // Player view: a player in a room that has a big screen sees only the sketchbook, then only the controller.
 function setPad(){
-  const on=!!(net&&net.side>=0&&net.screen); if(on===padView) return;
+  const on=!RETRO&&!!(net&&net.side>=0&&net.screen); if(on===padView) return;      // the retro desktop shows everything itself
   padView=on; document.body.classList.toggle('handheld',on); lastPhase=''; overlayKey='';
   const w=$('who'); w.hidden=!on; if(on){ w.textContent='You are '+NAME[net.side]; w.style.background=PCOL[net.side]; }
 }
@@ -1010,23 +1642,209 @@ function joinRoom(code,watch){
   // Once a big screen has been seen the player view stays, so the screen reloading does not flip the layout mid-fight.
   on('players',d=>{ net.present=d.present; net.screen=net.screen||!!d.screen; setPad(); });
   on('state',accept);
-  on('item',d=>setArt(d.side,d.slot,d.strokes,d.ver,d.kind,d.style));
+  on('item',d=>{ setArt(d.side,d.slot,d.strokes,d.ver,d.kind,d.style); if(desk[d.side]) updateDesk(desk[d.side]); });
   on('reset',()=>{ for(const s of [0,1]) art[s]=[null,null]; fx=[]; for(const d of desk) if(d){ d.strokes=[]; d.k=0; } });
+  on('plats',d=>{ if(!(deskLike()&&deskEdges&&net.watch)) ARENA_PLATS=d.plats||PLATS; });
+  on('hello',()=>{ deskSent=''; rLayoutSent=''; rEdgesSent=''; deskTerrain(); });
   on('gone',()=>{ net.gone=true; es.close(); });
+}
+// The art board and everything drawn in it. Shapes arrive once, with their strokes; after that only positions change.
+function worldEvent(e){
+  const col=s=>s>=0?PCOL[s]:'#888', P2=st=>st.map(p=>({x:p[0],y:p[1]}));
+  switch(e.e){
+    case 'obj': { const o=Object.assign({},e.o); o.life=o.perm?Infinity:9; o.strokes=o.strokes.map(P2); if(o.dyn) o.local=o.strokes; wobj.set(o.id,o); break; }
+    case 'clear': wobj.clear(); wPending[0]=[]; wPending[1]=[]; FXI.S.parts=[]; FXI.S.floats=[]; break;
+    case 'stroke': wPending[e.side].push({col:e.col,pts:P2(e.pts)}); break;
+    case 'read': wPending[e.side]=[]; break;
+    case 'ghost': FXI.S.parts.push({kind:'ghost',strokes:e.strokes.map(P2),col:e.col,life:.5,max:.5}); break;
+    case 'ring': FXI.ring(e.x,e.yd,e.col); break;
+    case 'burst': FXI.burst(e.x,e.yd,e.col,e.n); break;
+    case 'puff': FXI.puff(e.x,e.yd,e.col,e.n); break;
+    case 'spark': case 'chip': FXI.spark(e.x,e.yd,e.col||'#bbb'); break;
+    case 'float': FXI.floatT(e.x,e.yd,e.text,col(e.side),e.size||11); break;
+    case 'flash': FXI.S.flash={text:e.text,sub:e.sub,t:1.5,col:e.side>=0?PCOL[e.side]:'#000'}; break;
+    case 'log': FXI.log(e.side<0?null:{cls:e.side?'cpu':'p1',id:NAME[e.side]},e.msg); break;
+    case 'shake': shake=Math.max(shake,e.n); break;
+    case 'forge': setArt(e.side,e.slot,e.strokes,e.ver,e.kind,e.style); if(desk[e.side]) updateDesk(desk[e.side]); break;
+    case 'recycle': { const bin=document.querySelector('#bin'); if(bin) bin.classList.add('full'); FXI.burst(e.x,e.yd,PCOL[e.side],16); art[e.side][e.slot]=null; break; }
+    case 'hit': FXI.burst(e.x,-e.y,PCOL[e.side],6+e.n); FXI.keyframe(e.side);
+      { const h=document.querySelector('#st-hap'); if(h) h.textContent='Haptics \u2192 '+NAME[e.side]+': '+(e.hap||'thud')+' '+(e.dir||'R')+' '+Math.min(1,Math.max(0.2,e.n/18)).toFixed(2); } break;
+  }
 }
 function accept(v){
   for(const e of v.ev){
+    worldEvent(e);
     e.t0=performance.now(); fx.push(e);
     if(e.e==='block') shake=Math.max(shake,3);
     if(e.e==='quake') shake=Math.max(shake,9);
     if(e.e==='hit'||e.e==='boom') shake=Math.max(shake,e.e==='boom'?(e.s?4:8):Math.min(8,3+e.n/4));
     if(e.e==='hit'&&navigator.vibrate&&local[e.side]&&navigator.userActivation&&navigator.userActivation.hasBeenActive) navigator.vibrate(30);
   }
+  // drawn shapes: follow their positions, forget the ones that are gone
+  const seen=new Set(); for(const [id,x,y,life] of v.objs||[]){ seen.add(id); const o=wobj.get(id); if(o){ o.x=x; o.y=y; o.life=life<0?Infinity:life; } }
+  for(const id of wobj.keys()) if(!seen.has(id)) wobj.delete(id);
+  if(net&&!net.watch&&v.w){ ARENA_W=v.w; }
   view=v; viewAt=performance.now();
 }
 
 /* ---------- interface state ---------- */
 let lastPhase='', overlayKey='', loSig='';
+// Desktop mode: the window lets clicks through to the desktop while a fight is on, and takes the mouse only while the
+// menu or the sketchbook is showing. The fight pauses whenever the menu is open or another app has the keyboard.
+function deskSync(){
+  if(!deskLike()||!view) return;
+  const fighting=view.phase==='count'||view.phase==='fight'||view.phase==='end', menu=deskMenu||!fighting;
+  document.body.classList.toggle('menu',menu);
+  $('deskResume').hidden=!(deskMenu&&fighting); $('deskQuit').hidden=!host;
+  deskPaused=!!sim&&fighting&&(deskMenu||(DESK&&!document.hasFocus()));     // only a match run on this device can be paused
+  // The window only takes the mouse while the pointer is over one of the cards, so the rest of the desktop stays usable
+  // even with the menu open. When a fight starts it takes the keyboard.
+  const live=menu&&deskHover;
+  if(live!==deskLive){ deskLive=live; if(host) host.setInteractive(live); }
+  if(fighting&&!deskWasFighting&&!deskMenu&&host&&local.some(Boolean)) host.focus();   // a big screen needs no keys
+  deskWasFighting=fighting;
+  if(RETRO) retroSync(menu);
+}
+let deskHover=false, deskWasFighting=false;
+if(deskLike()){
+  const overCard=e=>{ deskHover=!!(e.target&&e.target.closest&&e.target.closest('header,.desks,.overlay .box')); };
+  addEventListener('pointermove',overCard,true); addEventListener('pointerdown',overCard,true);
+  document.addEventListener('mouseleave',()=>{ deskHover=false; });
+  $('deskResume').onclick=()=>{ deskMenu=false; if(host) host.focus(); };
+  $('deskQuit').onclick=()=>{ if(host) host.quit(); };
+  addEventListener('keydown',e=>{ if(e.code==='Escape'&&view&&view.phase!=='draw'&&view.phase!=='over'){ deskMenu=!deskMenu; e.preventDefault(); } });
+  if(host&&host.onWindows) host.onWindows(edges=>{ deskEdges=edges; deskTerrain(); });
+  if(host) host.onMenu(()=>{ deskMenu=!(deskMenu||document.body.classList.contains('menu'))?true:false; });
+}
+/* ---------- retro desktop: Alex's InkShop, with this game wired into it ---------- */
+const rwin={}; let rTop=20, rEdgesSent='', rLayoutSent='', rTick=0;
+const mySide1=()=>local[0]?0:local[1]?1:-1;
+function makeDraggable(w,bar){
+  let grab=null;
+  bar.addEventListener('pointerdown',e=>{ if(e.target.closest('.rmin,.tb')) return; const r=w.getBoundingClientRect(); grab=[e.clientX-r.left,e.clientY-r.top]; w.style.zIndex=++rTop; try{ bar.setPointerCapture(e.pointerId); }catch(_){} });
+  bar.addEventListener('pointermove',e=>{ if(!grab) return; const r=w.getBoundingClientRect();
+    w.style.left=Math.max(40-r.width,Math.min(innerWidth-40,e.clientX-grab[0]))+'px'; w.style.top=Math.max(0,Math.min(innerHeight-TASK_H-22,e.clientY-grab[1]))+'px'; w.style.right='auto'; w.style.transform='none'; });
+  const drop=()=>{ grab=null; }; bar.addEventListener('pointerup',drop); bar.addEventListener('pointercancel',drop);
+}
+// One of this game's own panels (setup, sketchbook, join code) as a window, with a button on his taskbar.
+function retroWindow(id,title,el,css,white){
+  const w=document.createElement('div'); w.className='rwin'; w.id='rw-'+id;
+  w.innerHTML='<div class="rtitle"><span class="rname"></span><button class="rmin" title="Minimize">_</button></div><div class="rbody'+(white?' white':'')+'"></div>';
+  w.querySelector('.rname').textContent=title; w.querySelector('.rbody').appendChild(el); Object.assign(w.style,css); w.style.zIndex=++rTop;
+  document.body.appendChild(w);
+  const task=document.createElement('div'); task.className='task'; task.textContent=title; const bar=document.querySelector('#taskbar'); bar.insertBefore(task,document.querySelector('#ink-clock'));
+  const o=rwin[id]={w,task,min:false,want:true};
+  task.onclick=()=>{ if(!o.want) return; o.min=!o.min&&+w.style.zIndex===rTop; if(!o.min) w.style.zIndex=++rTop; };
+  w.querySelector('.rmin').onclick=e=>{ e.stopPropagation(); o.min=true; };
+  w.addEventListener('pointerdown',()=>{ w.style.zIndex=++rTop; },true);
+  makeDraggable(w,w.querySelector('.rtitle'));
+  return o;
+}
+// Put a ready-made glyph into the fight near your fighter (his Insert menu and Glyph Sheet stamps).
+function stampGlyph(n){
+  const side=mySide1(); if(side<0||!view||view.phase!=='fight') return FXI.toast('Stamps work during a fight.');
+  const f=view.f[side], px=f.x, py=-f.y; let ax=Math.max(70,px+f.face*80), ay=py-150, sc=0.9, fl=1;
+  if(n==='shield'){ ax=px; ay=py-55; sc=0.95; } else if(n==='arrow'){ ax=px+f.face*60; ay=py-55; sc=0.95; fl=f.face; }
+  else if(n==='platform') ay=py-90; else if(n==='crate') ay=py-30; else if(n==='wall') ay=py-45;
+  for(const st of INK.toPts(INK.T[n],ax,ay,sc,fl,1.1)) submitStroke(side,INK.densify(st,4),FXI.color);
+}
+function submitStroke(side,pts,color){
+  if(pts.length<2) return;
+  if(sim) sim.stroke(side,pts,color); else if(net&&net.side===side) post({type:'stroke',col:color,pts:pts.map(p=>[Math.round(p.x),Math.round(p.y)])});
+}
+function retroBuild(){
+  $('inkos').hidden=false;
+  FXI.setHooks({stamp:stampGlyph,net:()=>setMode('online')});
+  const tip=()=>FXI.toast('A D run \u00b7 W jump (double) \u00b7 S down \u00b7 J and K use your two drawings \u00b7 L mine \u00b7 Q run hack, 1-5 pick \u00b7 mouse draws with the B / R / O tools; Fight tool (F): click attacks');
+  FXI.setMenus({
+    file:()=>[['New match','',()=>$('restart').click()],'-',['vs Bot','',()=>setMode('bot'),0,mode==='bot'],['2 players','',()=>setMode('2p'),0,mode==='2p'],['Practice','',()=>setMode('practice'),0,mode==='practice']],
+    edit:()=>[['Undo','Ctrl+Z',null,1]],
+    view:()=>[['Game setup window','',()=>{ deskMenu=true; }],['Plain layout','',()=>{ location.search='?plain=1'; }]],
+    insert:()=>['sword','spear','hammer','axe','mace','bow','-','platform','crate','wall','shield','arrow'].map(n=>n==='-'?'-':['Stamp: '+n,'',()=>stampGlyph(n)]),
+    hack:()=>INK.HACKS.map((h,i)=>[h.name,'Q \u00b7 '+(i+1),()=>{ FXI.hackSel=i; const sd=mySide1(); if(sd>=0){ press(sd,'q',true); } },!(view&&mySide1()>=0&&view.f[mySide1()].od>=100)]),
+    net:()=>[['Draw here','',()=>$('drawHere').click(),0,!bigScreen],['Draw on tablets (big screen)','',()=>$('drawTablets').click(),0,bigScreen],'-',['Online rooms\u2026','',()=>setMode('online')]],
+    help:()=>[['Controls','F1',tip],['Glyph grammar','',()=>FXI.toast('Simple = terrain (\u2015 platform, | wall, \u25a1 crate, \u25cb pot/shield/trap). Compound = weapons. \u2192 dash/fling/wind/link \u00b7 \u2715 erase/disarm \u00b7 \u2298 null any hack \u00b7 \u03df lightning')],
+      ['About InkShop','',()=>FXI.toast('InkShop 2.0 \u2014 interface, glyph recogniser, hacks and effects from Alex\'s prototype, running on the Doodle Duel engine.')]]});
+  FXI.buildUI();
+  // his rig sliders drive his animation system, which this game does not use; Time scale and CPU skill are live
+  for(const k of ['jelly','stretch','flab','exag']){ const el=document.querySelector('#s-'+k); el.disabled=true; el.parentElement.classList.add('off'); el.parentElement.title='Belongs to the InkShop rig, not wired to this game\u2019s animations yet'; }
+  for(const id of ['c-onion','c-rig']){ const el=document.querySelector('#'+id); el.disabled=true; }
+  document.querySelector('#start').onclick=()=>{ if(view&&view.phase!=='draw'&&view.phase!=='over') deskMenu=!deskMenu; };
+  $('deskHint').textContent='Esc or Start: this window';
+  retroWindow('game','Game setup',document.querySelector('header'),{left:'calc(50% - 60px)',top:'70px',transform:'translateX(-50%)'});
+  retroWindow('sketch','Sketchbook \u2014 draw your two weapons',$('desks'),{left:'calc(50% - 60px)',top:'150px',transform:'translateX(-50%)',width:'min(760px,80vw)'});
+  retroWindow('net','NetLink \u2014 join',$('overlay'),{left:'calc(50% - 60px)',top:'120px',transform:'translateX(-50%)',minWidth:'360px'},true);
+  rwin.net.w.hidden=true;
+  // on a big screen, what each player has made (with its stats) is a window too
+  retroWindow('load','Loadouts \u2014 what each player has made',$('loadouts'),{left:'calc(50% - 60px)',top:'150px',transform:'translateX(-50%)',width:'min(760px,80vw)'},true);
+  rwin.load.w.hidden=true;
+  for(const w of document.querySelectorAll('#inkos .win.small')) makeDraggable(w,w.querySelector('.titlebar'));
+  // his NetLink and notes windows, with this game's real rooms and controls
+  document.querySelector('#net-go').onmousedown=e=>{ e.stopPropagation(); setMode('online'); };
+  document.querySelector('#nm-host').onchange=()=>{ setMode('online'); createRoom(); }; document.querySelector('#nm-join').onchange=()=>setMode('online');
+  document.querySelector('#noteswin .body').textContent='CONTROLS\nA/D run   W jump   S down\nJ, K  your two drawings\nL     mine (S+L digs down)\nQ run hack \u00b7 1-5 pick hack\nMouse: draw (B R O tools)\nFight tool (F): click=attack\nMine the frame or run\n  BREAKOUT.exe to get out:\n  window titlebars = platforms';
+  const tick=()=>{ document.querySelector('#ink-clock').textContent=new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}); }; tick(); setInterval(tick,20000);
+  // drawing on the art board with his tools
+  const s2w=(x,y)=>{ const sc=deskSc(); return {x:x/sc-OX,y:(y-(innerHeight-floorGap()-6*sc))/sc}; };
+  addEventListener('pointerdown',e=>{
+    const side=mySide1(); if(side<0||!view||view.phase!=='fight'||deskMenu) return;
+    if(e.target.closest('.rwin,.menubar,.toolbox,.panel,.titlebar,.timeline,.palette,.statusbar,#taskbar,.menu,.win.small,.icon')) return;
+    if(!e.target.closest('#inkos')) return; e.preventDefault();
+    if(e.button===2||FXI.tool==='fight'){ press(side,'a',true); return; }
+    if(!['pencil','line','rect','ellipse'].includes(FXI.tool)) return FXI.toast('That tool is locked. Draw a glyph instead (\u2715 erases).');
+    const p=s2w(e.clientX,e.clientY); wPen={side,tool:FXI.tool,color:FXI.color,pts:[p],o:p,cur:p};
+  });
+  addEventListener('pointermove',e=>{ const p=s2w(e.clientX,e.clientY);
+    if(view&&view.board){ const el=document.querySelector('#st-xy'); if(el) el.textContent=Math.round(p.x-view.board.x0)+', '+Math.round(view.board.top+p.y); }
+    if(!wPen) return; wPen.cur=p; if(wPen.tool==='pencil'){ const l=wPen.pts[wPen.pts.length-1]; if(Math.hypot(p.x-l.x,p.y-l.y)>=2.5) wPen.pts.push(p); } });
+  addEventListener('pointerup',()=>{ if(!wPen) return; const w=wPen; wPen=null; submitStroke(w.side,w.tool==='pencil'?w.pts:FXI.shapePts(w.tool,w.o,w.cur),w.color); });
+  addEventListener('contextmenu',e=>{ if(e.target.closest('#artboard')) e.preventDefault(); });
+}
+// Window tops that nothing in front covers, in screen pixels: his small windows and this game's own.
+function retroEdges(){
+  const ws=[...document.querySelectorAll('.rwin,#inkos .win.small')].filter(w=>!w.hidden&&w.style.display!=='none').map(w=>({id:w.id,z:+w.style.zIndex||0,r:w.getBoundingClientRect()})).sort((a,b)=>b.z-a.z), out=[];
+  ws.forEach((w,i)=>{
+    const y=w.r.top; if(y<8) return;
+    let parts=[[Math.max(0,w.r.left),Math.min(innerWidth,w.r.right)]];
+    for(let j=0;j<i&&parts.length;j++){ const o=ws[j].r; if(!(o.top<y&&o.bottom>y)) continue;
+      parts=parts.flatMap(([a,b])=>o.right<=a||o.left>=b?[[a,b]]:[[a,Math.min(b,o.left)],[Math.max(a,o.right),b]]).filter(([a,b])=>b-a>=40); }
+    for(const [a,b] of parts) out.push({id:w.id,wx:Math.round(w.r.left),x0:Math.round(a),x1:Math.round(b),y:Math.round(y)});
+  });
+  return out;
+}
+// The art board's place in the world: where his #artboard sits on screen, in game units.
+function retroBoard(){
+  const r=document.querySelector('#artboard').getBoundingClientRect(), sc=deskSc(), fy=innerHeight-floorGap()-6*sc;
+  return {x0:Math.round((r.left+2)/sc-OX),x1:Math.round((r.right-2)/sc-OX),floor:Math.round((fy-(r.bottom-2))/sc),top:Math.round((fy-(r.top+2))/sc)};
+}
+// Each frame: his panels show this match; a few times a second the layout and window edges are measured.
+function retroSync(menu){
+  const v=view, Q=s=>document.querySelector(s), side=mySide1();
+  rwin.game.want=menu; rwin.sketch.want=menu&&side>=0; rwin.net.want=!$('overlay').hidden; rwin.load.want=!$('loadouts').hidden;
+  for(const id in rwin){ const o=rwin[id], show=o.want&&!o.min; if(o.w.hidden===show){ o.w.hidden=!show; if(show) o.w.style.zIndex=++rTop; } o.task.hidden=!o.want; o.task.classList.toggle('on',show&&+o.w.style.zIndex===rTop); if(!o.want) o.min=false; }
+  rwin.net.w.querySelector('.rname').textContent=net?'NetLink \u2014 room '+net.code:'NetLink \u2014 join';
+  // Fighters panel, score, timeline, status bar (his hud(), reading this match)
+  [[0,'p1'],[1,'cp']].forEach(([s,p])=>{ const f=v.f[s], it=v.items[s][f.held];
+    Q('#'+p+'hp').style.width=(v.phase==='draw'?100:f.hp)+'%'; Q('#'+p+'ink').style.width=(f.ink2===undefined?100:f.ink2)+'%'; Q('#'+p+'od').style.width=(f.od||0)+'%'; Q('#'+p+'odb').classList.toggle('ready',f.od>=100);
+    Q('#'+p+'w').textContent=it?'Weapon: '+it.name+' \u00b7 '+(it.style||it.kind)+' \u00b7 counter: '+(STYLE_COUNTER[it.style]||'wall'):'Weapon: fists \u00b7 counter: wall';
+    Q('#'+p+'st').textContent=[f.oc?'OVERCLOCK':'',f.sc<0.85?'SHRUNK':'',f.bub?'SHIELD':'',f.stun?'STUN':'',f.trap?'TRAP':'',f.hp<=0?'K.O.':''].filter(Boolean).join(' '); });
+  const who=s=>NAME[s]+(local[s]&&!(local[0]&&local[1])?' \u00b7 You':mode==='bot'&&s===1?' \u00b7 animator.bot':'');
+  const names=document.querySelectorAll('#inkos .pcard .nm span:first-child'); if(names[0].textContent!==who(0)) names[0].textContent=who(0); if(names[1].textContent!==who(1)) names[1].textContent=who(1);
+  Q('#score').textContent=NAME[0]+' '+v.wins[0]+' : '+v.wins[1]+' '+NAME[1]+(v.phase==='fight'&&!v.practice?'  \u00b7  '+Math.ceil(v.t)+'s':v.phase==='draw'?'  \u00b7  draw '+Math.max(0,Math.ceil(v.t)):'');
+  Q('#playhead').style.left=(Math.floor(FXI.S.time*12)%200*9)+'px';
+  document.querySelectorAll('#hacks > div').forEach((d,i)=>d.classList.toggle('sel',i===FXI.hackSel));
+  const mtxt='Mode: '+({bot:'Player vs CPU',practice:'Practice','2p':'2 players',online:bigScreen?'Big screen':'Online'}[mode])+' \u00b7 NetLink: '+(net?'room '+net.code:'local sim');
+  if(Q('#st-net').textContent!==mtxt) Q('#st-net').textContent=mtxt;
+  Q('#inkos .titlebar span').textContent='InkShop 2.0 \u2014 arena.ink  ['+mtxt.slice(6).split(' \u00b7 ')[0]+']';
+  if(++rTick%8) return;
+  // layout: the board and arena size when they change (only between fights), window edges whenever they move
+  const board=retroBoard(), w=Math.round(innerWidth/deskSc()), lay=JSON.stringify([w,board]);
+  const e=retroEdges(), j=JSON.stringify(e); if(j!==rEdgesSent){ rEdgesSent=j; deskEdges=e; deskTerrain(); }
+  if(lay!==rLayoutSent&&(v.phase==='draw'||v.practice||!v.board)){
+    rLayoutSent=lay; ARENA_W=w;
+    if(sim) sim.setLayout({w,board,plats:ARENA_PLATS}); else if(net&&net.watch) post({type:'layout',w,board,plats:ARENA_PLATS});
+  }
+}
 function syncUI(){
   const v=view;
   for(const s of [0,1]){
@@ -1037,9 +1855,9 @@ function syncUI(){
   if(v.phase!==lastPhase){
     lastPhase=v.phase; const drawing=v.phase==='draw';
     playing=!drawing&&v.phase!=='over'; document.body.classList.toggle('playing',playing);
-    $('desks').hidden=!(drawing||v.practice); $('tcs').hidden=drawing||v.phase==='over'||!local.some(Boolean);
+    $('desks').hidden=!(drawing||v.practice||deskLike()); $('tcs').hidden=drawing||v.phase==='over'||!local.some(Boolean);
     if(drawing||v.phase==='end'||v.phase==='over') releaseAll();      // nothing stays held from one round into the next
-    if(v.phase==='count') document.querySelector('.arenawrap').scrollIntoView({block:'start',behavior:'smooth'});
+    if(v.phase==='count'&&!deskLike()) document.querySelector('.arenawrap').scrollIntoView({block:'start',behavior:'smooth'});
   }
   for(const d of desk) if(d&&d.sig!==deskSig(d)) updateDesk(d);
   // The big screen shows what each player has made, with its stats, while they draw.
@@ -1049,6 +1867,7 @@ function syncUI(){
       if(!it) return `<div class="loitem empty">${'AB'[k]}: nothing yet</div>`; const a=art[s][k];
       return `<div class="loitem"><div class="top">${a&&a.ver===it.ver?`<img alt="" src="${a.sprite.cv.toDataURL()}">`:''}<div class="nm">${esc(it.name)}<small>${TRAITS[it.tr]?TRAITS[it.tr].label:''} · ${it.cost} ink</small></div></div>${statBars(it)}</div>`; }).join('')}</div>`).join(''); }
   document.querySelectorAll('.tc').forEach(el=>{ const s=+el.dataset.side;
+    { const q=el.querySelector('[data-k="q"]'), od=v.f[s].od||0; if(q){ q.style.setProperty('--cd',1-od/100); const nm=INK.HACKS[FXI.hackSel].name.replace('.exe',''), sm=q.querySelector('small'); if(sm.textContent!==nm) sm.textContent=nm; } }
     for(const k of [0,1]){ const b=el.querySelector(`[data-k="${'ab'[k]}"]`), it=v.items[s][k], f=v.f[s];
       b.style.setProperty('--cd',f.cd[k]||0); const label=it?it.name+(it.kind==='heal'?' ×'+f.uses[k]:''):'Punch';
       const sm=b.querySelector('small'); if(sm.textContent!==label) sm.textContent=label; } });
@@ -1171,17 +1990,14 @@ function drawFighter(v,i,now,age,dt){
   const p=s.p, U=n=>n/K;
   // contact shadow
   L.fillStyle='rgba(0,0,0,.09)'; L.beginPath(); L.ellipse(f.x,GY-shadowY(f)+4,28,3.5,0,0,7); L.fill();
-  L.save(); L.translate(x,base); L.scale(d*K,K);
+  const KS=K*(f.sc||1);
+  L.save(); L.translate(x,base); L.scale(d*KS,KS);
   // speed smear behind a dash
-  if(f.dash) for(const [off,al] of [[-70,.12],[-36,.25]]){ L.save(); L.translate(off,0); L.globalAlpha=al; ANIM.draw(L,s,{col}); L.restore(); }
+  if(f.dash) for(const [off,al] of [[-70,.12],[-36,.25]]){ L.save(); L.translate(off,0); L.globalAlpha=al; ANIM.draw(L,s,{col,noodle:true}); L.restore(); }
   const wlen=it&&kind==='melee'?U(it.sz*STYLE[it.style].reach):0;
-  if(wlen&&it.style!=='fist'&&clip.trail.length) ANIM.trail(L,clip,st.t,wlen,ANIM.TRAIL[it.el]);
-  if(wlen&&it.style!=='fist'&&clip.trail.some(w=>st.t>w[0]&&st.t<w[1]+0.02)) for(const [back,al] of [[0.03,0.14],[0.018,0.24],[0.008,0.38]]){
-    const g=ANIM.sample(clip,st.t-back), q=g.p, c=Math.cos(q[22]), n=Math.sin(q[22]), h=ANIM.xf(g,q[12],q[13]), tip=ANIM.xf(g,q[12]+c*50,q[13]+n*50);
-    L.save(); L.globalAlpha=al; L.translate(h[0],h[1]); L.rotate(Math.atan2(tip[1]-h[1],tip[0]-h[0]));
-    if(it.style==='spear'){ L.translate(-wlen*0.22,0); sprite(i,k,wlen*1.22,true); } else sprite(i,k,wlen,true); L.restore();
-  }
-  ANIM.draw(L,s,{col,
+  // weapon smear: everything the weapon swept in the last moments of an attack
+  if(wlen&&it.style!=='fist'&&f.act) ANIM.smear(L,clip,st.t,it.style==='spear'?wlen*0.96:wlen,it.el==='none'?col:PEN[it.el],0.2);
+  ANIM.draw(L,s,{col,halo:DESK,noodle:true,
     back(c){ if(hideItems) return; for(const n of [0,1]){ const o=items[n]; if(!o||n===k||(o.kind==='shield'&&f.sh)) continue;
       c.save(); c.translate(p[2]-14,p[3]+22); c.rotate(-1.15); c.globalAlpha=.55; sprite(i,n,U(o.sz*0.6),o.kind==='melee'); c.restore(); } },
     weapon(c,ss){
@@ -1203,26 +2019,107 @@ function drawFighter(v,i,now,age,dt){
   if(it&&kind==='shield'&&f.sh){ L.save(); L.translate(p[2]+50,p[3]+22); sprite(i,k,U(it.sz*1.25));
     L.strokeStyle=PEN[it.el]; L.globalAlpha=.5; L.lineWidth=5; L.beginPath(); L.arc(-20,0,U(it.sz*0.85),-1.1,1.1); L.stroke(); L.restore(); }
   L.restore();
+  // his status visuals: shield bubble, trap rings, stun stars, overclock glow
+  { const cyy=base-55*(f.sc||1), T2=Math.PI*2, tm=now/1000;
+    if(f.bub){ L.save(); L.strokeStyle='#2bd'; L.globalAlpha=.5+.3*Math.sin(tm*12); L.lineWidth=3; L.setLineDash([8,5]); L.beginPath(); L.arc(x,cyy,f.bub,0,T2); L.stroke(); L.restore(); }
+    if(f.trap){ L.save(); L.strokeStyle=PCOL[1-i]; L.lineWidth=2; L.globalAlpha=.7; for(let n=0;n<4;n++){ L.beginPath(); L.arc(x,cyy-5,40+n*3,tm*3+n,tm*3+n+2); L.stroke(); } L.restore(); }
+    if(f.stun){ L.save(); L.fillStyle='#fb0'; L.font='12px sans-serif'; for(let n=0;n<3;n++){ const a=tm*6+n*T2/3; L.fillText('\u2605',x+Math.cos(a)*16-5,base-98*(f.sc||1)+Math.sin(a)*5); } L.restore(); }
+    if(f.oc){ L.save(); L.strokeStyle='#0cf'; L.globalAlpha=.35+.2*Math.sin(tm*20); L.lineWidth=2; L.beginPath(); L.arc(x,cyy,34,0,T2); L.stroke(); L.restore(); } }
   // status
   L.lineCap='round';
   if(f.burn){ L.strokeStyle=PEN.fire; L.lineWidth=2.5; for(let n=0;n<3;n++){ const fx0=x-12+n*12, fy=base-104-((now/6+n*23)%22); L.beginPath(); L.moveTo(fx0,fy+8); L.lineTo(fx0+3,fy+2); L.lineTo(fx0,fy-4); L.stroke(); } }
   if(f.slow){ L.fillStyle=PEN.water; for(let n=0;n<3;n++){ const fy=base-74+((now/9+n*31)%62); L.beginPath(); L.arc(x-14+n*14,fy,2.5,0,7); L.fill(); } }
   if(f.hp>0||v.phase==='draw'){ const h=ANIM.xf(s,p[0],p[1]); L.font='18px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=col;
-    L.fillText(local[i]&&!(local[0]&&local[1])?'you':NAME[i],x+h[0]*K*d,base+h[1]*K-20); }
+    const tag=local[i]&&!(local[0]&&local[1])?'you':NAME[i], tx=x+h[0]*K*d, ty=base+h[1]*K-20;
+    if(DESK){ L.lineWidth=5; L.strokeStyle='#fff'; L.lineJoin='round'; L.strokeText(tag,tx,ty);
+      const bw=64, by=ty-30; L.fillStyle='#fff'; L.strokeStyle='#111'; L.lineWidth=2; L.beginPath(); L.rect(tx-bw/2,by,bw,8); L.fill(); L.stroke();
+      L.fillStyle=col; L.fillRect(tx-bw/2+1,by+1,(bw-2)*Math.max(0,f.hp)/100,6);
+      for(let n=0;n<WINS;n++){ L.beginPath(); L.arc(tx-bw/2+6+n*12,by-8,4,0,7); L.fillStyle=n<v.wins[i]?col:'#fff'; L.fill(); L.stroke(); }
+      L.fillStyle=col; }
+    L.fillText(tag,tx,ty); }
 }
-const shadowY=f=>{ let y=0; for(const p of PLATS) if(f.y>=p.y-1&&f.x>=p.x0-6&&f.x<=p.x1+6) y=Math.max(y,p.y); return y; };
+// World layers. His drawing code works in his coordinates (y down from the floor), so the canvas is shifted to match.
+// The draw strip: the whole arena scaled to the strip's width, floor near the bottom. A stroke drawn on it is sent to the
+// room in arena coordinates, where the rules read it (platform, wall, shield, dash, counters, even a new weapon).
+const strip=$('strip'), SG=strip.getContext('2d'); let stripPen=null, stripK=1, stripFloor=0;
+function drawStrip(v){
+  if(!padView||!playing){ return; }
+  const r=Math.min(3,devicePixelRatio||1), cw=strip.clientWidth, ch=strip.clientHeight; if(!cw||!ch) return;
+  if(strip.width!==Math.round(cw*r)){ strip.width=Math.round(cw*r); strip.height=Math.round(ch*r); }
+  const W=v.w||960, b=v.board, x0=b?b.x0-60:0, x1=b&&!v.breached&&!v.broken?b.x1+60:W, k=cw/(x1-x0), fl=ch-14-(b&&!v.breached&&!v.broken?0:0); stripK=k; stripFloor=fl; strip._x0=x0;
+  const X=x=>(x-x0)*k, Y=yd=>fl+yd*k, g=SG; g.setTransform(r,0,0,r,0,0); g.clearRect(0,0,cw,ch); g.lineCap='round'; g.lineJoin='round';
+  g.strokeStyle='#111'; g.lineWidth=2; g.beginPath(); g.moveTo(0,fl); g.lineTo(cw,fl); g.stroke();
+  if(b){ g.strokeStyle=v.broken?'#f80':'#808080'; g.lineWidth=2; g.strokeRect(X(b.x0),Y(-b.top),(b.x1-b.x0)*k,(b.top-b.floor)*k);
+    const cells=boardCells(b); g.fillStyle='#1a0d05'; for(const [id,hp] of v.cells||[]) if(hp<=0){ const c=cells[id]; if(c) g.fillRect(X(c.x0)-1,Y(-c.y1),(c.x1-c.x0)*k+2,(c.y1-c.y0)*k); } }
+  g.strokeStyle='#8a8f99'; g.lineWidth=3; for(const p of ARENA_PLATS){ g.beginPath(); g.moveTo(X(p.x0),Y(-p.y)); g.lineTo(X(p.x1),Y(-p.y)); g.stroke(); }
+  for(const o of wobj.values()){ g.strokeStyle=o.color||'#555'; g.lineWidth=2; if(o.kind==='platform'){ g.beginPath(); g.moveTo(X(o.x),Y(o.y)); g.lineTo(X(o.x+o.w),Y(o.y)); g.stroke(); } else g.strokeRect(X(o.x),Y(o.y),o.w*k,o.h*k); }
+  for(const sd of [0,1]){ const f=v.f[sd], fx=X(f.x), fy=Y(-f.y), h=88*(f.sc||1)*k; g.strokeStyle=PCOL[sd]; g.fillStyle=PCOL[sd]; g.lineWidth=Math.max(2,5*k);
+    g.beginPath(); g.moveTo(fx,fy); g.lineTo(fx,fy-h*0.7); g.stroke(); g.beginPath(); g.arc(fx,fy-h*0.82,Math.max(4,h*0.17),0,7); g.fill();
+    if(sd===net.side){ g.font='700 12px Karla,sans-serif'; g.textAlign='center'; g.fillText('you',fx,fy-h-6); }
+    if(f.bub){ g.strokeStyle='#2bd'; g.lineWidth=2; g.beginPath(); g.arc(fx,fy-h*0.6,f.bub*k,0,7); g.stroke(); } }
+  g.lineWidth=3; for(const sd of [0,1]) for(const q of wPending[sd]){ g.strokeStyle=q.col; g.beginPath(); q.pts.forEach((p,n)=>n?g.lineTo(X(p.x),Y(p.y)):g.moveTo(X(p.x),Y(p.y))); g.stroke(); }
+  if(stripPen){ g.strokeStyle=PCOL[net.side]; g.beginPath(); stripPen.forEach((p,n)=>n?g.lineTo(X(p.x),Y(p.y)):g.moveTo(X(p.x),Y(p.y))); g.stroke(); }
+  if(v.hack){ const mine=v.hack.target===net.side; g.fillStyle=mine?'#b0121f':'#555'; g.font='700 14px Karla,sans-serif'; g.textAlign='center'; g.fillText((mine?'DRAW TO COUNTER: ':'running: ')+v.hack.name+(mine?'  \u2192  '+({line:'flat line',wall:'steep line',box:'box',circle:'circle',arrow:'arrow',x:'X',zig:'zig-zag',null:'\u2298'}[v.hack.counter]||v.hack.counter)+'  ('+v.hack.t.toFixed(1)+'s)':''),cw/2,20); }
+  const me=v.f[net.side]; $('stripInk').textContent='ink '+(me.ink2===undefined?100:me.ink2)+' \u00b7 overdrive '+(me.od||0)+'%'; $('hackName').textContent=INK.HACKS[FXI.hackSel].name;
+}
+{ const at=e=>{ const r=strip.getBoundingClientRect(); return {x:(e.clientX-r.left)/stripK+(strip._x0||0),y:(e.clientY-r.top-stripFloor)/stripK}; };
+  strip.addEventListener('pointerdown',e=>{ if(!padView||!net||net.side<0) return; e.preventDefault(); try{ strip.setPointerCapture(e.pointerId); }catch(_){} stripPen=[at(e)]; });
+  strip.addEventListener('pointermove',e=>{ if(!stripPen) return; const p=at(e), l=stripPen[stripPen.length-1]; if(Math.hypot(p.x-l.x,p.y-l.y)>=3) stripPen.push(p); });
+  const end=()=>{ if(!stripPen) return; const pts=stripPen; stripPen=null; submitStroke(net.side,pts,PCOL[net.side]); };
+  strip.addEventListener('pointerup',end); strip.addEventListener('pointercancel',end);
+  $('hackPrev').onclick=()=>{ FXI.hackSel=(FXI.hackSel+4)%5; }; $('hackNext').onclick=()=>{ FXI.hackSel=(FXI.hackSel+1)%5; }; }
+const botCursor=()=>bot&&bot.cursor?bot.cursor():null;
+function worldBack(v,now){
+  if(v.board&&!RETRO){ const b=v.board; L.save(); L.fillStyle='#fff'; L.strokeStyle='#808080'; L.lineWidth=2; L.beginPath(); L.rect(b.x0,GY-b.top,b.x1-b.x0,b.top-b.floor); L.fill(); L.stroke(); L.restore(); }
+  L.save(); L.translate(0,GY);
+  if(v.broken) FXI.drawHole(v.broken.hole);
+  // mined cells: a dark gap where a piece of the frame is gone, a crack where it is chipped
+  if(v.board&&v.cells&&v.cells.length){ const cells=boardCells(v.board); for(const [id,hp] of v.cells){ const c=cells[id]; if(!c) continue; L.save();
+    if(hp<=0){ L.fillStyle='#1a0d05'; L.shadowColor='#f60'; L.shadowBlur=8; L.fillRect(c.x0-1,-c.y1,c.x1-c.x0+2,c.y1-c.y0); }
+    else{ L.strokeStyle='#333'; L.lineWidth=1.5; L.beginPath(); const mx=(c.x0+c.x1)/2,my=-(c.y0+c.y1)/2; L.moveTo(mx-5,my-12); L.lineTo(mx+2,my-3); L.lineTo(mx-3,my+4); L.lineTo(mx+5,my+13); L.stroke(); }
+    L.restore(); } }
+  FXI.drawFields(v.fields||[]);
+  for(const o of wobj.values()) if(o.kind!=='popup') FXI.drawObj(o);
+  FXI.drawGhosts();
+  L.restore();
+}
+function worldFront(v,now){
+  L.save(); L.translate(0,GY);
+  FXI.drawParts();
+  // ink that is still being read, and the stroke under the pen
+  for(const s of [0,1]) if(wPending[s].length){ L.save(); L.lineWidth=3; L.lineCap='round'; L.lineJoin='round'; for(const g of wPending[s]){ L.strokeStyle=g.col; FXI.strokePath(g.pts); }
+    L.font='9px Tahoma'; L.fillStyle='#777'; L.textAlign='left'; const p0=wPending[s][0].pts[0]; L.fillText('reading'+'.'.repeat(1+Math.floor(now/160)%3),p0.x,p0.y-8); L.restore(); }
+  if(wPen){ L.save(); L.strokeStyle=wPen.color; L.lineWidth=3; L.lineCap='round'; L.lineJoin='round';
+    if(wPen.tool==='pencil'){ if(wPen.pts.length>1) FXI.strokePath(wPen.pts); } else { L.setLineDash([5,4]); FXI.strokePath(FXI.shapePts(wPen.tool,wPen.o,wPen.cur)); } L.restore(); }
+  for(const o of wobj.values()) if(o.kind==='popup') FXI.drawObj(o);
+  FXI.drawFloats();
+  for(const e of v.fxs||[]){ const f=v.f[e.by]; FXI.drawCounter(f.x,-(f.y+55),e.counter,PCOL[e.target]); }
+  if(typeof botCursor==='function'){ const c=botCursor(); if(c) FXI.drawCursor(c.x,c.y,PCOL[1],'CPU'); }
+  const cx=v.board?(v.board.x0+v.board.x1)/2:ARENA_W/2, top=v.board?-v.board.top+18:-GY+60;
+  if(v.hack) FXI.drawHack(v.hack,cx,top,NAME,PCOL);
+  FXI.drawFlash(cx,v.board?-(v.board.floor+(v.board.top-v.board.floor)*0.58):-230);
+  L.restore();
+}
+const shadowY=f=>{ let y=0; for(const p of ARENA_PLATS) if(f.y>=p.y-1&&f.x>=p.x0-6&&f.x<=p.x1+6) y=Math.max(y,p.y); return y; };
 function render(now){
   const v=view, age=net?Math.min(0.08,(now-viewAt)/1000):0, dt=Math.max(0,Math.min(0.05,(now-(lastRender||now))/1000)); lastRender=now;
-  fitCanvas(); L.setTransform(VS,0,0,VS,OX*VS,0); L.clearRect(-OX,0,VW,440); L.fillStyle='#fff'; L.fillRect(-OX,0,VW,440);
+  fitCanvas(); L.setTransform(1,0,0,1,0,0); L.clearRect(0,0,cv.width,cv.height); L.setTransform(VS,0,0,VS,OX*VS,OY);
+  if(!deskLike()){ L.fillStyle='#fff'; L.fillRect(-OX,0,VW,440); }
   shake*=Math.exp(-dt*22); if(shake>0.1) L.translate(Math.sin(now*0.112)*shake,Math.cos(now*0.091)*shake*0.35); else shake=0;
   // ground and platforms: plain ink lines, no scenery
-  L.strokeStyle='#111'; L.lineCap='round'; L.lineWidth=4; L.beginPath(); L.moveTo(-OX-10,GY+2); L.lineTo(970+OX,GY+2); L.stroke();
+  L.strokeStyle='#111'; L.lineCap='round'; L.lineWidth=DESK?3:4; if(RETRO) L.globalAlpha=0; L.beginPath(); L.moveTo(-OX-10,GY+2); L.lineTo(ARENA_W+10+OX,GY+2); L.stroke(); L.globalAlpha=1;
   // corner posts mark where the arena ends when the view is wider than it
-  if(OX>12) for(const px of [0,960]){ L.lineWidth=5; L.beginPath(); L.moveTo(px,GY+2); L.lineTo(px,GY-58); L.stroke(); L.lineWidth=3; L.beginPath(); L.moveTo(px,GY-58); L.lineTo(px+(px?-22:22),GY-48); L.lineTo(px,GY-38); L.stroke(); }
-  L.lineWidth=5; for(const p of PLATS){ L.beginPath(); L.moveTo(p.x0,GY-p.y+2); L.lineTo(p.x1,GY-p.y+2); L.stroke(); }
+  if(OX>12) for(const px of [0,ARENA_W]){ L.lineWidth=5; L.beginPath(); L.moveTo(px,GY+2); L.lineTo(px,GY-58); L.stroke(); L.lineWidth=3; L.beginPath(); L.moveTo(px,GY-58); L.lineTo(px+(px?-22:22),GY-48); L.lineTo(px,GY-38); L.stroke(); }
+  const terrain=deskLike()&&deskEdges&&!(net&&!net.watch);
+  if(terrain){ L.strokeStyle='#ffd84a'; L.globalAlpha=RETRO?0:.85; L.lineWidth=3; }else L.lineWidth=5;
+  for(const p of ARENA_PLATS){ L.beginPath(); L.moveTo(p.x0+(terrain?3:0),GY-p.y+(terrain?0:2)); L.lineTo(p.x1-(terrain?3:0),GY-p.y+(terrain?0:2)); L.stroke(); }
+  L.globalAlpha=1; L.strokeStyle='#111';
+  worldBack(v,now);
   // projectiles
   for(const p of v.pr){
     const x=p.x+p.vx*age, y=GY-(p.y+p.vy*age), it=v.items[p.side][p.slot];
+    if(p.k==='bolt'){ const path=wBolt[p.id]=wBolt[p.id]||[]; path.push({x:x+(Math.random()-.5)*12,y:y+(Math.random()-.5)*12}); if(path.length>10) path.shift();
+      L.save(); L.strokeStyle='#fc0'; L.shadowColor='#ff0'; L.shadowBlur=12; L.lineWidth=3; if(path.length>1) FXI.strokePath(path); L.restore(); continue; }
     if(p.k==='shot'){ const col=p.el==='none'?'#111':PEN[p.el]; L.save(); L.translate(x,y); L.rotate(Math.atan2(-p.vy,p.vx)); L.strokeStyle=col; L.fillStyle=col; L.lineCap='round'; L.lineJoin='round';
       if(p.st==='bow'){ L.lineWidth=3.5; L.beginPath(); L.moveTo(-44,0); L.lineTo(0,0); L.moveTo(-9,-5); L.lineTo(0,0); L.lineTo(-9,5); L.moveTo(-44,0); L.lineTo(-50,-5); L.moveTo(-44,0); L.lineTo(-50,5); L.stroke(); }
       else if(p.st==='staff'){ const r=8+5*(p.big||0); L.globalAlpha=.3; L.beginPath(); L.moveTo(0,-r); L.lineTo(-r*4.5,0); L.lineTo(0,r); L.closePath(); L.fill(); L.globalAlpha=1; L.beginPath(); L.arc(0,0,r,0,7); L.fill(); L.fillStyle='#fff'; L.beginPath(); L.arc(r*0.2,-r*0.2,r*0.45,0,7); L.fill();
@@ -1233,6 +2130,7 @@ function render(now){
     else{ L.save(); L.translate(x,y); L.rotate(now/90*Math.sign(p.vx||1)); if(!it||!sprite(p.side,p.slot,it.sz)){ L.fillStyle=PEN[p.el]; L.beginPath(); L.arc(0,0,10,0,7); L.fill(); } L.restore(); }
   }
   drawFighter(v,1,now,age,dt); drawFighter(v,0,now,age,dt);
+  worldFront(v,now);
   // effects
   fx=fx.filter(e=>now-e.t0<700);
   for(const e of fx){
@@ -1248,24 +2146,32 @@ function render(now){
     else if(e.e==='boom'){ L.strokeStyle=e.el==='none'?'#e2a52d':PEN[e.el]; L.lineWidth=6*(1-a)+1; L.beginPath(); L.arc(e.x,y,e.n*(0.3+0.7*Math.min(1,a*2.2)),0,7); L.stroke();
       L.font='30px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=L.strokeStyle; L.fillText('BOOM',e.x,y-e.n*0.6-a*20); }
   }
-  L.globalAlpha=1; L.setTransform(VS,0,0,VS,OX*VS,0);
+  L.globalAlpha=1; L.setTransform(VS,0,0,VS,OX*VS,OY);
   // banners
-  const banner=(t,size,y,col)=>{ L.font=size+'px "Gochi Hand",cursive'; L.textAlign='center'; L.lineWidth=8; L.strokeStyle='#fffdf6'; L.strokeText(t,480,y); L.fillStyle=col||'#1c2541'; L.fillText(t,480,y); };
-  if(v.phase==='draw'){ banner('Round '+v.round+': draw your gear!',40,70);
+  const banner=(t,size,y,col)=>{ L.font=size+'px "Gochi Hand",cursive'; L.textAlign='center'; L.lineWidth=8; const bx=v.board?(v.board.x0+v.board.x1)/2:ARENA_W/2, by=v.board?y-(v.board.floor+Math.max(0,v.board.top-v.board.floor-330)):y; L.strokeStyle='#fffdf6'; L.strokeText(t,bx,by); L.fillStyle=col||'#1c2541'; L.fillText(t,bx,by); };
+  if(v.phase==='draw'&&RETRO&&(local[0]||local[1]||!$('overlay').hidden)){ /* a window is open there: the sketchbook, or the join code, which must stay scannable */ }
+  else if(v.phase==='draw'){ banner('Round '+v.round+': draw your gear!',40,70);
     const st=s=>NAME[s]+(v.ready[s]?' is ready ✓':' has '+v.items[s].filter(Boolean).length+'/2 drawn'); banner(st(0)+'   ·   '+st(1),22,104,'#59658a'); }
   else if(v.phase==='count') banner(String(Math.max(1,Math.ceil(v.t))),120,200);
   else if(v.phase==='fight'&&v.t>ROUND_TIME-0.8&&!v.practice) banner('FIGHT!',96,190,'#e2552d');
   else if(v.phase==='fight'&&v.t<=10) banner(String(Math.ceil(v.t)),44,60,'#e2552d');
+  else if(deskLike()&&v.phase==='fight'&&!v.practice&&!RETRO) banner(String(Math.ceil(v.t)),26,40,'#59658a');
+  if(RETRO&&deskPaused) banner('Paused',44,150,'#fff');
+  if(DESK&&deskPaused&&!deskMenu) banner('Paused. Press Ctrl+Alt+D to come back.',30,150,'#59658a');
   else if(v.phase==='end') banner(v.winner<0?'Draw round!':NAME[v.winner]+' takes the round!',56,180,v.winner<0?'#1c2541':PCOL[v.winner]);
 }
 let last=performance.now();
 function frame(now){
   const dt=Math.min(0.05,(now-last)/1000); last=now;
-  if(sim){ if(bot){ bot(sim,dt); if(sim.phase==='draw'&&!sim.ready[1]) sim.setReady(1); } sim.step(dt); accept(sim.snapshot()); }
-  if(view){ syncUI(); render(now); }
+  deskSync();
+  const ts=RETRO?FXI.P.speed:1;                                          // his Time scale slider (local matches)
+  if(sim&&!deskPaused){ if(bot){ bot(sim,dt*ts); if(sim.phase==='draw'&&!sim.ready[1]) sim.setReady(1); } sim.step(dt*ts); accept(sim.snapshot()); }
+  FXI.step(dt);
+  if(view){ syncUI(); render(now); if(padView&&net&&net.side>=0){ const tc=document.querySelector('.tcs'); if(tc) document.body.style.setProperty('--pad',(tc.getBoundingClientRect().height+12)+'px'); $('strip').hidden=$('stripbar').hidden=false; drawStrip(view); } }
   requestAnimationFrame(frame);
 }
 if(canRead) fetch('/info').then(r=>r.json()).then(o=>{ serverInfo=o; $('reader').textContent='Drawings read by: '+o.reader; canRead=/OpenAI/.test(o.reader); overlayKey=overlayKey.startsWith('wait')?'':overlayKey; }).catch(()=>{ canRead=false; });
+if(RETRO) retroBuild();
 setMode(/^#[A-Za-z]{4}$/.test(location.hash)?'online':'bot');
 requestAnimationFrame(frame);
 </script>

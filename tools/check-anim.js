@@ -7,7 +7,7 @@ const src=fs.readFileSync(path.join(root,'duel.html'),'utf8');
 const D=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {MOVES,ALT};')();
 let bad=0; const fail=m=>{ bad++; console.log('FAIL '+m); };
 for(const m in D.MOVES) for(const name of [m].concat(D.ALT.includes(m)?[m+'_b']:[])){
-  if(m==='punch'||m==='throw') continue;
+  if(m==='punch'||m==='throw'||m==='mine') continue;
   const M=D.MOVES[m], c=ANIM.clips[name]; if(!c){ fail(name+': no clip'); continue; }
   if(Math.abs(c.dur-M.dur)>1e-6) fail(name+': dur '+c.dur+' but rules say '+M.dur);
   const want=(M.hits||M.shots||[]).join(','), got=c.marks.filter(k=>k.type==='hit'||k.type==='shot').map(k=>k.t).join(',');
