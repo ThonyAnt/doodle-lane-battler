@@ -149,4 +149,54 @@ function msFromFoeMoveToJump(skill,lead){
   }
 }
 
-console.log(bad?bad+' failed':'all bot tests pass'); process.exit(bad?1:0);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const rmrf=d=>{ try{ fs.rmSync(d,{recursive:true,force:true}); }catch(e){} };
+// 4. the trainer, run as a child with tiny settings
+async function trainerTests(){
+  const train=path.join(root,'bot','train.js'), tmp=fs.mkdtempSync(path.join(os.tmpdir(),'doodle-bot-')), dir=path.join(tmp,'run'), cut=path.join(tmp,'cut'), tiny=['--pop=8','--rounds=2','--workers=2'];
+  const run=(out,args)=>cp.spawnSync(process.execPath,[train].concat(args,tiny,['--out='+out]),{encoding:'utf8',timeout:120000});
+  const read=f=>fs.readFileSync(f,'utf8'), ckpt=(d,g)=>JSON.parse(read(path.join(d,'gen-'+String(g).padStart(4,'0')+'.json'))), rows=d=>read(path.join(d,'log.csv')).trim().split('\n').map(l=>l.split(','));
+  const gens=d=>fs.readdirSync(d).filter(f=>/^gen-\d{4}\.json$/.test(f)).sort();
+  try{
+    const first=run(dir,['--gens=3','--vs-every=2','--vs-rounds=4','--league-every=2']), stdout=first.stdout||'';
+    if(first.status!==0){ ok('the trainer runs three tiny generations',false,((first.stderr||'')+(first.error?first.error.message:'')).split('\n').find(l=>/Error|Cannot find/.test(l))||('exit '+first.status)); return; }
+    const files=fs.readdirSync(dir), logLines=rows(dir).length, ck=ckpt(dir,3);
+    ok('three generations write three checkpoints and a log',files.filter(f=>/^gen-\d{4}\.json$/.test(f)).length===3&&logLines===4,files);
+    ok('a checkpoint holds 1232 finite weights',ck.theta.length===1232&&ck.theta.every(Number.isFinite)&&ck.gen===3);
+    ok('and they have moved off zero, with the fitness, the seed and the rules they were trained in',()=>ck.theta.some(v=>v!==0)&&Number.isFinite(ck.fitness)&&Number.isFinite(ck.seed)&&ck.rules===require('../bot/arena.js').RULES&&'vsClassic' in ck,()=>({fitness:ck.fitness,seed:ck.seed,rules:ck.rules}));
+    ok('the log has the six columns and one row a generation',()=>{ const r=rows(dir); return r[0].join()==='gen,secs,best,mean,vsClassic,roundsPerSec'&&r.slice(1).map(x=>x[0]).join()==='1,2,3'&&r.slice(1).every(x=>x.length===6&&+x[1]>0&&Number.isFinite(+x[2])&&Number.isFinite(+x[3])&&+x[2]>=+x[3]&&+x[5]>0); },()=>rows(dir));
+    ok('the win rate against the classic bot is measured on its generations only',()=>{ const r=rows(dir), v=ckpt(dir,2).vsClassic; return typeof v==='number'&&v>=0&&v<=1&&ckpt(dir,1).vsClassic===null&&ck.vsClassic===null&&r[2][4]!==''&&+r[2][4]===v&&r[1][4]===''&&r[3][4]===''; },()=>rows(dir).map(x=>x[4]));
+    ok('a champion joins the league on its generations',()=>/league.*7 opponents/.test(stdout)&&!/8 opponents/.test(stdout));
+    ok('nothing half-written is left behind',files.every(f=>/^gen-\d{4}\.json$/.test(f)||f==='log.csv'),files);
+    ok('it prints rounds per second at the start',/rounds\/s/.test(stdout)&&stdout.search(/rounds\/s/)<stdout.search(/^gen +1\b/m),stdout.split('\n').find(l=>/rounds\/s/.test(l)));
+    // a copy to break: the newest checkpoint cut in half, as if the machine died while writing it, and a stray temporary file
+    fs.mkdirSync(cut); for(const f of files) fs.copyFileSync(path.join(dir,f),path.join(cut,f));
+    const second=run(dir,['--gens=3','--vs-every=2','--vs-rounds=4','--league-every=2']), out2=second.stdout||'', secondRunFirstGen=+(/^gen +(\d+)/m.exec(out2)||[])[1];
+    ok('running again resumes at generation 4',secondRunFirstGen===4,out2.split('\n').filter(l=>/resum|^gen /.test(l)).slice(0,3));
+    ok('and carries on the same search: six checkpoints, six log rows, one seed, the league rebuilt',()=>second.status===0&&gens(dir).length===6&&rows(dir).slice(1).map(x=>x[0]).join()==='1,2,3,4,5,6'&&ckpt(dir,6).seed===ck.seed&&ckpt(dir,6).gen===6&&+rows(dir)[6][1]>+rows(dir)[3][1]&&/league.*7 opponents/.test(out2.split(/^gen +4\b/m)[0])&&/9 opponents/.test(out2),()=>out2.split('\n').filter(l=>/league/.test(l)));
+    const whole=read(path.join(cut,'gen-0003.json')); fs.writeFileSync(path.join(cut,'gen-0003.json'),whole.slice(0,whole.length>>1)); fs.writeFileSync(path.join(cut,'gen-0004.json.tmp'),'{"gen":4,"theta":[0.1,');
+    const third=run(cut,['--gens=1']), out3=third.stdout||'', resumedFromGenAfterTruncating=+(/resumed from generation (\d+)/.exec(out3)||[])[1];
+    ok('a half-written newest checkpoint is skipped, not fatal',resumedFromGenAfterTruncating===2,{status:third.status,line:out3.split('\n').find(l=>/resum/.test(l))});
+    ok('the generation it lost is played again and nothing is skipped or doubled',()=>third.status===0&&gens(cut).join()==='gen-0001.json,gen-0002.json,gen-0003.json'&&ckpt(cut,3).gen===3&&ckpt(cut,3).theta.length===1232&&rows(cut).slice(1).map(x=>x[0]).join()==='1,2,3'&&!fs.readdirSync(cut).some(f=>/tmp/.test(f)),()=>({files:fs.readdirSync(cut),log:rows(cut).map(x=>x[0])}));
+    // old checkpoints are thinned out, but never one that is still needed
+    const thin=path.join(tmp,'thin'), fifth=run(thin,['--gens=7','--keep=2','--vs-every=3','--vs-rounds=2','--league-every=5']);
+    ok('checkpoints past the newest few are deleted unless measured against the classic bot or in the league',()=>fifth.status===0&&gens(thin).join()==='gen-0003.json,gen-0005.json,gen-0006.json,gen-0007.json'&&rows(thin).length===8,()=>gens(thin));
+    ok('and the thinned run carries on, its league read back',()=>{ const again=run(thin,['--gens=1','--keep=2','--vs-every=3','--vs-rounds=2','--league-every=5']); return again.status===0&&/resumed from generation 7/.test(again.stdout)&&/earlier selves from generations 5 \(7 opponents\)/.test(again.stdout)&&gens(thin).join()==='gen-0003.json,gen-0005.json,gen-0006.json,gen-0007.json,gen-0008.json'; });
+    ok('a mistyped option is refused before anything runs',()=>{ const r=run(path.join(tmp,'typo'),['--hour=6']); return r.status===2&&/unknown option --hour=6/.test(r.stderr)&&!fs.existsSync(path.join(tmp,'typo')); });
+    // --hours: it stops by itself
+    const timed=path.join(tmp,'timed'), t0=Date.now(), fourth=run(timed,['--hours=0.0005']), took=Date.now()-t0;
+    ok('it stops by itself when the time is up',()=>fourth.status===0&&/time is up/.test(fourth.stdout)&&gens(timed).length>=1&&took<30000,{status:fourth.status,took});
+    // Ctrl-C in the middle of a run
+    const kill=path.join(tmp,'kill'), child=cp.spawn(process.execPath,[train,'--gens=1000000','--hours=1'].concat(tiny,['--out='+kill]),{stdio:['ignore','pipe','pipe']}); let outK='', code=null;
+    child.stdout.on('data',d=>outK+=d); child.stderr.on('data',d=>outK+=d); const gone=new Promise(r=>child.on('exit',(c,sig)=>{ code=sig||c; r(); }));
+    for(let i=0;i<300&&code===null&&!(fs.existsSync(kill)&&gens(kill).length>=2);i++) await sleep(100);
+    child.kill('SIGINT'); const tk=Date.now(); await Promise.race([gone,sleep(15000)]); if(code===null) child.kill('SIGKILL');
+    ok('Ctrl-C stops it cleanly and quickly',()=>code===0&&Date.now()-tk<6000&&/stopped/.test(outK),()=>({code,ms:Date.now()-tk,last:outK.trim().split('\n').slice(-2)}));
+    ok('and what it leaves can be carried on from',()=>{ const n=gens(kill).length, newest=ckpt(kill,n), again=run(kill,['--gens=1']); return newest.gen===n&&newest.theta.length===1232&&again.status===0&&+(/^gen +(\d+)/m.exec(again.stdout)||[])[1]===n+1&&rows(kill).slice(1).map(x=>+x[0]).every((g,i)=>g===i+1); });
+  }finally{ rmrf(tmp); }
+}
+
+(async()=>{
+  await trainerTests();
+  console.log(bad?bad+' failed':'all bot tests pass'); process.exit(bad?1:0);
+})().catch(e=>{ console.log('FAIL the tests crashed: '+(e&&e.stack||e)); process.exit(1); });
