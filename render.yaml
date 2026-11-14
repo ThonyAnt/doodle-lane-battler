@@ -5,7 +5,6 @@ services:
     name: doodle-lane-battler
     runtime: node
     plan: free
-    branch: deploy/render
     buildCommand: "true"
     startCommand: node server.js
     healthCheckPath: /info
