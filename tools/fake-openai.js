@@ -1,15 +1,13 @@
-// A stand-in for the OpenAI chat completions endpoint, for tests and for trying RuleForge by hand without a key.
+// A stand-in for the OpenAI chat completions endpoint, for tests and for trying the drawing reader by hand without a key.
 //   const fake=await require('./fake-openai.js').start(replies, opts)      -> {url, bodies, close}
 //     replies  what POST /chat/completions answers with, in turn: text, {wait:ms, text} for a late answer, 'HANG' for
 //              none at all, {status:500} for an error, or a function (body) => any of these
 //     opts.then  what to answer once the replies have run out (as above); without it, an error 500
 //     url      what to give the server as OPENAI_BASE_URL;  bodies  every request body received, parsed
 //   Each text is wrapped as {choices:[{message:{content}}]}, the way the real endpoint answers.
-// Run on its own it plays a model that knows one joke:   node tools/fake-openai.js [port, default 3192]
-//   a rule request gets "Return Serve" for the first melee item against something thrown, and a second rule for the
-//   other player; a drawing gets called a sword. Start the game with
-//   OPENAI_API_KEY=test OPENAI_BASE_URL=<the url> FORGE_CACHE= node server.js
-//   (the empty FORGE_CACHE keeps the stand-in's rules out of forge-cache.json, where the real model's belong).
+// Run on its own it plays a reader that calls every drawing a sword and scores it by the label typed (see canned):
+//   node tools/fake-openai.js [port, default 3192]
+// Start the game with   OPENAI_API_KEY=test OPENAI_BASE_URL=<the url> node server.js
 const http=require('http');
 
 function start(replies,opts){
@@ -37,21 +35,35 @@ function start(replies,opts){
   });
 }
 
-// The one-joke model. It reads which pairs the prompt says a rule can be written for, and answers for those.
+// The stand-in reader. A drawing gets called a sword and, like the real reader, a creativity score, a line saying why,
+// and abilities. What it answers follows the label the player typed, so every path can be tried by hand:
+//   a label with "plain"   a score of 2 and no abilities
+//   a label with "broken"  a score of 8, one good script and one that does not parse (so the server asks for it to be mended)
+//   a label with "lazy"    a score of 9 and no abilities at all (the server fills in built-in ones)
+//   a label with "slow"    the same as the default, 11 seconds late (the server gives up and reads the drawing itself)
+//   anything else          a score of 8 and two abilities, one script and one block used as it is
+// A request to mend a script (a system message that says so, no picture) gets a working one back.
 function canned(body){
-  const msgs=(body&&body.messages)||[], last=msgs[msgs.length-1]||{};
-  if(Array.isArray(last.content)) return JSON.stringify({name:'Sword',kind:'melee',style:'blade',element:'none',power:5,range:5,speed:5,traits:['swift','guard']});      // a drawing to read
-  const text=String(last.content||''), pair=(on,side)=>{ const m=new RegExp(on+' [^;]*?a=('+(side||'blue|red')+')\\.([01]) b=(blue|red)\\.([01])').exec(text); return m&&{a:m[1]+'.'+m[2],b:m[3]+'.'+m[4]}; };
-  const rules=[], swat=pair('swat');
-  if(swat) rules.push({name:'Return Serve',blurb:'The racket swats the ball straight back.',a:swat.a,b:swat.b,on:'swat',cooldown:0.4,code:"if (shot.speed > 100) { shot.reflect(1.2); say('RETURN!'); }"});
-  const other=swat?(swat.a.startsWith('blue')?'red':'blue'):'', hit=pair('strike',other)||pair('strike');
-  if(hit) rules.push({name:'Bounce Back',blurb:'Every third hit lands with a boing.',a:hit.a,b:hit.b,on:'strike',cooldown:1,code:"mem.n += 1; if (mem.n % 3 == 0) { hit.scale(1.3); push(foe, me.face * 300, 200); say('BOING!'); } else { spark(foe.x, foe.y + 60); }"});
-  if(!rules.length){ const m=/^(blue)\.([01]) /m.exec(text), n=/^(red)\.([01]) /m.exec(text); if(m&&n) rules.push({name:'Stare Down',blurb:'Standing close, the two glare at each other.',a:m[1]+'.'+m[2],b:n[1]+'.'+n[2],on:'near',cooldown:3,code:"if (dist < 120) { spark(foe.x, foe.y + 80); say('GRRR'); }"}); }
-  return JSON.stringify({rules});
+  const msgs=(body&&body.messages)||[], last=msgs[msgs.length-1]||{}, first=msgs[0]||{};
+  if(!Array.isArray(last.content)){
+    if(/fix one ability/i.test(String(first.content||''))) return JSON.stringify({name:'Mended',blurb:'Every second hit marks the foe.',on:'hit',cooldown:1,code:"mem.n += 1; if (mem.n >= 2) { mem.n = 0; status('mark'); say('MENDED'); }"});
+    return JSON.stringify({});
+  }
+  const text=String((last.content.find(c=>c&&c.type==='text')||{}).text||''), label=(/labelled (?:the drawing|it): "([^"]*)"/.exec(text)||[])[1]||'', has=w=>label.toLowerCase().includes(w);
+  const base={sees:'a long line with a short line across it',name:label||'Sword',kind:'melee',style:'blade',element:'none',power:5,range:5,speed:5,traits:['swift','guard']};
+  const good={name:'Second Cut',blurb:'Every second hit lands harder, with a ring.',on:'hit',cooldown:0.5,code:"mem.n += 1; if (mem.n >= 2) { mem.n = 0; hit.scale(1.2); ring(foe.x, foe.y + 50); say('SECOND CUT'); }"};
+  let more;
+  if(!/SCORE THE DRAWING|CREATIVITY AND ABILITIES/i.test(text)) more={};      // the server was started with ABILITIES=0: it did not ask
+  else if(has('plain')) more={creativity:2,why:'A plain sword: add an idea to earn abilities.',abilities:[]};
+  else if(has('broken')) more={creativity:8,why:'A clear idea with detail.',abilities:[good,{name:'Oops',blurb:'This one does not parse.',on:'hit',cooldown:1,code:"if (foe.hp < { status('mark'); }"}]};
+  else if(has('lazy')) more={creativity:9,why:'Inventive, but the reader wrote nothing.',abilities:[]};
+  else more={creativity:8,why:'A clear idea with detail.',abilities:[good,{name:'Open Wound',blurb:'Hits pull healing orbs out of the foe.',block:'lifesteal'}]};
+  const out=JSON.stringify(Object.assign(base,more));
+  return has('slow')?{wait:11000,text:out}:out;
 }
 
 module.exports={start,canned};
 if(require.main===module){
   const port=+process.argv[2]||3192;
-  start([],{then:canned,port}).then(f=>console.log('Stand-in model on '+f.url+'\nStart the game with:  OPENAI_API_KEY=test OPENAI_BASE_URL='+f.url+' FORGE_CACHE= node server.js'),e=>{ console.error('could not start: '+e.message); process.exit(1); });
+  start([],{then:canned,port}).then(f=>console.log('Stand-in model on '+f.url+'\nStart the game with:  OPENAI_API_KEY=test OPENAI_BASE_URL='+f.url+' node server.js'),e=>{ console.error('could not start: '+e.message); process.exit(1); });
 }

@@ -4,7 +4,7 @@ const fs=require('fs'), path=require('path'), http=require('http'), cp=require('
 const src=fs.readFileSync(path.join(__dirname,'..','duel.html'),'utf8').replace(/\r\n/g,'\n');
 const D=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,makeBot,stockItem,INK,replayDuel};')();
 // A recorded match's rules are logged as their source (see COMMANDS in duel.html): this is the compiler a replay needs for them.
-const FS=(()=>{ try{ return require('../forgescript.js'); }catch(e){ return null; } })(), compile=code=>{ if(!FS) return null; const p=FS.parse(code); return p.ok?FS.compile(p.ast):null; };
+const FS=(()=>{ try{ return require('../inkscript.js'); }catch(e){ return null; } })(), compile=(code,on)=>{ if(!FS) return null; const p=FS.parse(code); return p.ok?FS.compile(p.ast):null; };      // ability scripts (the match checks nothing more of them in a replay)
 // The page's own replay code that needs no screen: the part of duel.html between the PAGE-PURE marks, loaded after the rules.
 const pure=names=>new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';'+((src.split('/*PAGE-PURE-START*/')[1]||'').split('/*PAGE-PURE-END*/')[0])+';return {'+names.map(n=>n+':typeof '+n+'==="undefined"?undefined:'+n).join(',')+'};')();
 let bad=0; const ok=(name,cond,info)=>{ if(!cond) bad++; console.log((cond?'ok   ':'FAIL ')+name+(info!==undefined?'  '+JSON.stringify(info):'')); };
@@ -122,7 +122,7 @@ function fakePage(search,respond){
     EventSource:function(){ return el(); }, ResizeObserver:function(){ return {observe(){},disconnect(){}}; }, MutationObserver:function(){ return {observe(){},disconnect(){}}; },
     matchMedia:()=>({matches:false,addEventListener(){},addListener(){}}), innerWidth:1200, innerHeight:800, devicePixelRatio:1,
     sessionStorage:keep(), localStorage:keep(), addEventListener(){}, removeEventListener(){}, alert(){}, getComputedStyle:()=>el(), Image:function(){ return el(); }, Audio:function(){ return el(); }};
-  if(FS) ctx.ForgeScript=FS;      // the page loads forgescript.js with a script tag; here it is handed over
+  if(FS) ctx.InkScript=FS;      // the page loads inkscript.js with a script tag; here it is handed over
   ctx.window=ctx; ctx.self=ctx; ctx.globalThis=ctx; vm.createContext(ctx);
   const run=(code,name)=>vm.runInContext(code,ctx,{filename:name});
   for(const f of ['anim/core','anim/locomotion','anim/blade','anim/bow','anim/gun','anim/spear','anim/hammer','anim/fist','anim/staff','anim/hurl','anim/dual','anim/akimbo','anim/ultimate','inkshop'])

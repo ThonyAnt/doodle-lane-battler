@@ -1,15 +1,15 @@
-// ForgeScript: the small language that RuleForge's match rules are written in. A strict subset of JavaScript that is
-// parsed, checked and interpreted here, so a rule written by a language model never reaches eval, new Function or vm.
-//   ForgeScript.parse(src)        -> {ok:true, ast, nodes} | {ok:false, errors:[{line,col,msg}]}
-//   ForgeScript.check(ast, env)   -> [{line,col,msg}]: what the code touches that env does not offer; empty means clean
-//   ForgeScript.compile(ast, opts)-> run(host); throws ForgeScript.Fault (name 'ForgeFault') and nothing else
-//   ForgeScript.LIMITS            -> the size limits of a rule
+// InkScript: the small language that a weapon's ability scripts are written in. A strict subset of JavaScript that is
+// parsed, checked and interpreted here, so code written by a language model never reaches eval, new Function or vm.
+//   InkScript.parse(src)        -> {ok:true, ast, nodes} | {ok:false, errors:[{line,col,msg}]}
+//   InkScript.check(ast, env)   -> [{line,col,msg}]: what the code touches that env does not offer; empty means clean
+//   InkScript.compile(ast, opts)-> run(host); throws InkScript.Fault (name 'InkFault') and nothing else
+//   InkScript.LIMITS            -> the size limits of one script
 // Statements: let x = e;  const x = e;  x = e;  mem.name = e;  (also += -= *= /=)  if (e) ... else ...  return;
 //   an expression as a statement (a call, usually), { } blocks, // comments.
 // Expressions: decimal numbers, true, false, strings in single or double quotes, names, a.b, calls, unary - and !,
 //   * / % + - < <= > >= == != === !== && ||, ? :, brackets.
 // Everything else is an error, and so is a backslash anywhere.
-(function(root,factory){ if(typeof module==='object'&&module.exports) module.exports=factory(); else root.ForgeScript=factory(); })(typeof self!=='undefined'?self:this,function(){
+(function(root,factory){ if(typeof module==='object'&&module.exports) module.exports=factory(); else root.InkScript=factory(); })(typeof self!=='undefined'?self:this,function(){
 'use strict';
 const LIMITS={chars:800,nodes:250,depth:24,locals:12,mem:8,fuel:2000};
 const KEYWORDS=new Set(['let','const','if','else','return','true','false']);
@@ -147,7 +147,7 @@ function parse(src){
         if(is('kw','else')){ p++; other=branch(); }
         return node('if',t,{test,then,else:other});
       }
-      if(t.v==='return'){ if(!isOp(';')) err("expected ';' after return: a rule returns nothing"); p++; return node('ret',t,{}); }
+      if(t.v==='return'){ if(!isOp(';')) err("expected ';' after return: a script returns nothing"); p++; return node('ret',t,{}); }
       err("'"+t.v+"' cannot start a statement",t);
     }
     // x = e;  and  mem.name = e;  are spotted by their first tokens, so the thing assigned to is not a node of its own
@@ -170,7 +170,7 @@ function parse(src){
 }
 
 // check(ast, env) -> [{line,col,msg}], empty when the code only touches what env offers and uses it the right way.
-// env is a table of what a rule may touch: a leaf is 'num', 'bool', 'str', 'mem' or 'fn(<argument types>)' with an
+// env is a table of what a script may touch: a leaf is 'num', 'bool', 'str', 'mem' or 'fn(<argument types>)' with an
 // optional ':<result type>'; anything else in it is a table of leaves (me.x, Math.abs). The argument type 'who'
 // accepts only the bare names me and foe. Types are followed as far as they are certain: a value out of mem can be
 // anything, so only what is definitely wrong is reported.
@@ -297,16 +297,16 @@ function check(ast,env){
 }
 
 // compile(ast, opts) -> run(host). A tree-walking evaluator: the tree is only ever read, never turned into JavaScript.
-// host has the shape of the checker's env with real values and functions in it. What keeps a rule inside:
-//  - a name is looked up among the rule's own locals, then as an OWN property of host; a.b reads an OWN property of a
+// host has the shape of the checker's env with real values and functions in it. What keeps a script inside:
+//  - a name is looked up among the script's own locals, then as an OWN property of host; a.b reads an OWN property of a
 //    plain host object; nothing is ever read off a prototype, a function, an array or a value;
 //  - the only values are numbers, booleans and strings. A host function is handed those, plus host.me or host.foe when
 //    the argument is that bare name, and must give back one of those or nothing;
 //  - mem is read and written through hasOwnProperty only, and an unset name reads as 0;
 //  - every node visited costs one unit of fuel (opts.fuel, LIMITS.fuel by default), so a run always ends;
-//  - whatever goes wrong, a host function throwing included, comes out as a ForgeScript.Fault and as nothing else.
+//  - whatever goes wrong, a host function throwing included, comes out as a InkScript.Fault and as nothing else.
 // It does not rely on check() having been run: check is there to tell the author what is wrong before the first run.
-class Fault extends Error{ constructor(msg){ super(msg); this.name='ForgeFault'; } }
+class Fault extends Error{ constructor(msg){ super(msg); this.name='InkFault'; } }
 const MAX_STR=200, VOID=Object.freeze({}), isPrim=v=>typeof v==='number'||typeof v==='boolean'||typeof v==='string';
 const isObj=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 function compile(ast,opts){
@@ -315,7 +315,7 @@ function compile(ast,opts){
   return function run(host){
     if(!isObj(host)) throw new Fault('there is nothing to run against');
     let fuel=maxFuel; const locals=new Map(), order=[];
-    const bad=msg=>{ throw new Fault(msg); }, tick=()=>{ if(--fuel<0) bad('the rule ran for too long'); };
+    const bad=msg=>{ throw new Fault(msg); }, tick=()=>{ if(--fuel<0) bad('the code ran for too long'); };
     const get=(o,k,what)=>{ if(typeof k!=='string'||!own(o,k)) bad("there is no '"+what+"'"); return o[k]; };
     const prim=(v,what)=>isPrim(v)?v:bad("'"+what+"' is not a number, true or false, or text");
     const text=v=>typeof v==='string'&&v.length>MAX_STR?bad('a piece of text grew past '+MAX_STR+' characters'):v;
@@ -428,7 +428,7 @@ function compile(ast,opts){
     }
     const assignOp=(op,a,b)=>ASSIGN.includes(op)&&op!=='='?bin(op[0],a,b):bad('unknown assignment');
     try{ for(const s of ast.body) if(exec(s)) break; }
-    catch(e){ if(e instanceof Fault) throw e; throw new Fault('the rule broke'+(e&&typeof e.message==='string'?': '+e.message.slice(0,120):'')); }
+    catch(e){ if(e instanceof Fault) throw e; throw new Fault('the code broke'+(e&&typeof e.message==='string'?': '+e.message.slice(0,120):'')); }
   };
 }
 
