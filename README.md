@@ -90,6 +90,32 @@ Beside the hand-written bot there is a second CPU that learned to fight by playi
 - **Train:** `node bot/train.js --hours=0.5 --workers=8 --out=bot/checkpoints` (resumable; about 2,500 rounds a second on this laptop, so half an hour is plenty: the win rate stopped rising after about 1,000 generations).
 - **Judge and save:** `node bot/eval.js bot/checkpoints --n=400 --save=bot-weights.json`. Weights only suit the rules they were trained in; the server warns when `duel.html` has changed since.
 
+## Netcode: a WebSocket link (off by default)
+
+A room is reached the way it always was unless the page address says otherwise: the match's state comes down a Server-Sent Events stream as JSON, about 60 times a second in a fight, and every change of buttons goes up as a request of its own, one at a time. Add `?net=ws` to the address (`/duel?net=ws`) and the page uses one WebSocket for both.
+
+- **Down:** every event the event stream carries, unchanged, and the state as small binary frames that hold only what changed since the last state the device said it has. In a recorded fight between two bots that is about 5% of the JSON (1,807 bytes a snapshot against 77).
+- **Up:** a button goes the moment it changes, with no request to wait behind. Buttons are still sent again every 150 ms during a round, and the server still lets go of a direction it has not heard about for 0.9 s.
+- **Fallback:** if the socket has not opened within 1.5 s, or closes, or falls silent for four seconds, the page goes over to the event stream and plays on in the same seat. `?net=ws-only` never falls back and keeps trying the socket (for tests). Start the server with `NOWS=1` to leave the socket off and watch the fallback happen.
+- **The big screen passes it on:** a screen opened with `?net=ws` puts it in the join link and the QR code, so the tablets that scan it use the socket too.
+- **Seeing which link is in use:** the desktop layout's status bar shows `ws` or `sse`, the round trip, the jitter and the kB/s arriving. On a tablet with `?net=` in its address the "You are Blue" badge says it.
+- **No library:** `ws.js` is the WebSocket, written from RFC 6455 (frames, handshake, ping and pong, close); `wire.js` is the packing and the deltas, loaded by the server and the page.
+- **Tests:** `node tools/test-net.js` (starts a server on port 3195): the frame codec, sockets, packing and deltas, rooms over a socket beside the event stream, the page's link code against the real server (including a network that swallows the upgrade), and the page's whole script in a pretend browser, joining a room and pressing keys on each link.
+- **Bench:** `node tools/net-bench.js --delay=30 --jitter=20` plays a room against the bot on each link through a relay that holds every packet back by 30 ms plus up to 20 ms, presses a direction 200 times and prints, for each link, the median and 95th-percentile time from the press to the first state that shows the fighter moving, and the bytes a second received. It sends its buttons as the page does, repeat included (`--repeat=0` leaves the repeat out).
+
+Measured on one laptop, server and devices on the same machine, 200 presses a link:
+
+| Relay | Link | Median press to movement | 95th percentile | Bytes a second received |
+|---|---|---|---|---|
+| 30 ms + up to 20 ms each way | event stream | 105.8 ms | 175.1 ms | 72,947 |
+| 30 ms + up to 20 ms each way | socket | 92.4 ms | 110.1 ms | 3,789 (5.2%) |
+| none | event stream | 11.2 ms | 21.0 ms | 89,893 |
+| none | socket | 10.7 ms | 19.6 ms | 4,252 (4.7%) |
+
+The socket's gain in time is the wait it removes: on the event stream a press made while the last request is still in the air has to wait for it to come back, which on a slow network is most of the time because of the 150 ms repeat. That shows in the 95th percentile more than in the median. With the repeat left out (`--repeat=0`, 100 presses, same relay) the two links are level: 92.3 against 90.4 ms, 95th percentile 110.2 against 105.2. With no delay they are the same within the noise. Presses during which the bot hit the fighter were thrown away (60 and 73 of them with the delay, 6 and 4 without), and the relay delays whole chunks, not single packets: read the numbers as a comparison of the two links, not as what a venue's Wi-Fi will do.
+
+Not yet tried: a real browser. This was written and tested without one, so the page's socket code has only met stand-ins for the browser's `WebSocket` and `EventSource` in Node. Also untried: real tablets, a real network, a tablet that sleeps and wakes, and Render's proxy (if it does not pass the upgrade, the page should fall back within 1.5 s). States are drawn as they arrive, as before; there is no smoothing buffer.
+
 ## Run
 
 Needs Node 18 or newer. No dependencies.
@@ -122,6 +148,7 @@ The server runs the match; each device only draws and displays, so both players 
 | `OPENAI_FORGE_MODEL` | `OPENAI_MODEL` | Model that writes the match rules (RuleForge) |
 | `FORGE` | on | `0` switches RuleForge off |
 | `FORGE_CACHE` | `forge-cache.json` | File the model's rules are kept in; empty for none |
+| `NOWS` | off | `1` leaves the WebSocket off (pages with `?net=ws` then fall back to the event stream) |
 
 ## Rules
 
@@ -136,6 +163,7 @@ The server runs the match; each device only draws and displays, so both players 
 - `server.js`: serves the page, reads drawings with OpenAI (the key never reaches the browser), and runs online rooms. It loads the match rules from the marked block in `index.html`, so there is one copy of the rules.
 - `duel.html` and `duel-server.js`: Doodle Duel. Same pattern: the rules sit in a marked block in `duel.html` and the server runs that block for online rooms.
 - `forgescript.js`, `forge.js`: RuleForge. The first is the rule language (parser, checker, interpreter), used by the server and the page; the second asks the model, proves each rule and holds the built-in ones. `tools/test-forge.js` tests both, `tools/fake-openai.js` stands in for the model, `tools/forge-warm.js` and `tools/forge-live.js` need the key.
+- `ws.js`, `wire.js`: the WebSocket link for Doodle Duel rooms (`?net=ws`). The first is the WebSocket itself, the second packs the state into binary frames and deltas; `tools/test-net.js` tests both and `tools/net-bench.js` measures the two links.
 - `anim/`: Doodle Duel animation clips (running, and a move set each for blade, spear, hammer, fists, twin blades, bow, gun, twin pistols, magic staff and thrown weapons) and the engine that plays them; see `anim/README.md`. `anim-lab.html` previews clips and `tools/strip.js` renders them to frame strips.
 - `qrcode.js`: QR Code Generator by Kazuhiko Arase (MIT), used for the join code.
 
