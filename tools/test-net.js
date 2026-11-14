@@ -186,7 +186,7 @@ const SNAPS=record(7,600,'fight'), Wire=require('../wire.js'), util=require('uti
   test('an unchanged snapshot is a delta of a dozen bytes',()=>{ const tx=Wire.createSender(), rx=Wire.createReceiver(), a=rx.read(tx.frame(plain[3],1700000000000)); tx.ack(a.seq); const f=tx.frame(Wire.clone(plain[3]),1700000000016), b=rx.read(f); return [b.kind===2&&f.length<=12&&json(b.snap)===json(plain[3]),f.length]; });
   test('a delta against a snapshot the receiver does not hold throws, as does a frame that is not one',()=>{ const tx=Wire.createSender(), a=tx.frame(plain[0],1); tx.ack(1); const b=tx.frame(plain[1],2), fresh=Wire.createReceiver();
     const bad=f=>{ try{ fresh.read(f); return false; }catch(e){ return /^wire:/.test(e.message); } }; return kindOf(b)===2&&bad(b)&&bad(Uint8Array.from([3,1,1,0]))&&bad(new Uint8Array(0)); });
-  test('the frames of a fight are a twentieth of the JSON',()=>{ const r=stream(plain,2), jsonBytes=plain.reduce((n,s)=>n+json(s).length,0); return [r.bytes<jsonBytes/15,{frames:r.bytes,jsonBytes,percent:+(100*r.bytes/jsonBytes).toFixed(2)}]; });
+  test('the frames of a fight, acknowledged two frames late, are under a fifteenth of the JSON',()=>{ const r=stream(plain,2), jsonBytes=plain.reduce((n,s)=>n+json(s).length,0); return [r.bytes<jsonBytes/15,{frames:r.bytes,jsonBytes,percent:+(100*r.bytes/jsonBytes).toFixed(2)}]; });
 }
 
 /* ---------- 5. the server: rooms over a socket (a child `node server.js` on port 3195, no API key) ---------- */
