@@ -271,6 +271,8 @@ function itemStats(kind,el,cost){
 // Every attack is a move with fixed timing. Times are in seconds of the move's own clock, and each move
 // has an animation clip of the same name in anim/*.js whose marks must match these numbers.
 //   hits/shots: when damage lands or a projectile leaves.  cancel: earliest time a follow-up press chains into `next`.
+//   stun (shots only): how long the hit freezes the target, 0.2 s unless given. Rapid gun fire has none, so it chips at a
+//   fighter without holding them in place; otherwise each bullet lands before the last one's stun has worn off.
 //   dmg: multiplier on the item's damage.  lunge/carry: forward speed given to the fighter.  lift: upward knock on the target.
 const MOVES={
   blade1:   {dur:0.34,hits:[0.12],cancel:0.24,next:'blade2',dmg:0.6,kb:150,lift:60,lunge:170},
@@ -283,9 +285,9 @@ const MOVES={
   bow_quick:{dur:0.34,shots:[0.18],cancel:0.30,next:'bow_quick',dmg:0.75,speed:760,grav:220},
   bow_air:  {dur:0.42,shots:[0.22],dmg:1.0,speed:760,aim:0.44,grav:120,hop:130,end:1},
   bow_power:{dur:0.80,shots:[0.58],dmg:2.2,speed:980,grav:90,kbMul:2.2,recoil:120,end:1},
-  gun_shot: {dur:0.26,shots:[0.08],cancel:0.18,next:'gun_rapid',dmg:0.55,speed:920,recoil:40},
-  gun_rapid:{dur:0.18,shots:[0.05],cancel:0.16,next:'gun_rapid',dmg:0.42,speed:920,recoil:30},
-  gun_air:  {dur:0.28,shots:[0.08],dmg:0.45,speed:920,recoil:170,end:1},
+  gun_shot: {dur:0.26,shots:[0.08],cancel:0.18,next:'gun_rapid',dmg:0.55,speed:920,recoil:40,stun:0.1},
+  gun_rapid:{dur:0.18,shots:[0.05],cancel:0.16,next:'gun_rapid',dmg:0.34,speed:920,recoil:30,stun:0},
+  gun_air:  {dur:0.28,shots:[0.08],dmg:0.45,speed:920,recoil:170,stun:0.1,end:1},
   gun_power:{dur:0.60,shots:[0.36],dmg:1.8,speed:1100,kbMul:2.4,recoil:260,end:1},
   spear1:   {dur:0.30,hits:[0.11],cancel:0.22,next:'spear2',dmg:0.55,kb:160,lift:40,lunge:200},
   spear2:   {dur:0.34,hits:[0.12],cancel:0.25,next:'spear3',dmg:0.65,kb:170,lift:150,lunge:160},
@@ -347,12 +349,14 @@ function createDuel(opts){
     if(i.a!==c.a){ c.a=i.a; f.buf[0]=0.32; }
     if(i.b!==c.b){ c.b=i.b; f.buf[1]=0.32; }
   };
-  function hurt(t,dmg,el,kx,ky,by,fromX){
+  function hurt(t,dmg,el,kx,ky,by,fromX,stun){
+    if(stun===undefined) stun=0.2;
     const blocked=t.shield>0&&Math.sign(fromX-t.x)===t.face;
     if(blocked){ dmg*=0.15; kx*=0.3; ky*=0.3; } else if(el==='water') kx*=1.45;
-    t.hp-=dmg; t.vx=kx; if(ky>0){ t.vy=ky; t.ground=false; } else if(ky<0&&!t.ground) t.vy=ky;
+    // A hit with no stun only nudges: it adds to the target's speed instead of replacing it, and does not lift them.
+    t.hp-=dmg; if(stun>0) t.vx=kx; else{ t.vx+=kx*0.25; ky=0; } if(ky>0){ t.vy=ky; t.ground=false; } else if(ky<0&&!t.ground) t.vy=ky;
     if(!blocked){
-      t.hurt=0.2; t.act=null; t.dash=0;
+      if(stun>0){ t.hurt=Math.max(t.hurt,stun); t.act=null; t.dash=0; }
       if(el==='fire'){ t.burn=2; t.burnDps=dmg*0.15; }
       if(el==='water') t.slow=1.8;
       if(el==='plant'&&by&&by.hp>0) by.hp=Math.min(HP,by.hp+dmg*0.3);
@@ -404,7 +408,7 @@ function createDuel(opts){
       }else{
         const aim=M.aims?M.aims[a.done]:M.aim||0, mz=MUZZLE[it.style]||MUZZLE.gun; a.done++;
         S.pr.push({id:nextId++,k:'shot',st:it.style,big:M.big||0,side:f.side,slot:k,x:f.x+f.face*mz[0],y:f.y+mz[1],
-          vx:f.face*M.speed*Math.cos(aim),vy:-M.speed*Math.sin(aim),grav:M.grav||0,dmg:st.dmg*M.dmg,el:it.el,kb:st.kb*(M.kbMul||1),ttl:1.6});
+          vx:f.face*M.speed*Math.cos(aim),vy:-M.speed*Math.sin(aim),grav:M.grav||0,dmg:st.dmg*M.dmg,el:it.el,kb:st.kb*(M.kbMul||1),stun:M.stun,ttl:1.6});
         if(M.recoil) f.vx-=f.face*M.recoil;
         S.events.push({e:'shot',x:Math.round(f.x+f.face*(mz[0]+(it.style==='gun'?14:4))),y:Math.round(f.y+mz[1]),st:it.style,side:f.side,f:f.face,el:it.el});
       }
@@ -449,7 +453,7 @@ function createDuel(opts){
       p.x+=p.vx*dt; p.y+=p.vy*dt;
       const e=S.f[1-p.side], touch=Math.abs(p.x-e.x)<18+10*(p.big||0)&&p.y>e.y-4-10*(p.big||0)&&p.y<e.y+94;
       if(p.k==='shot'){
-        if(touch){ hurt(e,p.dmg,p.el,Math.sign(p.vx)*p.kb,90,S.f[p.side],p.x-Math.sign(p.vx)*30); p.ttl=0; }
+        if(touch){ hurt(e,p.dmg,p.el,Math.sign(p.vx)*p.kb,90,S.f[p.side],p.x-Math.sign(p.vx)*30,p.stun); p.ttl=0; }
         else if(p.y<=0) p.ttl=0;
       }else if(touch||p.y<=0||p.ttl<=0){
         const by=Math.max(0,p.y);
