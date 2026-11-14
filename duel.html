@@ -274,9 +274,9 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
 .rules{margin:0;padding:10px 14px;list-style:none;display:grid;gap:4px;font-size:14px;background:var(--card);border:2px solid var(--ink);border-radius:14px}
 .chip{display:inline-block;border-radius:6px;padding:0 6px;color:#fff;font-weight:600;font-size:13px}
 .fire{background:var(--fire)} .water{background:var(--water)} .plant{background:var(--plant)}
-/* Retro desktop: the right column is just the hack list and the glyph sheet (they are the instructions). Health, overdrive
-   and ink are drawn over each fighter's head, and CPU skill sits in the Game setup window. */
-#inkos fieldset.gone{display:none}
+/* Retro desktop: the right column (hack list, glyph sheet) is hidden, so the stage takes the whole window; hacks and glyphs
+   are still in the Hack and Insert menus. Health, overdrive and ink are drawn over each fighter's head, and CPU skill sits in the Game setup window. */
+#inkos fieldset.gone,#inkos .panel{display:none}
 #xlbar,#xltabs{display:none}
 /* Spreadsheet stage on the retro desktop: the app window is a spreadsheet program. Its paint tools, colours and timeline go;
    a toolbar, a name box and formula bar, and sheet tabs come in. The grid itself is drawn on the arena canvas. */
@@ -284,22 +284,30 @@ body.sheetstage #inkos .timeline,body.sheetstage #inkos #artboard .stagelabel,bo
 body.sheetstage #mainwin .titlebar svg{display:none}
 body.sheetstage #mainwin .titlebar::before{content:"X";font:900 11px/14px Arial,sans-serif;width:14px;height:14px;text-align:center;background:#107c41;color:#fff;flex:none}
 body.sheetstage #xlbar{display:block;flex:0 0 auto;font:11px Tahoma,Arial,sans-serif;color:#000}
-#xlbar .xltools{display:flex;align-items:center;gap:1px;padding:2px 2px 3px;border-bottom:1px solid #808080;box-shadow:0 1px #fff;overflow:hidden;white-space:nowrap}
-#xlbar .xltools span{min-width:20px;height:20px;line-height:18px;text-align:center;border:1px solid transparent;padding:0 2px}
-#xlbar .xltools i{width:2px;height:18px;margin:0 3px;border-left:1px solid #808080;border-right:1px solid #fff}
-#xlbar .xlfont{font-weight:400;background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080;padding:1px 22px 1px 4px;margin:0 2px;min-width:86px;height:20px;line-height:14px}
-#xlbar .xlfont.n{min-width:0;padding-right:14px}
-#xlbar .xlfx{display:flex;align-items:center;gap:4px;padding:3px 2px}
-#xlbar .xlname{background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080;width:74px;padding:1px 5px;height:20px;line-height:14px}
-#xlbar .xlbtns{color:#555;letter-spacing:5px;padding:0 4px}
-#xlbar .xlin{flex:1;background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080;padding:1px 6px;height:20px;line-height:14px;font:12px Arial,sans-serif;overflow:hidden;white-space:nowrap}
+#xlbar .xltools{display:flex;align-items:center;height:26px;padding:0 2px;border-top:1px solid #fff;border-bottom:1px solid #808080;overflow:hidden;white-space:nowrap}
+#xlbar .xltools::before{content:"";flex:none;width:6px;height:20px;margin:0 4px 0 1px;background:linear-gradient(90deg,#fff 0 1px,#c3c3c3 1px 2px,#808080 2px 3px,#fff 3px 4px,#c3c3c3 4px 5px,#808080 5px 6px)}
+#xlbar .xltools>span:not(.xlcombo){flex:none;width:23px;height:22px;display:flex;align-items:center;justify-content:center;border:1px solid transparent;font:13px "Times New Roman",serif}
+#xlbar .xltools>span:not(.xlcombo):hover{border-color:#fff #808080 #808080 #fff}
+#xlbar .xltools svg{width:16px;height:16px;display:block}
+#xlbar .xltools>i{flex:none;width:2px;height:20px;margin:0 3px;border-left:1px solid #808080;border-right:1px solid #fff}
+#xlbar .xlcombo{flex:none;display:flex;align-items:stretch;box-sizing:border-box;background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080;box-shadow:inset 1px 1px #404040;height:21px;margin:0 3px 0 1px;font:11px Tahoma,Arial,sans-serif}
+#xlbar .xlcombo b{font-weight:400;padding:2px 4px 0 5px;flex:1;overflow:hidden}
+#xlbar .xlcombo s{flex:none;width:15px;background:#c3c3c3;border:1px solid;border-color:#fff #404040 #404040 #fff;box-shadow:inset -1px -1px #808080;position:relative}
+#xlbar .xlcombo s::after{content:"";position:absolute;left:3px;top:6px;border:4px solid transparent;border-top-color:#000;border-bottom:0}
+#xlbar .xlfx{display:flex;align-items:center;height:25px;padding:0 2px;border-top:1px solid #fff}
+#xlbar .xlbtns{display:flex;flex:none;margin:0 3px 0 1px}
+#xlbar .xlbtns span{width:20px;height:20px;display:flex;align-items:center;justify-content:center;border:1px solid;border-color:#fff #808080 #808080 #fff;font:700 12px Arial,sans-serif}
+#xlbar .xlbtns .x{color:#c00000} #xlbar .xlbtns .ok{color:#008000}
+#xlbar .xlin{flex:1;box-sizing:border-box;background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080;box-shadow:inset 1px 1px #404040;padding:2px 5px 0;height:21px;font:13px Arial,Helvetica,sans-serif;overflow:hidden;white-space:nowrap}
 #xlbar .xlin.mad{color:#b0121f;font-weight:700}
-body.sheetstage #xltabs{display:flex;flex:0 0 20px;height:20px;align-items:stretch;font:11px Tahoma,Arial,sans-serif;color:#000;overflow:hidden}
-#xltabs .xlnav{padding:3px 6px;letter-spacing:1px;font-size:8px;line-height:13px;color:#333}
-#xltabs .xltab{padding:2px 12px;border:1px solid #808080;border-top:0;background:#c3c3c3;margin-right:-1px;clip-path:polygon(0 0,100% 0,calc(100% - 7px) 100%,7px 100%)}
-#xltabs .xltab.on{background:#fff;font-weight:700}
-#xltabs .xlscroll{flex:1;margin-left:14px;background:#e6e6e6;border:1px solid #808080;position:relative}
-#xltabs .xlscroll i{position:absolute;left:8%;top:1px;bottom:1px;width:34%;background:#c3c3c3;border:1px solid;border-color:#fff #404040 #404040 #fff}
+body.sheetstage #xltabs{display:flex;flex:0 0 18px;height:18px;align-items:stretch;font:11px Tahoma,Arial,sans-serif;color:#000;overflow:hidden}
+#xltabs .xlnav{display:flex;flex:none;margin-right:6px}
+#xltabs u{flex:none;width:16px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;text-decoration:none;font:7px/1 Arial,sans-serif;letter-spacing:-1px;background:#c3c3c3;border:1px solid;border-color:#fff #404040 #404040 #fff;box-shadow:inset -1px -1px #808080}
+#xltabs .xltab{padding:1px 13px;border:1px solid #000;border-top:0;background:#c3c3c3;margin-right:-6px;clip-path:polygon(0 0,100% 0,calc(100% - 7px) 100%,7px 100%)}
+#xltabs .xltab.on{background:#fff;font-weight:700;position:relative;z-index:1}
+#xltabs .xlscroll{flex:1;display:flex;margin-left:18px;border-left:4px ridge #dfdfdf}
+#xltabs .xlscroll i{flex:1;position:relative;background:repeating-conic-gradient(#fff 0 25%,#c3c3c3 0 50%) 0 0/2px 2px}
+#xltabs .xlscroll i::after{content:"";position:absolute;left:0;top:0;bottom:0;width:64%;background:#c3c3c3;border:1px solid;border-color:#fff #404040 #404040 #fff;box-shadow:inset -1px -1px #808080}
 .cpuskill{display:inline-grid;grid-template-columns:auto 110px 30px;align-items:center;gap:6px;font-size:13px;font-weight:600}
 #tips{position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:9000;pointer-events:none;background:#fffbe6;border:2px solid var(--ink);border-radius:12px;box-shadow:4px 4px 0 var(--ink);
   padding:10px 16px;font:600 15px/1.5 var(--body);color:var(--ink);max-width:min(560px,90vw);transition:opacity .5s}
@@ -2162,10 +2170,44 @@ function retroBuild(){
     help:()=>[['Controls','F1',tip],['Glyph grammar','',()=>FXI.toast('Simple = terrain (\u2015 platform, | wall, \u25a1 crate, \u25cb pot/shield/trap). Compound = weapons. \u2192 dash/fling/wind/link \u00b7 \u2715 erase/disarm \u00b7 \u2298 null any hack \u00b7 \u03df lightning')],
       ['About InkShop','',()=>FXI.toast('InkShop 2.0 \u2014 interface, glyph recogniser, hacks and effects from Alex\'s prototype, running on the Doodle Duel engine.')]]});
   FXI.buildUI();
-  { const ab=document.querySelector('#artboard'), tb=t=>t.split(' ').map(x=>x==='|'?'<i></i>':'<span>'+x+'</span>').join('');
-    ab.insertAdjacentHTML('beforebegin','<div id="xlbar"><div class="xltools">'+tb('\u25a1 \u25a4 \u25a3 | \u2702 \u29c9 \u25a7 | \u21b6 \u21b7 | \u03a3 f\u2093 A\u2193 Z\u2193 | \u25a5 100%')+'<b class="xlfont">Arial</b><b class="xlfont n">10</b>'+tb('<b>B</b> <em>I</em> <u>U</u> | \u2261 \u2263 | $ % , | \u25a6')+'</div>'
-      +'<div class="xlfx"><span class="xlname" id="xlname">A1</span><span class="xlbtns">\u2715 \u2713 =</span><span class="xlin" id="xlin"></span></div></div>');
-    ab.insertAdjacentHTML('afterend','<div id="xltabs"><span class="xlnav">\u25c0\u25c0 \u25c0 \u25b6 \u25b6\u25b6</span><span class="xltab">Assumptions</span><span class="xltab on">DCF</span><span class="xltab">Comps</span><span class="xltab">Sheet4</span><span class="xlscroll"><i></i></span></div>');
+  // The spreadsheet program's bars, laid out like the late-90s original: a Standard toolbar and a Formatting toolbar (each
+  // with a grip), small 16-colour icons, drop-down boxes for zoom, font and size, then the name box, the cancel / enter /
+  // edit-formula buttons and the formula bar; under the sheet, the tab-scrolling buttons, sheet tabs and a scroll bar.
+  { const ab=document.querySelector('#artboard'), PG='<path d="M3.5 1.5h6l3 3v10h-9z" fill="#fff" stroke="#000"/><path d="M9.5 1.5v3h3" fill="none" stroke="#000"/>',
+      TX=(x,y,s,t,o)=>'<text x="'+x+'" y="'+y+'" font-size="'+s+'" font-family="Arial,sans-serif" '+(o||'font-weight="700"')+'>'+t+'</text>', LN=d=>'<path d="'+d+'" stroke="#000" fill="none"/>',
+      UN='<path d="M3 3.5v5h5" fill="none" stroke="#000080" stroke-width="1.6"/><path d="M3.5 8c2.5-4 8-3.5 9 3" fill="none" stroke="#000080" stroke-width="1.6"/>', AR=LN('M12 2v11M9.5 10l2.5 3.5 2.5-3.5'),
+      IC={ new:PG,
+        open:'<path d="M1.5 12.5v-9h4l1 1.5h5v2" fill="#ffff00" stroke="#000"/><path d="M1.5 12.5l2.5-5.5h10.5l-3 5.5z" fill="#808000" stroke="#000"/>',
+        save:'<path d="M1.5 1.5h13v13h-12l-1-1z" fill="#000080" stroke="#000"/><rect x="4" y="2" width="8" height="5" fill="#fff"/><rect x="5" y="10" width="6" height="4" fill="#c0c0c0"/><rect x="6" y="11" width="2" height="2" fill="#000"/>',
+        print:'<rect x="4.5" y="1.5" width="7" height="5" fill="#fff" stroke="#000"/><rect x="1.5" y="6.5" width="13" height="5" fill="#c0c0c0" stroke="#000"/><rect x="4.5" y="10.5" width="7" height="4" fill="#fff" stroke="#000"/><rect x="12" y="8" width="1" height="1" fill="#00c000"/>',
+        preview:PG+'<circle cx="8" cy="9" r="3" fill="#c0ffff" stroke="#000"/><path d="M10.5 11.5l3.5 3.5" stroke="#000" stroke-width="2"/>',
+        spell:TX(0.5,7.5,7,'ABC')+'<path d="M4 11l2.5 3 5.5-6.5" fill="none" stroke="#0000ff" stroke-width="1.6"/>',
+        cut:LN('M5.5 1l3 8.5M10.5 1l-3 8.5')+'<circle cx="5" cy="12" r="2" fill="none" stroke="#000080" stroke-width="1.5"/><circle cx="11" cy="12" r="2" fill="none" stroke="#000080" stroke-width="1.5"/>',
+        copy:'<path d="M1.5 1.5h6v8h-6z" fill="#fff" stroke="#000"/><path d="M6.5 5.5h7v9h-7z" fill="#fff" stroke="#000"/><path d="M8 8h4M8 10h4M8 12h4" stroke="#000080"/>',
+        paste:'<rect x="1.5" y="2.5" width="10" height="12" fill="#808000" stroke="#000"/><rect x="4.5" y="1.5" width="4" height="3" fill="#c0c0c0" stroke="#000"/><path d="M6.5 6.5h8v8h-8z" fill="#fff" stroke="#000"/><path d="M8 9h5M8 11h5" stroke="#000080"/>',
+        brush:'<rect x="2.5" y="1.5" width="9" height="4" fill="#ffff00" stroke="#000"/><path d="M11.5 3.5h2v4h-6v2" fill="none" stroke="#000"/><rect x="6.5" y="9.5" width="2" height="5" fill="#808080" stroke="#000"/>',
+        undo:UN, redo:'<g transform="translate(16 0) scale(-1 1)">'+UN+'</g>',
+        link:'<circle cx="7" cy="7" r="5.5" fill="#00ffff" stroke="#000080"/><path d="M1.5 7h11M7 1.5v11M3 3.5c2.5 1.5 5.5 1.5 8 0M3 10.5c2.5-1.5 5.5-1.5 8 0" stroke="#000080" fill="none"/><path d="M8 13.5h3M12 13.5h3" stroke="#000" stroke-width="2"/>',
+        sum:'<path d="M12 4.5v-2h-8l4.5 5.5-4.5 5.5h8v-2" fill="none" stroke="#000" stroke-width="1.5"/>',
+        fx:'<text x="2" y="12" font-size="13" font-style="italic" font-family="Times New Roman,serif">f</text>'+TX(8,13,8,'x','font-style="italic"'),
+        az:'<g fill="#0000ff">'+TX(1,7.5,8,'A')+'</g><g fill="#800000">'+TX(1,15,8,'Z')+'</g>'+AR, za:'<g fill="#800000">'+TX(1,7.5,8,'Z')+'</g><g fill="#0000ff">'+TX(1,15,8,'A')+'</g>'+AR,
+        chart:LN('M1.5 1v13.5h14')+'<rect x="3" y="8" width="3" height="6" fill="#0000ff"/><rect x="7" y="3" width="3" height="11" fill="#ffff00" stroke="#000" stroke-width=".6"/><rect x="11" y="10" width="3" height="4" fill="#ff0000"/>',
+        draw:'<rect x="1.5" y="7.5" width="7" height="7" fill="#ffff00" stroke="#000"/><circle cx="10.5" cy="6.5" r="4" fill="#00ffff" stroke="#000"/><path d="M1.5 5.5l3-4 3 4z" fill="#0000ff" stroke="#000"/>',
+        help:'<g fill="#000080">'+TX(4,13.5,15,'?')+'</g>',
+        al:LN('M2 3.5h12M2 6.5h7M2 9.5h12M2 12.5h7'), ac:LN('M2 3.5h12M4.5 6.5h7M2 9.5h12M4.5 12.5h7'), ar:LN('M2 3.5h12M7 6.5h7M2 9.5h12M7 12.5h7'),
+        merge:'<rect x="1.5" y="3.5" width="13" height="9" fill="#fff" stroke="#000"/>'+TX(5.5,11,8,'a')+'<path d="M2.5 8h2.5M11 8h2.5" stroke="#0000ff"/>',
+        cur:'<rect x="1.5" y="3.5" width="13" height="9" fill="#00a000" stroke="#000"/><circle cx="8" cy="8" r="2.5" fill="#c0ffc0" stroke="#000" stroke-width=".6"/>',
+        pct:TX(2,13,13,'%'), comma:TX(5,12,16,','),
+        dec0:'<g fill="#0000ff">'+TX(1,7,7,'.0')+'</g>'+TX(4,14.5,7,'.00')+LN('M9 4h6M12.5 2l2.5 2-2.5 2'), dec1:'<g fill="#0000ff">'+TX(1,7,7,'.00')+'</g>'+TX(6,14.5,7,'.0')+LN('M10 4h5M12 2l-2.5 2 2.5 2'),
+        border:'<rect x="2.5" y="2.5" width="11" height="10" fill="none" stroke="#808080" stroke-dasharray="1 1"/><path d="M2 8h12M8 2v11" stroke="#808080" stroke-dasharray="1 1"/><path d="M2 13.5h12" stroke="#000" stroke-width="2"/>',
+        fill:'<path d="M3.5 7l4.5-4.500 5 5-4.500 4.500z" fill="#fff" stroke="#000"/><path d="M13.500 8c1.300 2 1.300 3.500 0 3.500s-1.300-1.500 0-3.500" fill="#000"/><rect x="2" y="13" width="12" height="3" fill="#ffff00"/>',
+        ink:TX(4,11,12,'A')+'<rect x="2" y="13" width="12" height="3" fill="#ff0000"/>' },
+      tb=t=>t.split(' ').map(x=>x==='|'?'<i></i>':IC[x]?'<span title="'+x+'"><svg viewBox="0 0 16 16">'+IC[x]+'</svg></span>':'<span>'+x+'</span>').join(''),
+      combo=(t,w,id)=>'<span class="xlcombo" style="width:'+w+'px"><b'+(id?' id="'+id+'"':'')+'>'+t+'</b><s></s></span>', nav=t=>t.split(' ').map(x=>'<u>'+x+'</u>').join('');
+    ab.insertAdjacentHTML('beforebegin','<div id="xlbar"><div class="xltools">'+tb('new open save | print preview spell | cut copy paste brush | undo redo | link | sum fx az za | chart draw |')+combo('100%',58)+tb('help')+'</div>'
+      +'<div class="xltools">'+combo('Arial',128)+combo('10',42)+tb('<b>B</b> <em>I</em> <u>U</u> | al ac ar merge | cur pct comma dec0 dec1 | border fill ink')+'</div>'
+      +'<div class="xlfx">'+combo('A1',96,'xlname')+'<span class="xlbtns"><span class="x">✕</span><span class="ok">✓</span><span>=</span></span><span class="xlin" id="xlin"></span></div></div>');
+    ab.insertAdjacentHTML('afterend','<div id="xltabs"><span class="xlnav">'+nav('|◀ ◀ ▶ ▶|')+'</span><span class="xltab">Assumptions</span><span class="xltab on">DCF</span><span class="xltab">Comps</span><span class="xltab">Sheet4</span><span class="xlscroll"><u>◀</u><i></i><u>▶</u></span></div>');
     if(STAGE) FXI.setTool('pencil'); }
   document.querySelector('#hint').textContent='A D move \u00b7 W jump \u00b7 J K attack \u00b7 L mine \u00b7 mouse draws (B R O) \u00b7 Q hack';
   // His rig sliders drive the spring layer over this game's clips (anim/rig.js). They start gentler than his defaults,
@@ -2576,61 +2618,76 @@ const SHEET_MODEL=(()=>{
 })();
 const sheetDels=[];
 function sheetBack(v,now){
-  // Inside the app window the sheet reaches up to the top of the canvas area: more rows, with the formula bar up there.
-  const h=v.sheet, emb=RETRO, bx=emb?sheetBox():null, ty=emb?Math.min(0,GY+2-(bx.bottom-bx.top)/bx.k):0, hd=emb?0:22, x0=emb?0:-OX, x1=emb?960:VW-OX, top=ty+hd+18, rows=Math.ceil((GY-top)/SHEET_ROW), C=SHEET_COL, R=SHEET_ROW, c0=Math.floor(x0/C), c1=Math.ceil(x1/C), ca=x0-c0*C>C*0.35?c0+1:c0;   // ca: the first column with room for the row names, shown as column A
+  // Inside the app window the sheet reaches up to the top of the canvas area and is drawn the way the old spreadsheet
+  // program drew one: rows half a platform tall (about its 17 pixels on screen), Arial, grey gridlines, raised grey headings,
+  // labels in column A running over into B. px is one screen pixel in sheet units, so thin lines stay thin.
+  const h=v.sheet, emb=RETRO, bx=emb?sheetBox():null, ty=emb?Math.min(0,GY+2-(bx.bottom-bx.top)/bx.k):0, hd=emb?0:22, x0=emb?0:-OX, x1=emb?960:VW-OX, top=ty+hd+18, C=SHEET_COL, R=SHEET_ROW, rh=emb?R/2:R, rows=Math.ceil((GY-top)/rh), full=Math.floor((GY-top)/rh), c0=Math.floor(x0/C), c1=Math.ceil(x1/C), ca=x0-c0*C>C*0.35?c0+1:c0, px=emb?1/bx.k:1, vo=emb?3:2;   // ca: the first column with room for the row names, shown as column A; vo: the column the figures start in
+  const typed=h.msg.slice(0,Math.max(0,Math.floor((h.t-h.said)*34))), AR='px Arial,Helvetica,sans-serif';
   L.save(); L.lineCap='butt';
-  if(emb){ L.beginPath(); L.rect(-SHEET_GUT,ty,960+SHEET_GUT,GY+3-ty); L.clip(); L.fillStyle='#fff'; L.fillRect(-SHEET_GUT,ty,960+SHEET_GUT,GY+3-ty); }      // inside the app window
-  // the model: title, a row of years, then the lines. After the rage-delete (no cells left) every formula shows an error.
-  { const M=SHEET_MODEL, full=Math.floor((GY-top)/R), broke=h.plats.length===0&&h.t>1, ink=emb?'#1a1a1a':'#7d8798', blue=emb?'#0000d0':'#6f86c9', F=(b,it)=>(it?'italic ':'')+(b?'700 ':'')+'11px Arial,Helvetica,sans-serif';
-    L.globalAlpha=emb?0.78:1;
-    for(let i=0;i<full;i++){
-      const y=GY-(full-1-i)*R-R/2, yt=y-R/2;
-      if(i===0){ L.fillStyle=ink; L.font=F(1); L.textAlign='left'; L.fillText(M.title,ca*C+6,y,C*9.5); continue; }
-      if(i===1){ L.font=F(1); L.fillStyle=ink; L.textAlign='right'; M.yrs.forEach((t,n)=>L.fillText(t,(ca+2+n)*C-6,y)); L.strokeStyle=ink; L.lineWidth=1.2; L.beginPath(); L.moveTo(ca*C+2,yt+R-1); L.lineTo((ca+9)*C-2,yt+R-1); L.stroke(); continue; }
-      const ln=M.lines[i-2]; if(!ln) break;
-      L.font=F(ln.bold,ln.it); L.textAlign='left'; L.fillStyle=ink; L.fillText(ln.lb,ca*C+6,y,C-8);
-      if(ln.rule){ L.strokeStyle=ink; L.lineWidth=1; L.beginPath(); L.moveTo((ca+1)*C+4,yt+1); L.lineTo((ca+1+ln.vals.length)*C-2,yt+1); L.stroke(); }
-      L.textAlign='right';
-      ln.vals.forEach((t,n)=>{ const err=broke&&!ln.input; L.fillStyle=err?'#c0261d':ln.input?blue:t[0]==='('?(emb?'#a01515':'#c59a9a'):ink; L.fillText(err?'#REF!':t,(ca+2+n)*C-6,y,C-8); });
-    }
-    L.globalAlpha=1; }
+  if(emb){ L.textBaseline='middle'; L.beginPath(); L.rect(-SHEET_GUT,ty,960+SHEET_GUT,GY+3-ty); L.clip(); L.fillStyle='#fff'; L.fillRect(-SHEET_GUT,ty,960+SHEET_GUT,GY+3-ty); }      // inside the app window
   // grid
-  L.strokeStyle='#e1e6ee'; L.lineWidth=1; L.beginPath();
-  for(let c=c0;c<=c1;c++){ L.moveTo(c*C,top); L.lineTo(c*C,GY); }
-  for(let r=1;r<=rows;r++){ L.moveTo(x0,GY-r*R); L.lineTo(x1,GY-r*R); }
+  L.strokeStyle=emb?'#c0c0c0':'#e1e6ee'; L.lineWidth=px; L.beginPath();
+  for(let c=c0;c<=c1;c++){ L.moveTo(c*C-px/2,top); L.lineTo(c*C-px/2,GY); }
+  for(let r=1;r<=rows;r++){ L.moveTo(x0,GY-r*rh-px/2); L.lineTo(x1,GY-r*rh-px/2); }
   L.stroke();
-  if(h.all){ L.fillStyle='rgba(16,124,65,.16)'; L.fillRect(x0,top,x1-x0,GY-top); }
-  // the cells he has filled in: these are what the fighters stand on
+  // the model: title, a row of years, then the lines. After the rage-delete (no cells left) every formula shows an error.
+  { const M=SHEET_MODEL, broke=h.plats.length===0&&h.t>1, ink=emb?'#000':'#7d8798', blue=emb?'#0000ff':'#6f86c9', red=emb?'#ff0000':'#c59a9a', F=(b,it)=>(it?'italic ':'')+(b?'700 ':'')+(emb?14:11)+AR;
+    for(let i=0;i<full;i++){
+      const y=GY-(full-1-i)*rh-rh/2, yt=y-rh/2;
+      if(i===0){ L.font=F(1); L.textAlign='left'; if(emb){ L.fillStyle='#fff'; L.fillRect(ca*C,yt,Math.min(C*9.5,L.measureText(M.title).width)+8,rh-px); } L.fillStyle=ink; L.fillText(M.title,ca*C+(emb?4:6),y,C*9.5); continue; }
+      if(i===1){ L.font=F(1); L.fillStyle=ink; L.textAlign='right'; M.yrs.forEach((t,n)=>L.fillText(t,(ca+vo+n)*C-(emb?4:6),y)); L.strokeStyle=ink; L.lineWidth=emb?px:1.2; L.beginPath(); L.moveTo(ca*C+2,yt+rh-1); L.lineTo((ca+vo+7)*C-2,yt+rh-1); L.stroke(); continue; }
+      const ln=M.lines[i-2]; if(!ln) break;
+      L.font=F(ln.bold,ln.it); L.textAlign='left'; if(emb){ const tw=L.measureText(ln.lb).width+8; if(tw>C){ L.fillStyle='#fff'; L.fillRect(ca*C,yt,tw,rh-px); } } L.fillStyle=ink; if(emb) L.fillText(ln.lb,ca*C+4,y); else L.fillText(ln.lb,ca*C+6,y,C-8);
+      if(ln.rule){ L.strokeStyle=ink; L.lineWidth=px; L.beginPath(); L.moveTo((ca+vo-1)*C+4,yt+1); L.lineTo((ca+vo-1+ln.vals.length)*C-2,yt+1); L.stroke(); }
+      L.textAlign='right';
+      ln.vals.forEach((t,n)=>{ const err=broke&&!ln.input; L.fillStyle=err?(emb?'#000':'#c0261d'):ln.input?blue:t[0]==='('?red:ink; L.fillText(err?'#REF!':t,(ca+vo+n)*C-(emb?4:6),y,C-8); });
+    } }
+  if(h.all){ L.fillStyle=emb?'rgba(10,36,106,.28)':'rgba(16,124,65,.16)'; L.fillRect(x0,top,x1-x0,GY-top); }
+  // the cells he has filled in: these are what the fighters stand on. In the app window: a pale yellow fill with a box border.
   for(const p of h.plats){
     const y=GY-p.y, w=p.x1-p.x0;
+    if(emb){ L.fillStyle='#ffff99'; L.fillRect(p.x0,y,w,rh); L.strokeStyle='#000'; L.lineWidth=2*px; L.strokeRect(p.x0,y,w-px,rh-px);
+      L.fillStyle='#000'; L.font='700 14'+AR; L.textAlign='left'; L.fillText(p.lb||'',p.x0+5,y+rh/2,w-10); continue; }
     L.fillStyle='#e6f4ea'; L.fillRect(p.x0,y,w,R); L.strokeStyle='#107c41'; L.lineWidth=2.5; L.strokeRect(p.x0,y,w,R);
     L.fillStyle='#107c41'; L.fillRect(p.x1-4,y+R-4,7,7);
     L.fillStyle='#0b5c30'; L.font='700 13px Karla,system-ui,sans-serif'; L.textAlign='left'; L.fillText(p.lb||'',p.x0+8,y+R/2,w-14);
   }
-  // headings and the formula bar
   // the cell he is working in: a heavy black border with the fill handle, and what he is typing inside it
-  if(h.cell&&!h.all){ const [cc,cr]=h.cell, ax=cc*C, ay=GY-(cr+1)*R, typing=h.msg.slice(0,Math.max(0,Math.floor((h.t-h.said)*34)));
-    L.strokeStyle='#000'; L.lineWidth=3; L.strokeRect(ax,ay,C,R); L.fillStyle='#000'; L.fillRect(ax+C-4,ay+R-4,7,7);
-    if(h.t-h.said<4&&!h.drag){ L.save(); L.beginPath(); L.rect(ax+2,ay+2,C*2.6,R-4); L.clip(); L.fillStyle='#fff'; L.fillRect(ax+2,ay+2,Math.min(C*2.6,L.measureText(typing).width+14),R-4); L.fillStyle='#000'; L.font='12px Arial,sans-serif'; L.textAlign='left'; L.fillText(typing.slice(-26),ax+6,ay+R/2); L.restore(); } }
-  // column letters across the top (and, inside the app window, row numbers down the left) in the old grey style
-  const band=emb?'#d4d0c8':'#f1f3f6';
-  L.fillStyle=band; L.fillRect(x0,ty+hd,x1-x0,18); L.strokeStyle=emb?'#808080':'#cfd6e0'; L.lineWidth=1; L.beginPath(); L.moveTo(x0,top); L.lineTo(x1,top); L.moveTo(x0,ty+hd); L.lineTo(x1,ty+hd);
-  if(emb) for(let c=c0;c<=c1;c++){ L.moveTo(c*C,ty); L.lineTo(c*C,top); }
-  L.stroke();
-  if(emb){ L.fillStyle=band; L.fillRect(-SHEET_GUT,ty,SHEET_GUT,GY+3-ty); L.strokeStyle='#808080'; L.beginPath(); L.moveTo(0,ty); L.lineTo(0,GY); for(let r=0;r<=rows;r++){ L.moveTo(-SHEET_GUT,GY-r*R); L.lineTo(0,GY-r*R); } L.stroke();
-    { const full=Math.floor((GY-top)/R); L.fillStyle='#000'; L.font='11px Tahoma,Arial,sans-serif'; L.textAlign='center'; for(let r=0;r<full;r++) L.fillText(String(full-r),-SHEET_GUT/2,GY-r*R-R/2); }
-    const nm=h.cell?String.fromCharCode(65+Math.max(0,h.cell[0])%26)+(Math.floor((GY-top)/R)-h.cell[1]):'A1', xn=$('xlname'), xi=$('xlin'), tx=h.msg.slice(0,Math.max(0,Math.floor((h.t-h.said)*34)));
-    if(xn&&xn.textContent!==nm) xn.textContent=nm; if(xi&&xi.textContent!==tx){ xi.textContent=tx; xi.classList.toggle('mad',!!(h.hunt||h.all)); } }
-  L.fillStyle=emb?'#000':'#6b7486'; L.font=emb?'11px Tahoma,Arial,sans-serif':'600 11px Karla,system-ui,sans-serif'; L.textAlign='center';
-  for(let c=ca;c<c1;c++) L.fillText(String.fromCharCode(65+(c-ca)%26),c*C+C/2,ty+hd+9);
-  if(!emb){
-  L.fillStyle='#fff'; L.fillRect(x0,ty,x1-x0,22);
-  const typed=h.msg.slice(0,Math.max(0,Math.floor((h.t-h.said)*34))), caret=Math.floor(now/400)%2?'|':'';
-  L.textAlign='left'; L.fillStyle='#8a93a5'; L.font='italic 600 12px Georgia,serif'; L.fillText('fx',x0+10,ty+11);
-  L.fillStyle=h.hunt||h.all?'#b0121f':'#1c2541'; L.font='600 13px Karla,system-ui,sans-serif'; L.fillText(typed+caret,x0+34,ty+11.5);
-  L.textAlign='right'; L.fillStyle='#b4bcc9'; L.font='11px Karla,system-ui,sans-serif'; L.fillText('Anthropik_IPO_model_v7_FINAL_final(2).xls  ·  Granola Capital',x1-10,ty+11.5);
+  if(h.cell&&!h.all){ const [cc,cr]=h.cell, ax=cc*C, ay=GY-(cr+1)*R;
+    L.strokeStyle='#000'; L.lineWidth=3*px; L.strokeRect(ax-px/2,ay-px/2,C,rh);
+    if(emb){ L.fillStyle='#fff'; L.fillRect(ax+C-4*px,ay+rh-4*px,7*px,7*px); L.fillStyle='#000'; L.fillRect(ax+C-3*px,ay+rh-3*px,5*px,5*px); }
+    else{ L.fillStyle='#000'; L.fillRect(ax+C-4,ay+R-4,7,7); }
+    if(h.t-h.said<4&&!h.drag){ L.save(); L.font=(emb?14:12)+AR; L.beginPath(); L.rect(ax+2,ay+2,C*2.6,rh-4); L.clip(); L.fillStyle='#fff'; L.fillRect(ax+2,ay+2,Math.min(C*2.6,L.measureText(typed).width+14),rh-4); L.fillStyle='#000'; L.textAlign='left'; L.fillText(typed.slice(-26),ax+(emb?4:6),ay+rh/2); L.restore(); } }
+  if(emb){
+    // headings: a raised grey button for every column letter and row number (light edge up and left, dark edge down and
+    // right), bold for the active cell's column and row, and the blank select-all button in the corner
+    const G=SHEET_GUT, ac=h.cell&&!h.all?h.cell[0]:-99, ar=h.cell&&!h.all?h.cell[1]*2+1:-99;
+    L.fillStyle='#c3c3c3'; L.fillRect(-G,ty,960+G,top-ty); L.fillRect(-G,ty,G,GY+3-ty); L.lineWidth=px;
+    L.strokeStyle='#808080'; L.beginPath(); L.moveTo(-G,top-px/2); L.lineTo(960,top-px/2); L.moveTo(-px/2,ty); L.lineTo(-px/2,GY);
+    for(let c=c0;c<=c1;c++){ L.moveTo(c*C-px/2,ty); L.lineTo(c*C-px/2,top); }
+    for(let r=0;r<=rows;r++){ L.moveTo(-G,GY-r*rh-px/2); L.lineTo(0,GY-r*rh-px/2); }
+    L.stroke();
+    L.strokeStyle='#fff'; L.beginPath(); L.moveTo(-G,ty+px/2); L.lineTo(960,ty+px/2); L.moveTo(-G+px/2,ty); L.lineTo(-G+px/2,GY);
+    for(let c=c0;c<c1;c++){ L.moveTo(c*C+px/2,ty); L.lineTo(c*C+px/2,top-px); }
+    for(let r=0;r<rows;r++){ L.moveTo(-G,GY-(r+1)*rh+px/2); L.lineTo(-px,GY-(r+1)*rh+px/2); }
+    L.stroke();
+    L.fillStyle='#000'; L.textAlign='center';
+    for(let r=0;r<full;r++){ L.font=(r===ar?'700 ':'')+13+AR; L.fillText(String(full-r),-G/2,GY-r*rh-rh/2+px); }
+    for(let c=ca;c<c1;c++){ L.font=(c===ac?'700 ':'')+13+AR; L.fillText(String.fromCharCode(65+(c-ca)%26),c*C+C/2,ty+9.5); }
+    const nm=h.cell?String.fromCharCode(65+Math.max(0,h.cell[0])%26)+(full-h.cell[1]*2-1):'A1', xn=$('xlname'), xi=$('xlin');
+    if(xn&&xn.textContent!==nm) xn.textContent=nm; if(xi&&xi.textContent!==typed){ xi.textContent=typed; xi.classList.toggle('mad',!!(h.hunt||h.all)); }
+    L.strokeStyle='#111'; L.lineWidth=3; L.beginPath(); L.moveTo(0,GY+1.5); L.lineTo(960,GY+1.5); L.stroke();
+  }else{
+    // off the retro desktop: a plain band of column letters and a formula bar drawn on the canvas
+    L.fillStyle='#f1f3f6'; L.fillRect(x0,ty+hd,x1-x0,18); L.strokeStyle='#cfd6e0'; L.lineWidth=1; L.beginPath(); L.moveTo(x0,top); L.lineTo(x1,top); L.moveTo(x0,ty+hd); L.lineTo(x1,ty+hd); L.stroke();
+    L.fillStyle='#6b7486'; L.font='600 11px Karla,system-ui,sans-serif'; L.textAlign='center';
+    for(let c=ca;c<c1;c++) L.fillText(String.fromCharCode(65+(c-ca)%26),c*C+C/2,ty+hd+9);
+    L.fillStyle='#fff'; L.fillRect(x0,ty,x1-x0,22);
+    const caret=Math.floor(now/400)%2?'|':'';
+    L.textAlign='left'; L.fillStyle='#8a93a5'; L.font='italic 600 12px Georgia,serif'; L.fillText('fx',x0+10,ty+11);
+    L.fillStyle=h.hunt||h.all?'#b0121f':'#1c2541'; L.font='600 13px Karla,system-ui,sans-serif'; L.fillText(typed+caret,x0+34,ty+11.5);
+    L.textAlign='right'; L.fillStyle='#b4bcc9'; L.font='11px Karla,system-ui,sans-serif'; L.fillText('Anthropik_IPO_model_v7_FINAL_final(2).xls  ·  Granola Capital',x1-10,ty+11.5);
   }
-  if(emb){ L.strokeStyle='#111'; L.lineWidth=3; L.beginPath(); L.moveTo(0,GY+1.5); L.lineTo(960,GY+1.5); L.stroke(); }
   L.restore();
 }
 // In front of the fighters: the errors raining down, the banker's pointer, and during the hunt his selection and a very large cursor.
@@ -2646,8 +2703,8 @@ function sheetFront(v,now){
     L.globalAlpha=1-a; L.fillStyle='#e2241a'; L.fillRect(d.x-SHEET_HW-a*18,GY-d.y-SHEET_HH-a*18,(SHEET_HW+a*18)*2,(SHEET_HH+a*18)*2); L.globalAlpha=1; }
   if(h.hunt){
     const q=h.hunt, x=q.x-SHEET_HW, y=GY-q.y-SHEET_HH, w=SHEET_HW*2, hh=SHEET_HH*2, lock=q.st==='lock', blink=lock&&Math.floor(now/90)%2;
-    L.fillStyle=lock?(blink?'rgba(226,36,26,.38)':'rgba(226,36,26,.2)'):'rgba(16,124,65,.14)'; L.fillRect(x,y,w,hh);
-    L.strokeStyle=lock?'#c0261d':'#107c41'; L.lineWidth=3; L.setLineDash(lock?[]:[9,6]); L.lineDashOffset=-now/30; L.strokeRect(x,y,w,hh); L.setLineDash([]);
+    L.fillStyle=lock?(blink?'rgba(226,36,26,.38)':'rgba(226,36,26,.2)'):RETRO?'rgba(10,36,106,.2)':'rgba(16,124,65,.14)'; L.fillRect(x,y,w,hh);
+    L.strokeStyle=lock?'#c0261d':RETRO?'#000':'#107c41'; L.lineWidth=3; L.setLineDash(lock?[]:[9,6]); L.lineDashOffset=-now/30; L.strokeRect(x,y,w,hh); L.setLineDash([]);
     if(lock){ L.font='800 20px Karla,system-ui,sans-serif'; L.textAlign='center'; L.lineWidth=5; L.strokeStyle='#fff'; L.strokeText('DELETE',q.x,y-14); L.fillStyle='#c0261d'; L.fillText('DELETE',q.x,y-14); }
     sheetArrow(q.x+SHEET_HW-18,GY-q.y-SHEET_HH+6,4.2);       // a very large pointer, tip in the selection's corner
   }else if(h.drag){
