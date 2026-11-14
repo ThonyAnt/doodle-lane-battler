@@ -275,12 +275,80 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
 /* Retro desktop: the right column is just the hack list and the glyph sheet (they are the instructions). Health, overdrive
    and ink are drawn over each fighter's head, and CPU skill sits in the Game setup window. */
 #inkos fieldset.gone{display:none}
-body.sheetstage #inkos .timeline,body.sheetstage #inkos #artboard .stagelabel{display:none}
+#xlbar,#xltabs{display:none}
+/* Spreadsheet stage on the retro desktop: the app window is a spreadsheet program. Its paint tools, colours and timeline go;
+   a toolbar, a name box and formula bar, and sheet tabs come in. The grid itself is drawn on the arena canvas. */
+body.sheetstage #inkos .timeline,body.sheetstage #inkos #artboard .stagelabel,body.sheetstage #inkos .toolbox,body.sheetstage #inkos .palette{display:none}
+body.sheetstage #mainwin .titlebar svg{display:none}
+body.sheetstage #mainwin .titlebar::before{content:"X";font:900 11px/14px Arial,sans-serif;width:14px;height:14px;text-align:center;background:#107c41;color:#fff;flex:none}
+body.sheetstage #xlbar{display:block;flex:0 0 auto;font:11px Tahoma,Arial,sans-serif;color:#000}
+#xlbar .xltools{display:flex;align-items:center;gap:1px;padding:2px 2px 3px;border-bottom:1px solid #808080;box-shadow:0 1px #fff;overflow:hidden;white-space:nowrap}
+#xlbar .xltools span{min-width:20px;height:20px;line-height:18px;text-align:center;border:1px solid transparent;padding:0 2px}
+#xlbar .xltools i{width:2px;height:18px;margin:0 3px;border-left:1px solid #808080;border-right:1px solid #fff}
+#xlbar .xlfont{font-weight:400;background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080;padding:1px 22px 1px 4px;margin:0 2px;min-width:86px;height:20px;line-height:14px}
+#xlbar .xlfont.n{min-width:0;padding-right:14px}
+#xlbar .xlfx{display:flex;align-items:center;gap:4px;padding:3px 2px}
+#xlbar .xlname{background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080;width:74px;padding:1px 5px;height:20px;line-height:14px}
+#xlbar .xlbtns{color:#555;letter-spacing:5px;padding:0 4px}
+#xlbar .xlin{flex:1;background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080;padding:1px 6px;height:20px;line-height:14px;font:12px Arial,sans-serif;overflow:hidden;white-space:nowrap}
+#xlbar .xlin.mad{color:#b0121f;font-weight:700}
+body.sheetstage #xltabs{display:flex;flex:0 0 20px;height:20px;align-items:stretch;font:11px Tahoma,Arial,sans-serif;color:#000;overflow:hidden}
+#xltabs .xlnav{padding:3px 6px;letter-spacing:1px;font-size:8px;line-height:13px;color:#333}
+#xltabs .xltab{padding:2px 12px;border:1px solid #808080;border-top:0;background:#c3c3c3;margin-right:-1px;clip-path:polygon(0 0,100% 0,calc(100% - 7px) 100%,7px 100%)}
+#xltabs .xltab.on{background:#fff;font-weight:700}
+#xltabs .xlscroll{flex:1;margin-left:14px;background:#e6e6e6;border:1px solid #808080;position:relative}
+#xltabs .xlscroll i{position:absolute;left:8%;top:1px;bottom:1px;width:34%;background:#c3c3c3;border:1px solid;border-color:#fff #404040 #404040 #fff}
 .cpuskill{display:inline-grid;grid-template-columns:auto 110px 30px;align-items:center;gap:6px;font-size:13px;font-weight:600}
 #tips{position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:9000;pointer-events:none;background:#fffbe6;border:2px solid var(--ink);border-radius:12px;box-shadow:4px 4px 0 var(--ink);
   padding:10px 16px;font:600 15px/1.5 var(--body);color:var(--ink);max-width:min(560px,90vw);transition:opacity .5s}
 #tips b{background:var(--hi);border-radius:4px;padding:0 5px}
 #tips.out{opacity:0}
+/* A tablet or phone as a player gets the same pretend old desktop as the big screen: teal background, grey bevelled windows
+   and buttons, navy title bars, plain system type. Only the look changes; the layout is the one above. */
+body.handheld{background:#2b7a77 radial-gradient(ellipse at 70% 30%,#33908c 0,#2b7a77 55%,#215f5d 100%) fixed!important;font-family:Tahoma,Verdana,"Segoe UI",sans-serif;color:#000}
+body.handheld h1{font:700 15px Tahoma,Verdana,sans-serif;background:none;color:#fff;text-shadow:1px 1px 0 #000;padding:0}
+body.handheld .who{border-radius:0;border:2px solid;border-color:#fff #404040 #404040 #fff;font:700 13px Tahoma,Verdana,sans-serif;padding:3px 12px;box-shadow:inset -1px -1px rgba(0,0,0,.35)}
+body.handheld .arenawrap,body.handheld .desk{border-radius:0;border:2px solid;border-color:#fff #404040 #404040 #fff;background:#c3c3c3;box-shadow:inset -1px -1px #808080,inset 1px 1px #dfdfdf,3px 3px 0 rgba(0,0,0,.28)}
+body.handheld .hud{border-bottom:0;font-weight:700}
+body.handheld .hud .bar{border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080;background:#fff}
+body.handheld #clock{font:700 20px Tahoma,Verdana,sans-serif}
+body.handheld .overlay h2{font:700 15px Tahoma,Verdana,sans-serif} body.handheld .overlay p{color:#222}
+body.handheld .desk{padding:3px 8px 8px;grid-template-rows:auto auto auto auto auto auto minmax(0,1fr);
+  grid-template-areas:"title title" "pad slots" "pad ink" "pad actions" "pad read" "pad card" "pad stock"}
+body.handheld .desk h2{display:flex;grid-area:title;margin:0 -5px 2px;height:24px;padding:0 6px;font:700 13px Tahoma,Verdana,sans-serif;color:#fff;background:linear-gradient(90deg,#0a246a,#3a6ea5 60%,#a6caf0)}
+body.handheld .desk h2 .dot{border-color:#fff}
+body.handheld button{font:12px/1.2 Tahoma,Verdana,sans-serif;color:#000;border-radius:0;border:2px solid;border-color:#fff #404040 #404040 #fff;background:#c3c3c3;box-shadow:inset -1px -1px #808080,inset 1px 1px #dfdfdf}
+body.handheld button:hover{background:#c3c3c3}
+body.handheld button:active,body.handheld button[aria-pressed="true"]{border-color:#404040 #fff #fff #404040;box-shadow:inset 1px 1px #808080;background:#e4e4e4}
+body.handheld button:disabled{color:#808080;text-shadow:1px 1px #fff;opacity:1;background:#c3c3c3}
+body.handheld button.primary,body.handheld .actions .ready{font-weight:700}
+body.handheld .actions .make,body.handheld .actions .ready{font-size:14px}
+body.handheld .slot small,body.handheld .trait small,body.handheld .read,body.handheld .stock,body.handheld .fix summary{color:#333}
+body.handheld .read b{color:#000}
+body.handheld .pad{border:2px solid;border-color:#808080 #fff #fff #808080;border-radius:0;box-shadow:inset 1px 1px #404040}
+body.handheld .pen{border-radius:0;border:2px solid;border-color:#fff #404040 #404040 #fff;box-shadow:none}
+body.handheld .pen[aria-pressed="true"]{outline:2px dotted #000;outline-offset:2px;border-color:#404040 #fff #fff #404040}
+body.handheld .inkbar,body.handheld .sbar{border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080;background:#fff}
+body.handheld .inkbar .have{background:#0a246a} body.handheld .inkbar .cost{background:#ffd84a;border-right:2px solid #000}
+body.handheld .card,body.handheld .stock{border-top:1px solid #808080;box-shadow:inset 0 1px #fff;padding-top:8px}
+body.handheld .card{border-top:0;box-shadow:none;padding-top:0}
+body.handheld .card .more{border-style:solid}
+body.handheld .fix button[aria-pressed="true"]{background:#0a246a;color:#fff}
+/* the controller: big grey keys that press in */
+body.handheld .tc button,body.handheld .tc[data-side="0"] button,body.handheld .tc[data-side="1"] button{border-radius:0;border:3px solid;border-color:#fff #404040 #404040 #fff;background:#c3c3c3;color:#000;
+  box-shadow:inset -2px -2px #808080,inset 2px 2px #dfdfdf,3px 3px 0 rgba(0,0,0,.3);font-family:Tahoma,Verdana,sans-serif;font-weight:700}
+body.handheld .tc button.on,body.handheld .tc[data-side] button.on{border-color:#404040 #fff #fff #404040;box-shadow:inset 2px 2px #808080;background:#e4e4e4;transform:translate(2px,2px)}
+body.handheld .tc button small{font-weight:400;color:#000}
+body.handheld .tc button .cdfill{background:rgba(10,36,106,.3)}
+body.handheld .tc[data-side="0"] [data-k="a"],body.handheld .tc[data-side="0"] [data-k="b"]{border-top-color:#1d3fbf;border-top-width:6px}
+body.handheld .tc[data-side="1"] [data-k="a"],body.handheld .tc[data-side="1"] [data-k="b"]{border-top-color:#b0121f;border-top-width:6px}
+body.handheld.playing #strip{border:2px solid;border-color:#808080 #fff #fff #808080;border-radius:0;box-shadow:inset 1px 1px #404040}
+body.handheld.playing #stripbar{color:#fff;text-shadow:1px 1px 0 #000;font:700 13px Tahoma,Verdana,sans-serif}
+body.handheld.playing #stripbar button{text-shadow:none}
+body.handheld #tips{border-radius:0;border:1px solid #000;background:#ffffe1;box-shadow:2px 2px 0 rgba(0,0,0,.4);font:12px/1.6 Tahoma,Verdana,sans-serif}
+@media (max-aspect-ratio:1/1){
+  body.handheld .desk{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr) auto auto auto auto auto;grid-template-areas:"title" "slots" "pad" "ink" "actions" "read" "card" "stock"}
+}
 [hidden]{display:none!important}
 @media (max-width:700px){ h1{font-size:26px} .controls{margin-left:0} .tc .keys{display:none} }
 @media (pointer:coarse){ .tc .keys{display:none} }
@@ -1216,7 +1284,7 @@ function createDuel(opts){
   }
   function sheetView(){
     const h=S.sheet; if(!h||h.t===undefined) return null;
-    return {t:r1(h.t),msg:h.msg,said:r1(h.said),all:h.all,cur:[rr(h.cur.x),rr(h.cur.y)],plats:SP.map(p=>({id:p.id,x0:rr(p.x0),x1:rr(p.x1),y:p.y,wx:rr(p.wx),lb:p.lb})),
+    return {t:r1(h.t),msg:h.msg,said:r1(h.said),all:h.all,cur:[rr(h.cur.x),rr(h.cur.y)],drag:h.move?h.move.id:'',cell:h.aim&&!h.hunt?[Math.floor(h.aim.x/SHEET_COL),Math.floor(h.aim.y/SHEET_ROW)]:null,plats:SP.map(p=>({id:p.id,x0:rr(p.x0),x1:rr(p.x1),y:p.y,wx:rr(p.wx),lb:p.lb})),
       rain:h.rain.map(r=>[rr(r.x),rr(r.y)]),hunt:h.hunt&&{x:rr(h.hunt.x),y:rr(h.hunt.y),st:h.hunt.st,side:h.hunt.side}};
   }
   function tick(dt){
@@ -1373,10 +1441,10 @@ const deskSc=()=>deskStage?Math.min(1.6,innerWidth/960):DESK_SCALE;
 // with the floor on that area's bottom edge. k is screen pixels per game unit. sheetLive follows the match being shown,
 // so a device that joins a spreadsheet room lays it out the same way.
 let sheetLive=false;
-const sheetOn=()=>!!(STAGE||sheetLive), sheetEmb=()=>RETRO&&sheetOn();
+const sheetOn=()=>!!(STAGE||sheetLive), sheetEmb=()=>RETRO&&sheetOn(), SHEET_GUT=30;      // SHEET_GUT: the row-number column down the left
 function sheetBox(){
-  const b=document.querySelector('#artboard').getBoundingClientRect(), k=Math.max(0.3,Math.min((b.width-6)/960,(b.height-6)/(GY+2)));
-  return {k,left:b.left+(b.width-960*k)/2,bottom:b.bottom-3,top:b.top+3};
+  const b=document.querySelector('#artboard').getBoundingClientRect(), k=Math.max(0.3,Math.min((b.width-6)/(960+SHEET_GUT),(b.height-6)/(GY+2)));
+  return {k,left:b.left+(b.width-(960+SHEET_GUT)*k)/2+SHEET_GUT*k,bottom:b.bottom-3,top:b.top+3};
 }
 // Real windows as terrain. The overlay app reports the visible top edges of the other apps' windows in screen pixels;
 // here they become platforms in game units. They replace the stage's fixed platforms.
@@ -1863,6 +1931,11 @@ function retroBuild(){
     help:()=>[['Controls','F1',tip],['Glyph grammar','',()=>FXI.toast('Simple = terrain (\u2015 platform, | wall, \u25a1 crate, \u25cb pot/shield/trap). Compound = weapons. \u2192 dash/fling/wind/link \u00b7 \u2715 erase/disarm \u00b7 \u2298 null any hack \u00b7 \u03df lightning')],
       ['About InkShop','',()=>FXI.toast('InkShop 2.0 \u2014 interface, glyph recogniser, hacks and effects from Alex\'s prototype, running on the Doodle Duel engine.')]]});
   FXI.buildUI();
+  { const ab=document.querySelector('#artboard'), tb=t=>t.split(' ').map(x=>x==='|'?'<i></i>':'<span>'+x+'</span>').join('');
+    ab.insertAdjacentHTML('beforebegin','<div id="xlbar"><div class="xltools">'+tb('\u25a1 \u25a4 \u25a3 | \u2702 \u29c9 \u25a7 | \u21b6 \u21b7 | \u03a3 f\u2093 A\u2193 Z\u2193 | \u25a5 100%')+'<b class="xlfont">Arial</b><b class="xlfont n">10</b>'+tb('<b>B</b> <em>I</em> <u>U</u> | \u2261 \u2263 | $ % , | \u25a6')+'</div>'
+      +'<div class="xlfx"><span class="xlname" id="xlname">A1</span><span class="xlbtns">\u2715 \u2713 =</span><span class="xlin" id="xlin"></span></div></div>');
+    ab.insertAdjacentHTML('afterend','<div id="xltabs"><span class="xlnav">\u25c0\u25c0 \u25c0 \u25b6 \u25b6\u25b6</span><span class="xltab">Assumptions</span><span class="xltab on">DCF</span><span class="xltab">Comps</span><span class="xltab">Sheet4</span><span class="xlscroll"><i></i></span></div>');
+    if(STAGE) FXI.setTool('pencil'); }
   // his rig sliders drive his animation system, which this game does not use; Time scale and CPU skill are live
   for(const k of ['jelly','stretch','flab','exag']){ const el=document.querySelector('#s-'+k); el.disabled=true; el.parentElement.classList.add('off'); el.parentElement.title='Belongs to the InkShop rig, not wired to this game\u2019s animations yet'; }
   for(const id of ['c-onion','c-rig']){ const el=document.querySelector('#'+id); el.disabled=true; }
@@ -2215,9 +2288,9 @@ const SHEET_MORE=['Tax','Working capital','Discount factor','PV of cash flow','N
 const sheetDels=[], SHEET_ROWS=['Revenue','COGS','Gross profit','EBITDA','D&A','CapEx','Free cash flow','WACC','Enterprise value'];
 function sheetBack(v,now){
   // Inside the app window the sheet reaches up to the top of the canvas area: more rows, with the formula bar up there.
-  const h=v.sheet, emb=RETRO, ty=emb?Math.min(0,GY+2-(sheetBox().bottom-sheetBox().top)/sheetBox().k):0, x0=emb?0:-OX, x1=emb?960:VW-OX, top=ty+40, rows=Math.ceil((GY-top)/SHEET_ROW), C=SHEET_COL, R=SHEET_ROW, c0=Math.floor(x0/C), c1=Math.ceil(x1/C), ca=x0-c0*C>C*0.35?c0+1:c0;   // ca: the first column with room for the row names, shown as column A
+  const h=v.sheet, emb=RETRO, bx=emb?sheetBox():null, ty=emb?Math.min(0,GY+2-(bx.bottom-bx.top)/bx.k):0, hd=emb?0:22, x0=emb?0:-OX, x1=emb?960:VW-OX, top=ty+hd+18, rows=Math.ceil((GY-top)/SHEET_ROW), C=SHEET_COL, R=SHEET_ROW, c0=Math.floor(x0/C), c1=Math.ceil(x1/C), ca=x0-c0*C>C*0.35?c0+1:c0;   // ca: the first column with room for the row names, shown as column A
   L.save(); L.lineCap='butt';
-  if(emb){ L.beginPath(); L.rect(0,ty,960,GY+3-ty); L.clip(); L.fillStyle='#fff'; L.fillRect(0,ty,960,GY+3-ty); }      // inside the app window
+  if(emb){ L.beginPath(); L.rect(-SHEET_GUT,ty,960+SHEET_GUT,GY+3-ty); L.clip(); L.fillStyle='#fff'; L.fillRect(-SHEET_GUT,ty,960+SHEET_GUT,GY+3-ty); }      // inside the app window
   // faint figures: a few change every couple of seconds, so the model looks worked on
   L.font='11px Karla,system-ui,sans-serif'; L.textBaseline='middle';
   for(let r=0;r<rows;r++){ const y=GY-r*R-R/2;
@@ -2240,14 +2313,28 @@ function sheetBack(v,now){
     L.fillStyle='#0b5c30'; L.font='700 13px Karla,system-ui,sans-serif'; L.textAlign='left'; L.fillText(p.lb||'',p.x0+8,y+R/2,w-14);
   }
   // headings and the formula bar
-  L.fillStyle='#f1f3f6'; L.fillRect(x0,ty+22,x1-x0,18); L.strokeStyle='#cfd6e0'; L.lineWidth=1; L.beginPath(); L.moveTo(x0,ty+40); L.lineTo(x1,ty+40); L.moveTo(x0,ty+22); L.lineTo(x1,ty+22); L.stroke();
-  L.fillStyle='#6b7486'; L.font='600 11px Karla,system-ui,sans-serif'; L.textAlign='center';
-  for(let c=ca;c<c1;c++) L.fillText(String.fromCharCode(65+(c-ca)%26),c*C+C/2,ty+31);
+  // the cell he is working in: a heavy black border with the fill handle, and what he is typing inside it
+  if(h.cell&&!h.all){ const [cc,cr]=h.cell, ax=cc*C, ay=GY-(cr+1)*R, typing=h.msg.slice(0,Math.max(0,Math.floor((h.t-h.said)*34)));
+    L.strokeStyle='#000'; L.lineWidth=3; L.strokeRect(ax,ay,C,R); L.fillStyle='#000'; L.fillRect(ax+C-4,ay+R-4,7,7);
+    if(h.t-h.said<4&&!h.drag){ L.save(); L.beginPath(); L.rect(ax+2,ay+2,C*2.6,R-4); L.clip(); L.fillStyle='#fff'; L.fillRect(ax+2,ay+2,Math.min(C*2.6,L.measureText(typing).width+14),R-4); L.fillStyle='#000'; L.font='12px Arial,sans-serif'; L.textAlign='left'; L.fillText(typing.slice(-26),ax+6,ay+R/2); L.restore(); } }
+  // column letters across the top (and, inside the app window, row numbers down the left) in the old grey style
+  const band=emb?'#d4d0c8':'#f1f3f6';
+  L.fillStyle=band; L.fillRect(x0,ty+hd,x1-x0,18); L.strokeStyle=emb?'#808080':'#cfd6e0'; L.lineWidth=1; L.beginPath(); L.moveTo(x0,top); L.lineTo(x1,top); L.moveTo(x0,ty+hd); L.lineTo(x1,ty+hd);
+  if(emb) for(let c=c0;c<=c1;c++){ L.moveTo(c*C,ty); L.lineTo(c*C,top); }
+  L.stroke();
+  if(emb){ L.fillStyle=band; L.fillRect(-SHEET_GUT,ty,SHEET_GUT,GY+3-ty); L.strokeStyle='#808080'; L.beginPath(); L.moveTo(0,ty); L.lineTo(0,GY); for(let r=0;r<=rows;r++){ L.moveTo(-SHEET_GUT,GY-r*R); L.lineTo(0,GY-r*R); } L.stroke();
+    L.fillStyle='#000'; L.font='11px Tahoma,Arial,sans-serif'; L.textAlign='center'; for(let r=0;r<rows;r++) L.fillText(String(rows-r),-SHEET_GUT/2,GY-r*R-R/2);
+    const nm=h.cell?String.fromCharCode(65+Math.max(0,h.cell[0])%26)+(rows-h.cell[1]):'A1', xn=$('xlname'), xi=$('xlin'), tx=h.msg.slice(0,Math.max(0,Math.floor((h.t-h.said)*34)));
+    if(xn&&xn.textContent!==nm) xn.textContent=nm; if(xi&&xi.textContent!==tx){ xi.textContent=tx; xi.classList.toggle('mad',!!(h.hunt||h.all)); } }
+  L.fillStyle=emb?'#000':'#6b7486'; L.font=emb?'11px Tahoma,Arial,sans-serif':'600 11px Karla,system-ui,sans-serif'; L.textAlign='center';
+  for(let c=ca;c<c1;c++) L.fillText(String.fromCharCode(65+(c-ca)%26),c*C+C/2,ty+hd+9);
+  if(!emb){
   L.fillStyle='#fff'; L.fillRect(x0,ty,x1-x0,22);
   const typed=h.msg.slice(0,Math.max(0,Math.floor((h.t-h.said)*34))), caret=Math.floor(now/400)%2?'|':'';
   L.textAlign='left'; L.fillStyle='#8a93a5'; L.font='italic 600 12px Georgia,serif'; L.fillText('fx',x0+10,ty+11);
   L.fillStyle=h.hunt||h.all?'#b0121f':'#1c2541'; L.font='600 13px Karla,system-ui,sans-serif'; L.fillText(typed+caret,x0+34,ty+11.5);
   L.textAlign='right'; L.fillStyle='#b4bcc9'; L.font='11px Karla,system-ui,sans-serif'; L.fillText('DoodleCorp_DCF_v7_FINAL_final(2).xlsx  ·  Granola Capital',x1-10,ty+11.5);
+  }
   if(emb){ L.strokeStyle='#111'; L.lineWidth=3; L.beginPath(); L.moveTo(0,GY+1.5); L.lineTo(960,GY+1.5); L.stroke(); }
   L.restore();
 }
@@ -2268,7 +2355,14 @@ function sheetFront(v,now){
     L.strokeStyle=lock?'#c0261d':'#107c41'; L.lineWidth=3; L.setLineDash(lock?[]:[9,6]); L.lineDashOffset=-now/30; L.strokeRect(x,y,w,hh); L.setLineDash([]);
     if(lock){ L.font='800 20px Karla,system-ui,sans-serif'; L.textAlign='center'; L.lineWidth=5; L.strokeStyle='#fff'; L.strokeText('DELETE',q.x,y-14); L.fillStyle='#c0261d'; L.fillText('DELETE',q.x,y-14); }
     sheetArrow(q.x+SHEET_HW-18,GY-q.y-SHEET_HH+6,4.2);       // a very large pointer, tip in the selection's corner
-  }else sheetArrow(h.cur[0],GY-h.cur[1],1.25);
+  }else if(h.drag){
+    const p=h.plats.find(p=>p.id===h.drag); if(p){ L.strokeStyle='#444'; L.lineWidth=2.5; L.setLineDash([7,5]); L.lineDashOffset=-now/40; L.strokeRect(p.x0-3,GY-p.y-3,p.x1-p.x0+6,SHEET_ROW+6); L.setLineDash([]); }
+    sheetArrow(h.cur[0],GY-h.cur[1],2);
+    const mx=h.cur[0]+30, my=GY-h.cur[1]+34; L.strokeStyle='#fff'; L.lineWidth=5; L.lineCap='round'; for(const col of ['#fff','#111']){ L.strokeStyle=col; L.lineWidth=col==='#fff'?5:2; L.beginPath(); L.moveTo(mx-9,my); L.lineTo(mx+9,my); L.moveTo(mx,my-9); L.lineTo(mx,my+9); L.stroke(); }
+  }else{                                     // the fat white cross a spreadsheet shows over its cells
+    const x=h.cur[0], y=GY-h.cur[1]; L.lineJoin='miter';
+    for(const [col,w] of [['#111',13],['#fff',9]]){ L.strokeStyle=col; L.lineWidth=w; L.lineCap='butt'; L.beginPath(); L.moveTo(x-13-(w-9)/2,y); L.lineTo(x+13+(w-9)/2,y); L.moveTo(x,y-13-(w-9)/2); L.lineTo(x,y+13+(w-9)/2); L.stroke(); }
+  }
   L.restore();
 }
 function render(now){
