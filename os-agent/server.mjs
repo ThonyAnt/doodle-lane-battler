@@ -172,9 +172,9 @@ http.createServer((req,res)=>{
     const began=Date.now(), emit=o=>{ if(!res.writableEnded) res.write(JSON.stringify(Object.assign(o,{at:Date.now()-began}))+'\n'); };      // at: ms since the request came in
     let body={}; try{ body=JSON.parse(Buffer.concat(chunks).toString('utf8')||'{}'); }catch(e){}
     if(nem){ const t0=Date.now(), fin=r=>{ if(!res.writableEnded){ emit({type:'done',ok:!!r.ok,skip:!!r.skip,ms:Date.now()-t0,steps:r.steps}); res.end(); } };      // the machine as the opponent: its own runs, one per room, beside the updates
-      try{ const r=await hunt(body,emit,fin); console.log('nemesis',JSON.stringify(String(body.player||'')),r.skip?'nothing to go on':r.ok?'built':'nothing built',Date.now()-t0+'ms',(r.steps||0)+' steps'); fin(r); }
+      try{ const r=await hunt(body,emit); console.log('nemesis',JSON.stringify(String(body.player||'')),r.skip?'nothing to go on':r.ok?'built':'nothing built',Date.now()-t0+'ms',(r.steps||0)+' steps'); fin(r); }
       catch(e){ console.error('nemesis failed:',e&&e.message);
-        try{ if(!/flagged|Invalid prompt|timed out|timeout/i.test(String(e&&e.message))) throw e; const r=await hunt(Object.assign(body,{again:true}),emit,fin); console.log('nemesis (second try)',r.ok?'built':'nothing built',Date.now()-t0+'ms'); fin(r); }      // a refused or hung first call: once more
+        try{ if(!/flagged|Invalid prompt|timed out|timeout/i.test(String(e&&e.message))) throw e; const r=await hunt(Object.assign(body,{again:true}),emit); console.log('nemesis (second try)',r.ok?'built':'nothing built',Date.now()-t0+'ms'); fin(r); }      // a refused or hung first call: once more
         catch(e2){ emit({type:'error',message:short(e2&&e2.message||'something went wrong',200)}); fin({ok:false}); } }
       return; }
     if(busy){ emit({type:'error',message:'INK-OS is still installing the last update. Try again in a moment.'}); res.end(); return; }

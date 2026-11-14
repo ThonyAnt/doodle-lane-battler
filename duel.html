@@ -4273,12 +4273,13 @@ function osTick(now){
 /* ---- Nemesis: against the bot, the machine itself plays Red. Between rounds it studies how Blue played (S.scout), forges
    a build against them, spars it against a copy of them and comes back with it (nemesis.js, os-agent/nemesis.mjs). In a
    room the server runs this and tells every device as it goes (event `nemesis`); a match in this page asks for itself. */
-let nemLive=null, nemToast=null, nemBusy=false, nemHold=false, nemAsked=null, nemFile=null;      // nemFile: what the machine has on this player, shown as a text file when the match is over
+let nemLive=null, nemToast=null, nemBusy=false, nemHold=false, nemAsked=null, nemLater=null, nemFile=null;      // nemFile: what the machine has on this player, shown as a text file when the match is over
 const nemPlayer=()=>{ try{ return localStorage.getItem('duelName')||''; }catch(e){ return ''; } };
 function nemHear(e){
   if(e.type==='read'){ nemBusy=true; osPlanEl=null; if(!nemFile||nemFile.player!==e.player) nemFile={player:e.player,lines:[],notes:[],builds:[]}; if(e.lines.length) nemFile.lines=e.lines;
     if(typeof rwin!=='undefined'&&rwin.os){ rwin.os.min=false; rwin.os.w.style.zIndex=++rTop; }      // the terminal comes to the front: the machine is at work
     osLine('INK-OS is studying '+esc(e.player)+(e.known?' (on file)':'')+' before round '+e.round,'big'); for(const l of e.lines.slice(0,4)) osLine('  '+esc(l),'ok'); }
+  else if(e.type==='dossier'){ if(nemFile) nemFile.dossier=String(e.text||''); }
   else if(e.type==='remember'){ if(nemFile) nemFile.notes.push(e.note); osLine('  filed for next time: '+esc(e.note),'dim'); }
   else if(e.type==='build') osLine(e.ok?'  forged: '+esc(e.name)+' = '+e.items.map(it=>esc(it.name)+(it.abilities.length?' ['+it.abilities.map(esc).join(', ')+']':'')).join(' + '):'  forge refused: '+esc((e.errors||[]).slice(0,1).join('')),e.ok?'ok':'bad');
   else if(e.type==='spar') osLine('  sparring against a copy of you: wins '+e.winPct+'% of '+e.rounds+' rounds (its old weapons: '+e.was+'%)',e.winPct>=50?'ok':'bad');
@@ -4290,31 +4291,39 @@ function nemHear(e){
   else if(e.type==='error'){ console.warn('nemesis:',e.message); osLine('INK-OS lost its train of thought and keeps its weapons.','dim'); }
   else if(e.type==='plan'||e.type==='delegate'||e.type==='file') osShow(e);
 }
-// A match against the bot in this page: once per drawing break, ask for a build and put it in Red's hands. Red is not ready until it is done.
+// A match against the bot in this page asks for a build itself and puts it in Red's hands. Red is not ready until the machine has decided.
 function nemFileText(v){
   const f=nemFile, w=v&&v.wins?v.wins:[0,0]; if(!f) return '';
   return ['SUBJECT: '+f.player.toUpperCase(),'RESULT:  '+(w[1]>w[0]?'beaten '+w[1]+'-'+w[0]:w[0]>w[1]?'got away '+w[0]+'-'+w[1]+' (this time)':'undecided'),'',
-    'OBSERVED',...(f.lines.length?f.lines:['nothing new']).map(l=>'- '+l),'','WHAT I DID ABOUT IT',...(f.builds.length?f.builds:['nothing yet']).map(l=>'- '+l),'',
+    ...(f.dossier?[f.dossier.trim(),'']:[]),'OBSERVED',...(f.lines.length?f.lines:['nothing new']).map(l=>'- '+l),'','WHAT I DID ABOUT IT',...(f.builds.length?f.builds:['nothing yet']).map(l=>'- '+l),'',
     'FILED FOR NEXT TIME',...(f.notes.length?f.notes:['nothing']).map(l=>'- '+l)].join('\n');
 }
+function nemArm(S,arms){
+  if(sim!==S||(S.phase!=='draw'&&S.phase!=='count')) return;
+  if(S.phase==='draw'){ S.clearItem(1,0); S.clearItem(1,1); }
+  arms.forEach((b,slot)=>{ const it=S.setItem(1,slot,b.spec,b.cost); if(it) setArt(1,slot,b.strokes,it.ver,it.kind,it.style); });
+}
+// Once per round: from the moment the round before is won (the numbers are in by then), or at the first drawing break.
 function nemLocal(){
-  const S=sim; if(mode!=='bot'||!S||S.phase!=='draw'||!canRead||(nemAsked&&nemAsked.sim===S&&nemAsked.round===S.round)) return;
-  nemAsked={sim:S,round:S.round}; if(!S.scout[0].length&&!nemPlayer()) return;      // nothing seen yet and nobody it could know
+  const S=sim; if(mode!=='bot'||!S||!canRead) return;
+  if(nemLater&&S.phase==='draw'){ const l=nemLater; nemLater=null; if(l.S===S) nemArm(S,l.arms); }
+  const next=S.phase==='end'&&Math.max(S.wins[0],S.wins[1])<WINS?S.round+1:S.phase==='draw'?S.round:0;
+  if(!next||nemHold||(nemAsked&&nemAsked.sim===S&&nemAsked.round>=next)) return;
+  nemAsked={sim:S,round:next}; if(!S.scout[0].length&&!nemPlayer()) return;      // nothing seen yet and nobody it could know
   const items=side=>[0,1].map(k=>S.items[side][k]&&{spec:specOf(S.items[side][k]),cost:S.items[side][k].cost}).filter(Boolean);
-  nemHold=true; S.setWait(true);
+  nemHold=true; S.setWait(true); const free=()=>{ if(nemHold){ nemHold=false; if(sim===S) S.setWait(false); } };
   (async()=>{
     try{
       const r=await fetch('/duel/nemesis',{method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.timeout(55000),
-        body:JSON.stringify({player:nemPlayer(),round:S.round,wins:S.wins,reports:S.scout[0],mine:S.scout[1],playerItems:items(0),current:items(1),skill:RETRO?FXI.P.diff:0.55,abilities:S.wins[1]<S.wins[0]?2:1})});
+        body:JSON.stringify({player:nemPlayer(),round:next,wins:S.wins,reports:S.scout[0],mine:S.scout[1],playerItems:items(0),current:items(1),skill:RETRO?FXI.P.diff:0.55,abilities:S.wins[1]<S.wins[0]?2:1})});
       const rd=r.body.getReader(), dec=new TextDecoder(); let buf='';
       for(;;){ const {value,done}=await rd.read(); if(done) break; buf+=dec.decode(value,{stream:true}); let k;
         while((k=buf.indexOf('\n'))>=0){ const raw=buf.slice(0,k); buf=buf.slice(k+1); if(!raw.trim()) continue; let e; try{ e=JSON.parse(raw); }catch(err){ continue; }
-          if(e.type!=='arms'){ nemHear(e); continue; }
-          if(sim!==S||(S.phase!=='draw'&&S.phase!=='count')) continue;
-          if(S.phase==='draw'){ S.clearItem(1,0); S.clearItem(1,1); }
-          e.arms.forEach((b,slot)=>{ const it=S.setItem(1,slot,b.spec,b.cost); if(it) setArt(1,slot,b.strokes,it.ver,it.kind,it.style); }); } }
+          if(e.type==='arms'){ if(sim===S){ if(S.phase==='end') nemLater={S,arms:e.arms}; else nemArm(S,e.arms); } free(); }
+          else if(e.type==='noarms') free();
+          else nemHear(e); } }
     }catch(err){}
-    nemHold=false; nemBusy=false; if(sim===S) S.setWait(false);
+    free(); nemBusy=false;
   })();
 }
 const abilityCompiler=(code,on)=>{ if(typeof InkScript==='undefined'||!Object.prototype.hasOwnProperty.call(ABILITY_API,on)) return null; const p=InkScript.parse(code); return p.ok&&!InkScript.check(p.ast,ABILITY_API[on]).length?InkScript.compile(p.ast):null; };
@@ -4852,9 +4861,10 @@ async function makeItem(d){
     read.innerHTML=`<b>${esc(spec.name)}</b>: ${spec.kind}${spec.element!=='none'?', '+spec.element:''}`;
     // The reader's other two readings, as one-tap corrections.
     if(alts.length){ const box=document.createElement('span'); box.className='alts'; box.append(' Or: ');
-      for(const a of alts.slice(0,2)){ const b=document.createElement('button'); b.textContent=String(a.name||'').slice(0,22); b.onclick=async()=>{ box.remove(); await tweak(d,{kind:a.kind,style:a.style||'',name:String(a.name||'')}); const it=view&&view.items[d.side][k]; if(it) read.firstChild.textContent=it.name; }; box.append(b,' '); }
+      for(const a of alts.slice(0,2)){ const b=document.createElement('button'); b.textContent=String(a.name||'').slice(0,22); b.onclick=async()=>{ box.remove(); await tweak(d,{kind:a.kind,style:a.style||'',name:String(a.name||'')}); const it=view&&view.items[d.side][k]; if(it){ read.firstChild.textContent=it.name; const el=it.el||it.element, t=read.childNodes[1]; if(t&&t.nodeType===3) t.textContent=': '+it.kind+(el&&el!=='none'?', '+el:''); } }; box.append(b,' '); }
       read.append(box); }
-    d.strokes=[]; if(box) box.value=''; if(!(view&&view.items[d.side][1-k])) read.innerHTML+=' Slot '+'AB'[1-k]+' is still empty.';
+    // (append, never innerHTML+=: that rebuilds the correction buttons above without their clicks)
+    d.strokes=[]; if(box) box.value=''; if(!(view&&view.items[d.side][1-k])) read.append(' Slot '+'AB'[1-k]+' is still empty.');
   }catch(e){ read.textContent=e.message; }
   d.busy=false; updateDesk(d);
 }
@@ -4879,7 +4889,7 @@ async function takeStock(d,key){
       setArt(d.side,k,made.strokes,it.ver,it.kind,it.style); accept(sim.snapshot()); if(window.SFX) SFX.play('made'); spec={name:it.name,kind:it.kind,style:it.style,element:it.el};
     }
     read.innerHTML=`<b>${esc(spec.name)}</b>: ${spec.kind}${spec.style?' ('+spec.style+')':''}${spec.element!=='none'?', '+spec.element:''}`; d.showStock=false;
-    d.strokes=[]; if(!(view&&view.items[d.side][1-k])) read.innerHTML+=' Slot '+'AB'[1-k]+' is still empty.';
+    d.strokes=[]; if(!(view&&view.items[d.side][1-k])) read.append(' Slot '+'AB'[1-k]+' is still empty.');
   }catch(e){ d.busy=false; read.textContent=e.message; }
   updateDesk(d);
 }
@@ -4963,7 +4973,7 @@ function buildControls(){
 }
 
 /* ---------- modes ---------- */
-function resetLocal(){ nemLive=nemToast=null; nemAsked=null; if(nemFile) nemFile.builds=[];
+function resetLocal(){ nemLive=nemToast=null; nemAsked=null; nemLater=null; if(nemFile) nemFile.builds=[];
   for(const s of [0,1]){ art[s]=[null,null]; Object.assign(inp[s],{l:0,r:0,d:0}); } fx=[]; view=null; resetAnim(); ko.ring=[]; ko.koMs=-1; koView=null; abilNet[0]=[null,null]; abilNet[1]=[null,null];
 }
 function setMode(m){
