@@ -16,7 +16,7 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
 { // 1. the art board holds the fighters in
   const S=fresh(), f=S.f[0];
   ok('fighters start inside the board, on its floor',f.x>BOARD.x0&&f.x<BOARD.x1&&f.y===BOARD.floor&&S.f[1].x<BOARD.x1,[f.x,f.y]);
-  ok('the stage has his three ledges and a crate',S.objs.filter(o=>o.kind==='platform').length===3&&S.objs.some(o=>o.kind==='crate'));
+  ok('the stage has his three ledges and starts with no crate',S.objs.filter(o=>o.kind==='platform').length===3&&!S.objs.some(o=>o.kind==='crate'));
   inp(S,0,{l:1}); run(S,3); ok('a wall of the board stops a fighter',f.x>=BOARD.x0+10&&f.x<BOARD.x0+14,f.x);
 }
 { // 2. mining through the wall
