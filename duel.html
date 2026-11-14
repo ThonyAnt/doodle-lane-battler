@@ -1533,14 +1533,22 @@ function abilitiesFit(list,score,kind,style,free){
 }
 // With no reader, creativity is counted from what can be counted: the strokes, the inks used, closed shapes, a name.
 // Six at most: a count cannot tell a clever idea from a busy scribble, so the top scores are the reader's to give.
+// The name counts by how unexpected it is, not how grand: an ordinary weapon with strong words in front ("mega fire
+// sword") adds nothing, a weapon with something odd about it ("banana gun") adds one, and a thing that is no weapon at
+// all ("frog") adds two. The owner wants the odd and the funny rewarded above the merely cool and strong.
+const PLAIN_WEAPON=/^(swords?|blades?|kni(fe|ves)|daggers?|axes?|spears?|lances?|hammers?|maces?|clubs?|sticks?|staffs?|staves|wands?|bows?|arrows?|guns?|pistols?|rifles?|cannons?|bombs?|grenades?|shields?|fists?|whips?|katanas?|sab(re|er)s?|weapons?)$/;
+const POWER_WORD=/^(the|a|an|of|my|fire|flame|flaming|dark|giant|big|mega|super|ultra|death|doom|dragon|laser|shadow|blood|thunder|lightning|ice|holy|god|king|legendary|epic|great|ultimate|power|killer|deadly|sharp|strong|mighty|golden|steel|iron|magic)$/;
+function nameOddness(name){ const w=String(name||'').toLowerCase().split(/[^a-z]+/).filter(Boolean); if(!w.length) return 0;
+  const parts=[]; for(const x of w){ const m=/^(.+?)(swords?|blades?|daggers?|spears?|hammers?|pistols?|rifles?|cannons?|shields?|katanas?|sab(?:re|er)s?)$/.exec(x); if(m&&!PLAIN_WEAPON.test(x)) parts.push(m[1],m[2]); else parts.push(x); }      // "doomblade" is doom + blade
+  const weapon=parts.some(x=>PLAIN_WEAPON.test(x)), other=parts.some(x=>!PLAIN_WEAPON.test(x)&&!POWER_WORD.test(x)); return !other?0:weapon?1:2; }
 function localCreativity(strokes,name){
   const els=new Set(); let closed=0; const n=Array.isArray(strokes)?strokes.length:0;
   for(const s of n?strokes:[]){ els.add(s.el); const a=s.pts; if(!a||a.length<4) continue;
     let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(const p of a){ x0=Math.min(x0,p[0]); y0=Math.min(y0,p[1]); x1=Math.max(x1,p[0]); y1=Math.max(y1,p[1]); }
     if(Math.hypot(a[0][0]-a[a.length-1][0],a[0][1]-a[a.length-1][1])<Math.max(10,Math.max(x1-x0,y1-y0)*0.25)&&Math.max(x1-x0,y1-y0)>=14) closed++; }
-  const named=!!abText(name,ABILITY_LIMITS.label);
-  const creativity=Math.max(1,Math.min(6,Math.round(1+Math.min(2,Math.max(0,n-1)*0.4)+Math.min(1.5,Math.max(0,els.size-1)*0.75)+Math.min(1,closed*0.5)+(named?1:0))));
-  const bits=[n>=5?'many parts':n>=3?'a few parts':'',els.size>1?els.size+' inks':'',closed?'closed shapes':'',named?'a name':''].filter(Boolean);
+  const odd=nameOddness(abText(name,ABILITY_LIMITS.label));
+  const creativity=Math.max(1,Math.min(6,Math.round(1+Math.min(2,Math.max(0,n-1)*0.4)+Math.min(1.5,Math.max(0,els.size-1)*0.75)+Math.min(1,closed*0.5)+odd)));
+  const bits=[n>=5?'many parts':n>=3?'a few parts':'',els.size>1?els.size+' inks':'',closed?'closed shapes':'',odd>1?'an unexpected idea':odd?'an odd twist':''].filter(Boolean);
   return {creativity,why:bits.length?('Counted: '+bits.join(', ')+'.').slice(0,ABILITY_LIMITS.why):'A quick plain doodle.'};
 }
 // The built-in abilities: what an item gets when no model wrote any (no key, a slow or a bad answer), and what takes
@@ -4048,63 +4056,63 @@ const STOCK=(()=>{
        not draw. Each is a drawing, a leaning, a fixed creativity score (cr) with its `why`, and the abilities that
        score buys (ab, see ABILITY_API): two for 7 or 8, three for 9, at least one of them a script that ties blocks
        together. el is the ink it is made in when the pen is plain. The sketchbook lists them first. */
-    fang:  {label:'Vampire Fang',fancy:1,kind:'melee',style:'blade',s:[5,4,6],t:['flurry','lucky'],cr:8,why:'A fang that drinks: a clear, nasty idea.',
+    fang:  {label:'Vampire Fang',fancy:1,kind:'melee',style:'blade',s:[5,4,6],t:['flurry','lucky'],cr:6,why:'A fang that drinks: a clear, nasty idea.',
       ab:[{name:'Blood Drinker',blurb:'Hits pull healing orbs out of the foe.',block:'lifesteal'},
         {name:'Marked Prey',blurb:'Every second bite marks the foe; a weak vampire sips a little too.',on:'hit',cooldown:1,code:"mem.n += 1; if (mem.n >= 2) { mem.n = 0; status('mark'); if (me.hp < 0.4) { heal(me, 2); } say('MARKED'); }"}],
       pts:[seg(240,292,240,222,6),[[212,222],[268,222]],[[226,222],[220,160],[230,100],[262,34]],[[254,222],[262,160],[266,100],[262,34]],[[240,205],[244,150],[254,90]]]},
-    brolly:{label:'Umbrella',fancy:1,kind:'melee',style:'spear',s:[3,7,5],t:['pierce','pull'],el:'water',cr:9,why:'An umbrella as a spear, a parachute and a raincloud.',
+    brolly:{label:'Umbrella',fancy:1,kind:'melee',style:'spear',s:[3,7,5],t:['pierce','pull'],el:'water',cr:8,why:'An umbrella as a spear, a parachute and a raincloud.',
       ab:[{name:'Parasol Glide',blurb:'Falling, it opens and you float down.',on:'tick',cooldown:0.5,code:"if (me.air && me.vy < -60) { grant('glide', 0.6); }"},
         {name:'Canopy',blurb:'A copy hovers in front and blocks three shots.',block:'guardian'},
         {name:'Downpour',blurb:'Every third hit brings the rain.',on:'hit',cooldown:1,code:"mem.n += 1; if (mem.n >= 3) { mem.n = 0; arena('rain'); say('DOWNPOUR'); }"}],
       pts:[seg(240,268,240,36,16),[[240,268],[240,284],[228,294],[216,286]],ring(240,112,58,62,Math.PI,T),[[182,112],[202,98],[221,112],[240,98],[259,112],[278,98],[298,112]]]},
-    rod:   {label:'Fishing Rod',fancy:1,kind:'melee',style:'spear',s:[3,8,4],t:['pull','pierce'],cr:9,why:'A fishing rod that casts, hooks and reels.',
+    rod:   {label:'Fishing Rod',fancy:1,kind:'melee',style:'spear',s:[3,8,4],t:['pull','pierce'],cr:7,why:'A fishing rod that casts, hooks and reels.',
       ab:[{name:'Cast Line',blurb:'Throws itself at a far foe, swings at a near one.',block:'thrown'},
         {name:'Hooked',blurb:'A hit hooks the foe on a line; a far one is reeled in.',on:'hit',cooldown:3,code:"status('tether'); if (dist > 150) { push(foe, 0 - Math.sign(foe.x - me.x) * 300, 120); say('REEL IN!'); } else { say('HOOKED'); }"},
         {name:'Slippery Catch',blurb:'A finishing blow leaves the foe sliding on a puddle.',on:'hit',cooldown:2.5,code:"if (hit.last || foe.air) { status('skid'); leave('slick'); say('SLIPPERY'); }"}],
       pts:[seg(236,294,246,24,18),ring(228,236,11,11,0,T),[[246,24],[272,40],[284,84],[284,128]],[[284,128],[292,142],[284,152],[274,144]]]},
-    saw:   {label:'Chainsaw',fancy:1,kind:'melee',style:'blade',s:[7,4,4],t:['heavy','flurry'],el:'fire',cr:9,why:'A chainsaw that revs, overheats and sets things alight.',
+    saw:   {label:'Chainsaw',fancy:1,kind:'melee',style:'blade',s:[7,4,4],t:['heavy','flurry'],el:'fire',cr:6,why:'A chainsaw that revs, overheats and sets things alight.',
       ab:[{name:'Hot Engine',blurb:'Hits harder, but it overheats.',block:{id:'heavy',cost:{cost:'heat'}}},
         {name:'Rev Up',blurb:'Every fourth swing revs it: a ghost repeats each cut.',on:'attack',cooldown:0.5,code:"mem.rev += 1; if (mem.rev >= 4) { mem.rev = 0; grant('echo', 3); say('REVVED!'); }"},
         {name:'Burning Teeth',blurb:'Hits leave flames; a foe already alight is cut deeper.',on:'hit',cooldown:1,code:"leave('fire'); if (foe.burning) { hit.scale(1.2); } else { burn(foe, 1.5); }"}],
       pts:[[[206,292],[274,292],[274,226],[206,226],[206,292]],[[222,270],[258,270],[258,246],[222,246],[222,270]],seg(224,226,224,56,10),seg(256,226,256,56,10),[[224,56],[240,34],[256,56]],
         [[256,212],[268,202],[256,192],[268,182],[256,172],[268,162],[256,152],[268,142],[256,132],[268,122],[256,112],[268,102],[256,92],[268,82],[256,72]]]},
-    banana:{label:'Banana',fancy:1,kind:'ranged',style:'hurl',s:[3,6,6],t:['boomerang','flurry'],cr:9,why:'A banana: thrown, slipped on, and never alone.',
+    banana:{label:'Banana',fancy:1,kind:'ranged',style:'hurl',s:[3,6,6],t:['boomerang','flurry'],cr:8,why:'A banana: thrown, slipped on, and never alone.',
       ab:[{name:'Bunch',blurb:'Small copies trail behind; each throw flings one.',block:'swarm'},
         {name:'Peel',blurb:'A hit leaves a peel underfoot and the foe sliding.',on:'hit',cooldown:2,code:"leave('slick'); status('skid'); say('SLIP!');"},
         {name:'Banana Split',blurb:'Every third throw, the next ones split in three.',on:'shot',cooldown:0.5,code:"mem.n += 1; if (mem.n >= 3) { mem.n = 0; grant('split', 2.5); say('SPLIT!'); }"}],
       pts:[ring(240,70,130,150,T*0.07,T*0.43),ring(240,96,112,96,T*0.09,T*0.41),[[352,128],[366,116],[362,104]],[[128,128],[118,118]]]},
-    cat:   {label:'Cat',fancy:1,kind:'melee',style:'fist',s:[4,3,8],t:['flurry','swift'],cr:9,why:'A cat: it pounces, it hisses, it brings a kitten.',
+    cat:   {label:'Cat',fancy:1,kind:'melee',style:'fist',s:[4,3,8],t:['flurry','swift'],cr:8,why:'A cat: it pounces, it hisses, it brings a kitten.',
       ab:[{name:'Kitten',blurb:'A copy trots behind you and pounces.',block:'pet'},
         {name:'Pounce',blurb:'Every jump can be followed by one more in the air.',on:'jump',cooldown:0.5,code:"grant('airjump', 1.5); ring(me.x, me.y + 10);"},
         {name:'Hiss',blurb:'Hurt, it calls copies that circle you and sting.',on:'hurt',cooldown:6,code:"summon('orbiter'); say('HISS!');"}],
       pts:[ring(240,170,72,60,0,T),[[182,134],[176,78],[214,114]],[[298,134],[304,78],[266,114]],ring(214,160,7,9,0,T),ring(266,160,7,9,0,T),[[232,182],[240,190],[248,182]],
         [[240,190],[240,200],[228,206]],[[240,200],[252,206]],[[196,186],[150,178]],[[196,194],[152,202]],[[284,186],[330,178]],[[284,194],[328,202]]]},
-    comet: {label:'Meteor Hammer',fancy:1,kind:'melee',style:'hammer',s:[8,4,3],t:['heavy','launch'],cr:9,why:'A meteor on a handle: every part of it is impact.',
+    comet: {label:'Meteor Hammer',fancy:1,kind:'melee',style:'hammer',s:[8,4,3],t:['heavy','launch'],cr:6,why:'A meteor on a handle: every part of it is impact.',
       ab:[{name:'Shockwave',blurb:'A finishing blow sends a wave along the ground.',block:'shockwave'},
         {name:'Giant Swing',blurb:'Every few seconds the next swing is twice the size.',block:'giant'},
         {name:'Impact',blurb:'Every second finishing blow shakes the whole stage.',on:'hit',cooldown:1,code:"if (hit.last) { mem.n += 1; burst(foe.x, foe.y + 40, 12); if (mem.n >= 2) { mem.n = 0; arena('quake'); say('METEOR!'); } }"}],
       pts:[seg(240,294,240,136,10),ring(240,82,54,54,0,T),[[240,28],[240,8]],[[286,48],[302,32]],[[294,82],[316,82]],[[194,48],[178,32]],[[186,82],[164,82]],ring(226,70,12,10,0,T),ring(258,96,8,7,0,T)]},
-    wraith:{label:'Ghost Blade',fancy:1,kind:'melee',style:'blade',s:[4,5,6],t:['flurry','guard'],cr:8,why:'A sword that is half not there.',
+    wraith:{label:'Ghost Blade',fancy:1,kind:'melee',style:'blade',s:[4,5,6],t:['flurry','guard'],cr:5,why:'A sword that is half not there.',
       ab:[{name:'Afterimage',blurb:'A ghost repeats each swing a moment later.',block:'echo'},
         {name:'Phase Step',blurb:'Struck, it turns ghostly: your hits zip you through the foe.',on:'hurt',cooldown:3,code:"grant('dashhit', 3); if (me.hp < 0.4) { status('mirror'); } say('PHASE');"}],
       pts:[seg(240,292,240,238,5),[[206,238],[274,238]],[[228,238],[220,192],[234,150],[222,108],[236,70],[240,26]],[[252,238],[260,192],[248,150],[262,108],[250,70],[240,26]],
         ring(240,292,10,8,0,T),[[196,238],[190,226]],[[284,238],[290,226]]]},
-    bubble:{label:'Bubble Wand',fancy:1,kind:'ranged',style:'staff',s:[5,6,4],t:['homing','blast'],el:'water',cr:9,why:'A bubble wand: everything it touches floats.',
+    bubble:{label:'Bubble Wand',fancy:1,kind:'ranged',style:'staff',s:[5,6,4],t:['homing','blast'],el:'water',cr:8,why:'A bubble wand: everything it touches floats.',
       ab:[{name:'Hanging Bubbles',blurb:'Shots stop at the end of their range and hang there.',block:'linger'},
         {name:'Bubble Up',blurb:'A hit lifts the foe off their feet.',on:'hit',cooldown:3,code:"status('float'); say('UP YOU GO');"},
         {name:'Moon Bounce',blurb:'Your third jump makes the whole stage floaty.',on:'jump',cooldown:1,code:"mem.j += 1; if (mem.j >= 3) { mem.j = 0; arena('moon'); say('MOON BOUNCE'); }"}],
       pts:[seg(240,294,240,132,12),ring(240,88,44,44,0,T),ring(240,88,30,30,T*0.55,T*0.8),ring(312,60,15,15,0,T),ring(330,118,9,9,0,T),ring(170,52,11,11,0,T)]},
-    pinball:{label:'Pinball Gun',fancy:1,kind:'ranged',style:'gun',s:[3,6,6],t:['lucky','bounce'],cr:9,why:'A gun built out of a pinball table.',
+    pinball:{label:'Pinball Gun',fancy:1,kind:'ranged',style:'gun',s:[3,6,6],t:['lucky','bounce'],cr:7,why:'A gun built out of a pinball table.',
       ab:[{name:'Bumper Shots',blurb:'Shots bounce off the floor, walls and drawings.',block:'ricochet'},
         {name:'Multiball',blurb:'A charged shot starts multiball: shots split in three.',on:'shot',cooldown:0.5,code:"if (shot.charged) { grant('split', 3); say('MULTIBALL!'); }"},
         {name:'Extra Ball',blurb:'Hurt, it plants a copy that shoots for you.',on:'hurt',cooldown:8,code:"summon('turret'); say('EXTRA BALL');"}],
       pts:[[[140,112],[300,112],[300,146],[198,146],[186,206],[144,206],[140,112]],[[208,146],[216,172],[194,174]],ring(322,129,24,24,0,T),ring(322,129,10,10,0,T),ring(376,129,10,10,0,T),[[160,112],[160,96],[196,96],[196,112]]]},
-    thorn: {label:'Thorn Whip',fancy:1,kind:'melee',style:'spear',s:[4,7,4],t:['pull','pierce'],el:'plant',cr:9,why:'A living whip that grows, marks and plants thorns.',
+    thorn: {label:'Thorn Whip',fancy:1,kind:'melee',style:'spear',s:[4,7,4],t:['pull','pierce'],el:'plant',cr:6,why:'A living whip that grows, marks and plants thorns.',
       ab:[{name:'Overgrowth',blurb:'Keeps growing. Shrinks when you are hit.',block:'overgrown'},
         {name:'Bramble',blurb:'A finishing lash raises spikes under the foe.',on:'hit',cooldown:1.5,code:"if (hit.last) { leave('spikes'); say('BRAMBLE'); }"},
         {name:'Thorn Mark',blurb:'A lash marks the foe for your next hit.',on:'hit',cooldown:6,code:"status('mark'); spark(foe.x, foe.y + 60);"}],
       pts:[wave(240,292,30,16,2.5,30),seg(232,292,248,292,2),[[254,250],[270,240]],[[226,214],[210,204]],[[254,170],[270,160]],[[226,130],[210,120]],[[254,90],[270,80]],[[240,30],[232,16],[248,16],[240,30]]]},
-    storm: {label:'Storm Bow',fancy:1,kind:'ranged',style:'bow',s:[6,7,2],t:['pierce','homing'],cr:9,why:'A bow that holds a storm: charge, corkscrew, squall.',
+    storm: {label:'Storm Bow',fancy:1,kind:'ranged',style:'bow',s:[6,7,2],t:['pierce','homing'],cr:6,why:'A bow that holds a storm: charge, corkscrew, squall.',
       ab:[{name:'Steady Aim',blurb:'Stand still a second and the next shot is empowered.',block:{id:'empower',when:{when:'charge'}}},
         {name:'Corkscrew',blurb:'Every third arrow, the next ones corkscrew.',on:'shot',cooldown:0.5,code:"mem.n += 1; if (mem.n >= 3) { mem.n = 0; grant('spiral', 3); }"},
         {name:'Squall',blurb:'A charged shot that lands lets the wind loose.',on:'hit',cooldown:1,code:"if (hit.last) { arena('gust'); say('SQUALL!'); }"}],
