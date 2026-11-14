@@ -869,6 +869,7 @@ function boardCells(b){
 const STYLE_COUNTER={blade:'wall',fist:'wall',pick:'wall',dual:'wall',akimbo:'circle',spear:'circle',bow:'circle',gun:'circle',staff:'circle',hurl:'circle',hammer:'arrow'};
 function elOfColor(hex){ const m=/^#?([0-9a-f]{6})$/i.exec(hex||''); if(!m) return ELS.includes(hex)?hex:'none';
   const n=parseInt(m[1],16), r=n>>16, g=(n>>8)&255, b=n&255; return r>g*1.35&&r>b*1.35?'fire':b>r*1.25&&b>=g?'water':g>r*1.2&&g>b*1.2?'plant':'none'; }
+const RECYCLE_SECS=6;      // how long RECYCLE.exe keeps a weapon out of the fight
 const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet stage: cell size, and half the size of the banker's selection
 function createDuel(opts){
   let acc=0, nextId=1; const STEP=1/60, r1=v=>Math.round(v*10)/10;
@@ -1173,7 +1174,16 @@ function createDuel(opts){
     return a;
   }
   // The stage each round: inside an art board, his three sketched ledges and a crate.
+  // Take a weapon back out of the Recycle Bin, unless something else has been put in that hand meanwhile.
+  function unbin(b){
+    const i=(S.bins||[]).indexOf(b); if(i<0) return; S.bins.splice(i,1);
+    if(S.items[b.side][b.k]) return;
+    S.items[b.side][b.k]=b.it; fx('restore',{side:b.side,slot:b.k,ver:b.it.ver,kind:b.it.kind,style:b.it.style}); log(null,b.it.name+' restored from the Recycle Bin');
+    const f=S.f[b.side]; if(f) floatT(f.x,-(f.y+110),b.it.name+' is back',b.side);
+  }
   function resetWorld(){
+    if(S.bins) for(const b of S.bins.slice()) unbin(b);
+    S.bins=[];
     S.objs=[]; S.fields=[]; S.groups=[null,null]; S.hack=null; S.effects=[]; S.broken=null; S.breached=false; S.cells=boardCells(BOARD); fx('clear',{});
     if(S.sheet) sheetReset();
     if(!BOARD) return;
@@ -1272,7 +1282,11 @@ function createDuel(opts){
       f.vx=(right?1:-1)*700; f.vy=500; f.flung=0.3; f.flungBy=f.side; f.ground=false; S.effects.push({name:h.def.name,by:h.by,target:h.target,counter:'box',t:15,end:patchCanvas});
       flash('CANVAS BREACHED','window titlebars are platforms',f.side); }
     if(id==='recycle'){ const k=t.held, it=S.items[t.side][k];
-      if(it){ S.items[t.side][k]=null; t.act=null; fx('recycle',{side:t.side,slot:k,x:rr(t.x),yd:rr(-(t.y+70))}); log(null,it.name+' moved to Recycle Bin'); }
+      // The weapon is only out of the fight for a few seconds: it comes back when the effect ends, sooner if its owner draws
+      // the counter glyph, and at the latest when the round is over.
+      if(it){ S.items[t.side][k]=null; t.act=null; fx('recycle',{side:t.side,slot:k,x:rr(t.x),yd:rr(-(t.y+70))}); log(null,it.name+' moved to Recycle Bin for '+RECYCLE_SECS+' s');
+        const b={side:t.side,k,it}; (S.bins=S.bins||[]).push(b); floatT(t.x,-(t.y+110),it.name+' binned: '+RECYCLE_SECS+'s',t.side);
+        S.effects.push({name:h.def.name,by:h.by,target:h.target,counter:'arrow',t:RECYCLE_SECS,end:()=>unbin(b)}); }
       else{ const vx=sgn(40-t.x)*900; t.flung=0.6; t.flungBy=f.side; hurt(t,8,'none',vx,420,f,f.x,undefined,undefined,'slam'); } }
     if(id==='transform'){ t.scaleGoal=0.55; S.effects.push({name:h.def.name,by:h.by,target:h.target,counter:'circle',t:6,end:()=>{ t.scaleGoal=1; }}); }
     if(id==='popups'){ const top=BOARD&&!S.broken?-BOARD.top+10:-(t.y+420); for(let i=0;i<4;i++) addObj({kind:'popup',solid:true,dyn:true,heavy:true,x:t.x-65+rand(-90,90),y:top-20-i*95,w:130,h:62,vx:0,vy:150,life:5,owner:f.side,msg:pick(['Ink.dll not found','Stack overflow','Out of memory','Illegal operation','Abort, Retry, Fail?'])});
@@ -1941,6 +1955,7 @@ function worldEvent(e){
     case 'shake': shake=Math.max(shake,e.n); break;
     case 'forge': setArt(e.side,e.slot,e.strokes,e.ver,e.kind,e.style); if(desk[e.side]) updateDesk(desk[e.side]); break;
     case 'recycle': { const bin=document.querySelector('#bin'); if(bin) bin.classList.add('full'); FXI.burst(e.x,e.yd,PCOL[e.side],16); art[e.side][e.slot]=null; break; }
+    case 'restore': { const bin=document.querySelector('#bin'); if(bin) bin.classList.remove('full'); if(artStrokes[e.side][e.slot]) setArt(e.side,e.slot,artStrokes[e.side][e.slot],e.ver,e.kind,e.style); break; }
     case 'hit': FXI.burst(e.x,-e.y,PCOL[e.side],6+e.n); FXI.keyframe(e.side);
       { const h=document.querySelector('#st-hap'); if(h) h.textContent='Haptics \u2192 '+NAME[e.side]+': '+(e.hap||'thud')+' '+(e.dir||'R')+' '+Math.min(1,Math.max(0.2,e.n/18)).toFixed(2); } break;
   }
