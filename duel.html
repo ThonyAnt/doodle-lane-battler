@@ -1522,8 +1522,10 @@ function createDuel(opts){
 // The opponent. The fighting is this game's bot. The drawing, hacking and countering are Alex's animator.bot, adapted from
 // his AI.decide(), AI.onHack() and Drawer: the same rules and odds, and a ghost cursor that really traces each glyph
 // stroke by stroke and submits it through S.stroke, exactly as a player's drawing is. skillOf() is his CPU skill, 0..1.
+const BOT={cdBack:1,jumpBack:0,antiAir:1,predict:1,backPlan:1,leap:0};   // switches for the bot's habits, so tools/balance.js can try them one at a time
 function makeBot(side,skillOf){
-  let think=0, react=null, hadHack=false; const i={l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0,u:0};
+  let think=0, react=null, hadHack=false, now=0, idle=0, seenAct=null, seenAt=0, rolled=false, plan='', planFor=null, flee=false, stuck=0;
+  const i={l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0,u:0}, last={a:-9,b:-9,j:-9,u:-9}, seenShot=new Map();
   const {T,toPts,densify,rand,pick,GLYPH_ICON}=INK, COL=['#1d3fbf','#b0121f'][side];
   const dr={task:null,cur:{x:0,y:-200},vis:false,
     draw(name,ax,ay,sc,fx){ if(this.task||!T[name]) return false; this.task={strokes:toPts(T[name],ax,ay,sc||1,fx||1,1.1).map(st=>densify(st,4)),si:0,pi:0,down:false,wait:0.05,name}; this.vis=true; return true; },
@@ -1539,32 +1541,97 @@ function makeBot(side,skillOf){
     { // his onHack(): notice a hack aimed at us, then (depending on skill) draw its counter glyph after a reaction delay
       const me=S.f[side], aimed=!!(S.hack&&S.hack.target===side); if(aimed&&!hadHack) react={t:rand(0.2,0.6)*(1.5-d),go:Math.random()<0.3+0.6*d}; hadHack=aimed;
       if(react){ react.t-=dt; if(react.t<=0){ const r=react; react=null; if(r.go&&S.hack&&S.hack.target===side){ dr.cancel(); dr.draw(GLYPH_ICON[S.hack.counter]||'null',me.x-me.face*70,-(me.y+150),0.7,1); } } } }
-    think-=dt; if(think>0) return; think=0.35+(0.1-0.35)*d+Math.random()*0.08+0.07;
+    // ---- fighting ----
+    // The bot looks at the fight every tick but acts through a person's limits, all set by the skill d (0 to 1): it notices
+    // what the foe starts a reaction time late (lag), can only press so many times a second (rate), sometimes hesitates,
+    // and only sometimes reacts to a threat at all (sure). With those it plays the way a decent player does: it keeps its
+    // weapon's distance, hits first when the foe walks into reach and keeps the combo going, backs off while its weapon
+    // recovers, launches a foe who jumps in, hits on the way down from its own jumps, blocks or jumps shots, steps out of
+    // (or beats) a swing it has seen coming, shoots from range and keeps shooters at arm's length.
+    now+=dt;
     const f=S.f[side], e=S.f[1-side], dx=e.x-f.x, dist=Math.abs(dx), dy=e.y-f.y, dir=Math.sign(dx)||1, facing=f.face===dir;
-    const incoming=S.pr.some(p=>p.side!==side&&Math.abs(p.x-f.x)<170&&Math.sign(p.vx)===-dir);
-    let ideal=260, press=[false,false], melee=false, far=0;
-    for(const k of [0,1]){
-      const it=S.items[side][k], kind=it?it.kind:'melee', reach=it&&it.kind==='melee'?it.st.reach*(STYLE[it.style]||STYLE.blade).reach:36;
-      if(kind==='melee'){ melee=true; ideal=Math.min(ideal,reach*0.75); press[k]=dist<reach+10&&Math.abs(dy)<64&&facing; }
-      else if(kind==='ranged'){ press[k]=Math.abs(dy)<42&&dist<Math.min(640,it.st.dist*0.95)&&facing; far=Math.max(far,it.st.dist); }
-      else if(kind==='bomb') press[k]=dist>110&&dist<430&&facing;
-      else if(kind==='shield') press[k]=(incoming||(e.act&&dist<130)||(e.act&&MOVES[e.act.m].ult&&e.act.t>0.3))&&facing;
-      else if(kind==='dash') press[k]=dist>300&&facing&&Math.random()<0.5;
-      else press[k]=f.hp<55&&f.uses[k]>0;
+    const lag=0.30-0.24*d, rate=4.5+4.5*d, sure=0.3+0.65*d, items=[S.items[side][0],S.items[side][1]], KEYS='ab';
+    const tap=key=>{ if(now-last[key]<1/rate) return false; last[key]=now; i[key]++; return true; };
+    const reachOf=(it,M)=>it&&it.kind==='melee'?it.st.reach*(STYLE[it.style]||STYLE.blade).reach*((M&&M.reach)||1):36;
+    const ready=k=>f.cd[k]<=0.02&&!f.act, can=!(f.hurt>0||f.stun>0||f.trap>0||f.flung>0);
+    let km=-1,kr=-1,kb=-1,ks=-1,kd=-1,kh=-1;
+    items.forEach((it,k)=>{ if(!it) return; if(it.kind==='melee'){ if(km<0||reachOf(it)>reachOf(items[km])) km=k; } else if(it.kind==='ranged') kr=k; else if(it.kind==='bomb') kb=k; else if(it.kind==='shield') ks=k; else if(it.kind==='dash') kd=k; else kh=k; });
+    if(km<0){ const empty=items.findIndex(it=>!it); if(empty>=0) km=empty; }      // an empty hand is a punch
+    if(Math.random()<dt*(1-d)*0.9) idle=now+0.15+Math.random()*0.35;             // a moment of doing nothing
+    // what it has noticed: the foe's current move (a reaction time after it began) and shots heading its way
+    if(e.act!==seenAct){ seenAct=e.act; seenAt=now; rolled=false; }
+    const saw=e.act&&now-seenAt>=lag?e.act:null;
+    let threat=false, tHit=9;
+    if(saw){ const M=MOVES[saw.m]; if(M&&M.hits&&saw.done<M.hits.length){ const er=reachOf(S.items[1-side][saw.k],M)+50; tHit=(M.hits[saw.done]-saw.t)/saw.rate; threat=dist<er&&Math.abs(dy)<90&&e.face===-dir&&tHit<0.45; } }
+    let shotIn=9, shotId=0;
+    for(const p of S.pr){ if(p.side===side||p.hover) continue; const t0=seenShot.get(p.id); if(t0===undefined){ seenShot.set(p.id,{t:now,roll:Math.random()<sure}); continue; } if(now-t0.t<lag||!t0.roll) continue;
+      const tt=p.vx?(f.x-p.x)/p.vx:9; if(tt>0&&tt<0.4){ const py=p.y+p.vy*tt-(p.grav||0)*tt*tt/2; if(py>f.y-12&&py<f.y+100&&tt<shotIn){ shotIn=tt; shotId=p.id; } } }
+    if(seenShot.size>80) seenShot.clear();
+    let mv=0, down=0, pressed=false;           // mv: 1 toward the foe, -1 away
+    const closing=(f.vx-e.vx)*dir, foeMelee=!S.items[1-side][e.held]||S.items[1-side][e.held].kind==='melee';   // closing: how fast the gap is shrinking
+    const myMelee=km>=0?items[km]:null, myReach=reachOf(myMelee), M1=MOVES[(myMelee?myMelee.style:'fist')+'1'], myHit=M1.hits[0]/((myMelee&&myMelee.st.rate)||1);
+    if(can){
+      // ---- defence ----
+      if(shotIn<0.3){
+        if(ks>=0&&f.cd[ks]<=0&&!f.act&&f.shield<=0&&facing){ pressed=tap(KEYS[ks]); }
+        else if(f.ground&&!f.act&&shotIn>0.07){ const p=S.pr.find(q=>q.id===shotId); if(p&&(p.dmg>=5||p.big||(kr<0&&dist>170))) tap('j'); }
+      }
+      if(threat&&!rolled){ rolled=true; const er=reachOf(S.items[1-side][saw.k],MOVES[saw.m])+50;
+        plan=Math.random()<sure?(ks>=0&&f.cd[ks]<=0&&facing?'block':km>=0&&ready(km)&&myHit<tHit-0.02&&dist<myReach+20&&facing?'beat':BOT.backPlan&&(er-dist)/300<tHit-0.04?'back':'trade'):''; planFor=saw; }
+      if(threat&&planFor===saw&&!f.act){
+        if(plan==='block'&&f.shield<=0) pressed=tap(KEYS[ks])||pressed;
+        else if(plan==='beat'||(plan==='trade'&&km>=0&&ready(km)&&facing&&dist<myReach+10)) pressed=tap(KEYS[km])||pressed;
+        else if(plan==='back'){ mv=-1; if(tHit<0.14&&f.ground&&Math.random()<0.5) tap('j'); }
+      }
+      // ---- the snack, when it is safe or badly needed ----
+      if(kh>=0&&f.cd[kh]<=0&&f.uses[kh]>0&&!f.act&&!pressed&&(f.hp<32||(f.hp<62&&dist>210))) pressed=tap(KEYS[kh]);
+      // ---- attack ----
+      const shooter=kr>=0&&(km<0||!items[km]||dist>170||!ready(km));
+      if(now>=idle&&!pressed&&!(threat&&plan==='back')){
+        if(shooter){
+          const it=items[kr], range=it.st.dist, ideal=Math.max(200,Math.min(520,range*0.7)), lined=Math.abs(dy)<42, key=KEYS[kr];
+          if(f.act&&f.act.k===kr){ if(MOVES[f.act.m].next&&lined&&dist<range*0.95) tap(key); }          // keep the quick shots coming
+          else if(ready(kr)&&facing){
+            if(lined&&dist<range*0.95){ if(d>0.35&&dist>ideal*0.85&&Math.abs(e.vx)<140&&Math.random()<0.12) down=1; pressed=tap(key); }
+            else if(!f.ground&&dy<-30&&dist<range*0.8) pressed=tap(key);                                  // from the air, angled down
+          }
+          if(dist<ideal-110&&foeMelee) flee=true; else if(dist>ideal-30||!foeMelee) flee=false;
+          if(flee){ if(stuck>0.3){ mv=1; if(f.ground) tap('j'); } else mv=-1; }                             // cornered: go over the top
+          else if(dist>ideal+60) mv=1; else if(!facing) mv=1;
+          if(dy>70&&f.ground&&Math.random()<dt*2.5) tap('j');
+        }else if(km>=0){
+          const it=items[km], key=KEYS[km], aim=1+(Math.random()-0.5)*0.3*(1-d);
+          if(f.act&&f.act.k===km&&!MOVES[f.act.m].mine){ if(MOVES[f.act.m].next&&dist<myReach+46) tap(key); }      // keep the combo going
+          else if(ready(km)){
+            if(!f.ground){ if(facing&&dist<myReach*0.95&&dy<24&&dy>-150) pressed=tap(key); }               // on the way down
+            else if(BOT.antiAir&&facing&&dy>46&&dist-Math.max(0,closing)*0.16<myReach*0.85&&e.vy<260){ down=1; pressed=tap(key); }     // the foe is jumping in: launch them
+            else if(facing&&Math.abs(dy)<60&&dist-Math.max(0,closing)*myHit*sure*BOT.predict<myReach*0.92*aim) pressed=tap(key);       // timed so it lands as they arrive
+            else if(facing&&Math.abs(dy)<60&&Math.abs(f.vx)>215&&Math.sign(f.vx)===dir&&dist<myReach+72) pressed=tap(key);   // running attack carries in
+          }
+          const eit=S.items[1-side][e.held], eReach=reachOf(eit)+56;
+          if(BOT.cdBack&&!f.act&&f.cd[km]>0.14&&dist<eReach&&!(e.hurt>0||e.stun>0)) mv=-1;                             // weapon recovering: step out of their reach
+          else if(!e.ground&&f.ground&&closing>90&&dist<(BOT.jumpBack?240:200)&&dy>30&&(BOT.jumpBack||!ready(km))) mv=-1;   // a jump-in it cannot answer: step out from under it
+          else if(BOT.leap&&f.ground&&ready(km)&&dist>myReach+40&&dist<myReach+190&&Math.abs(dy)<40&&Math.random()<dt*BOT.leap) tap('j');   // sometimes come in from above
+          else if(dist>myReach*0.78) mv=1; else if(!facing) mv=1;
+          if(kd>=0&&ready(kd)&&facing&&dist>290&&Math.abs(dy)<60&&!pressed) pressed=tap(KEYS[kd]);          // close the gap
+          if(dy>70&&f.ground&&dist<280&&Math.random()<dt*3.5) tap('j');                                     // go up after them
+          else if(!f.ground&&dy>40&&f.vy<60&&f.jumps<2&&Math.random()<dt*6) tap('j');
+        }
+        if(kb>=0&&ready(kb)&&facing&&!pressed&&dist>125&&dist<430&&Math.abs(dy)<140) pressed=tap(KEYS[kb]);
+      }else if(!pressed&&!threat){ if(km>=0&&!shooter&&dist>myReach*0.78) mv=1; }
+      if(dy<-60&&f.ground&&f.y>0&&!pressed&&!f.act) down=1;                                                 // drop through the platform
     }
-    if(!melee&&far) ideal=Math.max(200,Math.min(560,far*0.72));    // a shooter stands off as far as its shots carry
-    if(!melee&&ideal>200&&dist<150&&Math.random()<0.6){ i.l=dir>0?1:0; i.r=dir>0?0:1; }
-    else if(dist>ideal+18||!facing){ i.r=dir>0?1:0; i.l=dir>0?0:1; }
-    else{ i.l=i.r=0; }
-    if(Math.random()>0.4){ if(press[0]) i.a++; if(press[1]) i.b++; }
-    if((dy>70&&Math.random()<0.55)||(incoming&&Math.random()<0.35)||Math.random()<0.04) i.j++;
-    i.d=dy<-60&&Math.random()<0.5?1:0;
+    stuck=mv===-1&&Math.abs(f.vx)<30?stuck+dt:0;
+    i.r=mv*dir>0?1:0; i.l=mv*dir<0?1:0; i.d=down;
+    // ---- the slower thoughts: ultimate, hacks and drawing, a few times a second ----
+    think-=dt; if(think>0){ S.setInput(side,i); return; } think=0.35+(0.1-0.35)*d+Math.random()*0.08+0.07;
+    const incoming=shotIn<9;
     // his decide(): hacks when the overdrive bar is full, and glyphs for the situation
     const busy=!!dr.task;
     // a full bar goes on the ultimate about half the time, when there is a drawing to copy and room for it to fly
     const uIt=S.items[side][f.held]||S.items[side][1-f.held], U=ultOf(uIt), uMin=U.min===undefined?110:U.min;   // each ultimate has its own working distance
     if(e.act&&MOVES[e.act.m].ult&&U.kind!=='quake'&&e.act.u==='quake'&&e.act.t>0.3&&f.ground&&Math.random()<0.7) i.j++;   // jump the shock wave
-    if(f.od>=100&&uIt&&dist>=uMin&&dist<=(U.max||1e9)&&Math.abs(dy)<(U.kind==='quake'?40:160)&&Math.random()<0.5*(0.2+0.4*d)) i.u++;
+    if(f.od>=100&&uIt&&can&&!f.act&&!threat&&dist>=uMin&&dist<=(U.max||1e9)&&Math.abs(dy)<(U.kind==='quake'?40:160)&&Math.random()<0.3+0.6*d) i.u++;
     else if(f.od>=100&&!S.hack&&Math.random()<0.2+0.4*d){ const opts=[2,3]; if(S.cells.length&&!S.broken) opts.push(0); if(S.items[1-side][e.held]) opts.push(1,1); if(S.items[side][f.held]) opts.push(4,4); i.h=pick(opts); i.q++; }
     else if(!busy&&f.ink2>55&&dist>240&&Math.random()<0.14*d) dr.draw('lightning',f.x+dir*80,-(f.y+110),0.8,dir);
     else if(!busy&&f.ink2>45&&e.act&&dist<130&&Math.random()<0.25*d) dr.draw('wall',f.x+dir*42,-(f.y+46),0.9);
