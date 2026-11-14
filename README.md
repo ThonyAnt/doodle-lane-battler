@@ -8,7 +8,7 @@ Hackathon MVP with three ways to play: against a bot, two players on one screen,
 
 Open `/duel` on the same server for a live two-player stickman fight. Before each round both players draw two things (a sword, a bow, a bomb, a shield, wings, a snack) and share 100 ink between them; the vision model decides what each drawing does and the ink spent sets how strong it is. Then you fight live: move, double jump, and use your two drawings. First to 2 rounds wins. It has the same three ways to play (bot, one screen, online rooms with a QR code).
 
-Big screen: choose Online, then "Use this as the big screen" on a laptop or projector. It shows a large join code and then the fight; the first two tablets or phones to scan it are Blue and Red, and they draw and play with the touch buttons.
+Big screen: press **Draw on tablets** in the header (or choose Online, then "Use this as the big screen") on a laptop or projector. **Draw here** switches back to drawing and playing on that device. It shows a large join code and then the fight; the first two tablets or phones to scan it are Blue and Red, and they draw and play with the touch buttons.
 
 Keys: A/D move, W jump, S down, J and K use your two drawings. Tap a blade repeatedly for a 3-hit combo; attack while running, in the air, or holding down for other moves. Bows and guns keep firing as you tap, and down + attack is a charged shot. Second player on one screen: arrows, with , and . to attack. Touch buttons appear under the arena on tablets.
 
@@ -19,7 +19,9 @@ The fighters can play on top of your real desktop instead of in a browser tab. T
 - The fight runs along the top edge of the taskbar, across the whole screen. Clicks pass through to whatever is underneath; only the menu and sketchbook cards take the mouse.
 - **Esc** or **Ctrl+Alt+D** opens the menu (mode, restart, sketchbook, quit) and pauses. **Ctrl+Alt+Q** quits.
 - The fight pauses whenever another app has the keyboard; press Ctrl+Alt+D to come back.
-- Modes: vs bot, two players on one keyboard, and practice. No online rooms and no platforms yet; the fighters do not know about your windows.
+- **Draw here** (the default): vs bot, two players on one keyboard, or practice, with the sketchbook on the computer and a screen-wide arena.
+- **Draw on tablets**: the overlay becomes the big screen of a new room. It shows the join code, two tablets or phones draw and play, and the fight runs on the desktop on the standard stage. The tablets must be able to reach this computer (same Wi-Fi, firewall allowing Node).
+- The fighters do not know about your windows yet.
 
 ## Run
 

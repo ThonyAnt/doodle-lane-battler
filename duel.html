@@ -54,14 +54,15 @@ body.playing .arenawrap{border-left:0;border-right:0;border-radius:0;box-shadow:
 html.deskmode,body.deskmode{background:transparent!important;background-image:none!important;overflow:hidden}
 body.deskmode main{max-width:none;padding:0}
 body.deskmode .arenawrap{position:fixed;inset:0;border:0;border-radius:0;box-shadow:none;background:transparent;overflow:visible}
-body.deskmode .hud,body.deskmode .rules,body.deskmode .tcs,body.deskmode #modeOnline,body.deskmode .lanelink{display:none!important}
+body.deskmode .hud,body.deskmode .rules,body.deskmode .tcs,body.deskmode .lanelink{display:none!important}
 body.deskmode #arena{width:100vw;height:100vh}
 body.deskmode .overlay{inset:0;background:transparent}
-body.deskmode header{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:6;background:var(--card);border:2px solid var(--ink);border-radius:14px;padding:8px 14px;box-shadow:4px 4px 0 var(--ink);margin:0;flex-wrap:nowrap;white-space:nowrap}
+body.deskmode header{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:6;background:var(--card);border:2px solid var(--ink);border-radius:14px;padding:8px 14px;box-shadow:4px 4px 0 var(--ink);margin:0;max-width:94vw;white-space:nowrap}
 body.deskmode .desks{position:fixed;left:50%;top:86px;transform:translateX(-50%);width:min(820px,94vw);z-index:6;margin:0}
 body.deskmode .desk{box-shadow:4px 4px 0 var(--ink)}
 body.deskmode .pad{max-height:34vh}
 body.deskmode:not(.menu) header,body.deskmode:not(.menu) .desks{display:none!important}
+body.handheld #drawHere,body.handheld #drawTablets{display:none}
 #deskHint{display:none}
 body.deskmode #deskHint{display:block;font-size:13px;color:var(--muted)}
 .overlay h2{font-family:var(--display);font-weight:400;font-size:28px;margin:0 0 4px;text-wrap:balance}
@@ -194,6 +195,10 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
         <button id="mode2p" aria-pressed="false">2 players</button>
         <button id="modeOnline" aria-pressed="false">Online</button>
         <button id="modePractice" aria-pressed="false">Practice</button>
+      </div>
+      <div class="seg" role="group" aria-label="Where the drawing happens">
+        <button id="drawHere" aria-pressed="true" title="Draw and play on this device">Draw here</button>
+        <button id="drawTablets" aria-pressed="false" title="This device becomes the big screen; two tablets or phones draw and play">Draw on tablets</button>
       </div>
       <button id="restart">Restart</button>
       <a href="/" class="badge lanelink">Lane Battler</a>
@@ -592,7 +597,10 @@ function fitCanvas(){
     // and the arena is as wide as the screen.
     const r=Math.min(3,window.devicePixelRatio||1), w=Math.round(innerWidth*r), h=Math.round(innerHeight*r);
     if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
-    VS=DESK_SCALE*r; VW=innerWidth/DESK_SCALE; OX=0; OY=h-(GY+6)*VS; return;
+    // A local match uses a screen-wide arena at a fixed size. An online room uses the standard 960-wide stage with its
+    // platforms, enlarged to fill the screen's width (within reason) and centred.
+    const sc=ARENA_PLATS.length?Math.min(1.6,innerWidth/960):DESK_SCALE;
+    VS=sc*r; VW=innerWidth/sc; OX=Math.max(0,(VW-ARENA_W)/2); OY=h-(GY+6)*VS; return;
   }
   const r=Math.min(3,window.devicePixelRatio||1), cw=cv.clientWidth||960, full=cw*440/960;
   const ch=Math.round(playing?Math.max(240,Math.min(full,window.innerHeight*(bigScreen?0.86:0.64))):full);
@@ -806,7 +814,7 @@ function setMode(m){
   deskMenu=false;
   mode=m; for(const b of ['Bot','2p','Online','Practice']) $('mode'+b).setAttribute('aria-pressed',m===b.toLowerCase());
   if(net){ net.es.close(); net=null; } setScreen(false); setPad(); sim=null; bot=null; resetLocal(); lastPhase=''; overlayKey='';
-  if(m==='online'){ local=[false,false]; view=createDuel().snapshot(); buildDesks(); buildControls(); const code=(location.hash||'').slice(1).toUpperCase(); if(/^[A-Z]{4}$/.test(code)) joinRoom(code,watched()===code); return; }
+  if(m==='online'){ local=[false,false]; ARENA_W=960; ARENA_PLATS=PLATS; view=createDuel().snapshot(); buildDesks(); buildControls(); const code=(location.hash||'').slice(1).toUpperCase(); if(/^[A-Z]{4}$/.test(code)) joinRoom(code,watched()===code); return; }
   if(location.hash) history.replaceState(null,'',location.pathname);
   local=m==='2p'?[true,true]:[true,false];
   if(DESK){ ARENA_W=Math.round(innerWidth/DESK_SCALE); ARENA_PLATS=[]; }
@@ -821,7 +829,11 @@ function post(body){ if(!net) return; fetch('/duel/act',{method:'POST',headers:{
 // Big screen: this device shows the fight and the join code while two other devices play.
 // The room it is showing is remembered for this tab, so a reload comes back as the screen and not as a player.
 const watched=()=>{ try{ return sessionStorage.getItem('dd-watch')||''; }catch(e){ return ''; } };
-function setScreen(on){ bigScreen=on; document.body.classList.toggle('screen',on); fitCanvas(); }
+function setScreen(on){ bigScreen=on; document.body.classList.toggle('screen',on); $('drawHere').setAttribute('aria-pressed',!on); $('drawTablets').setAttribute('aria-pressed',on); fitCanvas(); }
+// Where the drawing happens. 'Draw here' is the ordinary game on this device. 'Draw on tablets' makes this device the big screen
+// of a new room: it shows the join code and then the fight, while two tablets or phones draw and play.
+$('drawTablets').onclick=()=>{ if(net&&net.watch) return; setMode('online'); createRoom(true); };
+$('drawHere').onclick=()=>{ if(net&&net.watch) setMode('bot'); };
 // Player view: a player in a room that has a big screen sees only the sketchbook, then only the controller.
 function setPad(){
   const on=!!(net&&net.side>=0&&net.screen); if(on===padView) return;
@@ -867,12 +879,12 @@ function deskSync(){
   const fighting=view.phase==='count'||view.phase==='fight'||view.phase==='end', menu=deskMenu||!fighting;
   document.body.classList.toggle('menu',menu);
   $('deskResume').hidden=!(deskMenu&&fighting); $('deskQuit').hidden=!host;
-  deskPaused=fighting&&(deskMenu||!document.hasFocus());
+  deskPaused=!!sim&&fighting&&(deskMenu||!document.hasFocus());     // only a match run on this device can be paused
   // The window only takes the mouse while the pointer is over one of the cards, so the rest of the desktop stays usable
   // even with the menu open. When a fight starts it takes the keyboard.
   const live=menu&&deskHover;
   if(live!==deskLive){ deskLive=live; if(host) host.setInteractive(live); }
-  if(fighting&&!deskWasFighting&&!deskMenu&&host) host.focus();
+  if(fighting&&!deskWasFighting&&!deskMenu&&host&&local.some(Boolean)) host.focus();   // a big screen needs no keys
   deskWasFighting=fighting;
 }
 let deskHover=false, deskWasFighting=false;
@@ -1077,7 +1089,7 @@ function render(now){
   // ground and platforms: plain ink lines, no scenery
   L.strokeStyle='#111'; L.lineCap='round'; L.lineWidth=DESK?3:4; L.beginPath(); L.moveTo(-OX-10,GY+2); L.lineTo(ARENA_W+10+OX,GY+2); L.stroke();
   // corner posts mark where the arena ends when the view is wider than it
-  if(OX>12) for(const px of [0,960]){ L.lineWidth=5; L.beginPath(); L.moveTo(px,GY+2); L.lineTo(px,GY-58); L.stroke(); L.lineWidth=3; L.beginPath(); L.moveTo(px,GY-58); L.lineTo(px+(px?-22:22),GY-48); L.lineTo(px,GY-38); L.stroke(); }
+  if(OX>12) for(const px of [0,ARENA_W]){ L.lineWidth=5; L.beginPath(); L.moveTo(px,GY+2); L.lineTo(px,GY-58); L.stroke(); L.lineWidth=3; L.beginPath(); L.moveTo(px,GY-58); L.lineTo(px+(px?-22:22),GY-48); L.lineTo(px,GY-38); L.stroke(); }
   L.lineWidth=5; for(const p of ARENA_PLATS){ L.beginPath(); L.moveTo(p.x0,GY-p.y+2); L.lineTo(p.x1,GY-p.y+2); L.stroke(); }
   // projectiles
   for(const p of v.pr){
