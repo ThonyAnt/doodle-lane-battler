@@ -431,6 +431,8 @@ function mk(replies,opts){
     ok('after a rematch the rules come back once the items are set again',got.resets===1&&quiet&&done(got).length===4&&done(got)[3].rules[0].name==='Return Serve'&&fk.bodies.length===2,got.forge.slice(n).map(e=>e.state));
     const B=await open(true); await arm(B,'sword'); await until(()=>done(B.blue).length>0,4000);
     ok('a bot room forges for the player\'s item against the bot\'s',done(B.blue).length===1&&done(B.blue)[0].rules.length>=1&&done(B.blue)[0].rules.every(r=>/^(blue|red)\.[01]$/.test(r.a)&&r.id>=1));
+    const lang=await fetch(HOST+'/forgescript.js').then(r=>r.text()), P=await post('/duel/room?forge=0'); P.code&&await (async()=>{ const g=listen(P.code,'blue'), h=listen(P.code,'red'); await until(()=>g.hello&&h.hello,2000); const X={code:P.code}; await arm(X,'sword','star'); await sleep(900); P.quiet=g.forge.length===0; g.close(); h.close(); })();
+    ok('the server hands the page the rule language, and a room made with forge=0 gets no rules',/ForgeScript/.test(lang)&&lang.length>5000&&P.quiet===true&&fk.bodies.length===3);
     const junk=await post('/duel/forge',{items:'x'}), half=await post('/duel/forge',{items:[[ITEMS[0][0],null],[null,null]]}), page=await post('/duel/forge',{items:ITEMS}), again=await post('/duel/forge',{items:ITEMS});
     ok('POST /duel/forge answers with verified rules',page.status===200&&page.rules.length>=1&&page.rules.every(r=>r.code&&r.on)&&page.rules[0].source==='ai'&&Object.values(page.rules[0].checks).every(Boolean),page);
     ok('it wants two sides with an item each, and takes one request per two seconds from an address',junk.status===400&&half.status===400&&again.status===429&&!again.rules);
@@ -466,6 +468,34 @@ function mk(replies,opts){
     await arm(R,'sword','star'); await until(()=>done(R.blue).length>0,3000); const d=done(R.blue)[0];
     ok('with no key the built-in rules are there at once',!!d&&d.rules.length>=1&&d.rules.every(r=>r.source==='built-in')&&d.rules[0].name==='Deflect'&&fk.bodies.length===0);
     R.blue.close(); R.red.close(); await srv.stop(); await fk.close();
+  }
+}
+
+{ // 9. what players see: the pure part of the page's forge code, cut out of the page source
+  const m=/\/\*FORGE-UI-START\*\/([\s\S]*?)\/\*FORGE-UI-END\*\//.exec(src), U=m?new Function(m[1]+';return {forgeCards,forgeTyped,forgeLine,forgeCallout,forgeInstall,forgeItems,shotOwner};')():{};
+  const forgeCards=U.forgeCards||(()=>'');
+  ok('rule cards escape model text',(h=>!h.includes('<img')&&h.includes('&lt;img'))(forgeCards({state:'done',rules:[{id:1,name:'<img src=x>',blurb:'b',a:'blue.0',b:'red.0',on:'swat',code:'say("<b>");',source:'ai',checks:{}}]})));
+  // beyond the plan
+  if(m){
+    const nasty='<img src=x onerror=alert(1)>"\'&', card={id:1,name:nasty,blurb:nasty,a:'blue.0',b:'red.1',on:'swat',cooldown:0.4,code:'say("'+nasty+'");',source:'ai',checks:{shape:true,parse:true,check:true,scenarios:true,stress:false}};
+    const its=[[{name:nasty},null],[null,{name:'Ball'}]], h=forgeCards({state:'done',ms:2140,rules:[card]},its), tags=h.replace(/&lt;|&gt;|&amp;|&quot;|&#39;|&#10003;|&#10007;/g,'').match(/<[^>]*>/g)||[];
+    ok('nothing a model wrote can become markup: names, blurbs, code, item names, even where a field is not text',!/<img|onerror=alert\(1\)>/.test(h.replace(/&lt;img src=x onerror=alert\(1\)&gt;/g,''))&&tags.every(t=>/^<\/?(div|span|b|i|pre)( class="[a-z -]*")?( data-i="\d+")?>$/.test(t))&&h.split('&lt;img').length===5
+      &&[{name:{toString:()=>'<img>'}},{on:'<img>'},{cooldown:'<img>'},{source:'<img>'},{a:'<img>'},{code:null},{checks:'<img>'},{id:'<img>'}].every(o=>!/<img/.test(forgeCards({state:'done',ms:'<img>',rules:[Object.assign({},card,o)]},[['<img>'],{}],{'<img>':1}))),tags.filter(t=>!/^<\/?(div|span|b|i|pre)( class="[a-z -]*")?( data-i="\d+")?>$/.test(t)));
+    ok('a card shows the rule: name, blurb, whose item against whose, when, its code, a tick per check passed',h.includes('Blue &lt;img')&&h.includes('Red Ball')&&h.includes('on swat')&&h.includes('0.4 s')&&(h.match(/class="ok"/g)||[]).length===4&&(h.match(/class="no"/g)||[]).length===1&&h.includes('forged in 2.1 s')&&h.includes('say(&quot;'));
+    ok('while the model writes, the window says so; with nothing to show it is empty',/Forging match rules/.test(forgeCards({state:'working'}))&&forgeCards(null)===''&&forgeCards({state:'idle'})===''&&forgeCards({state:'done'}).includes('0 match rules'));
+    ok('built-in rules and a rule that was switched off are marked; typed cards start with no code',/built-in/.test(forgeCards({state:'done',rules:[Object.assign({},card,{source:'built-in'})]}))&&/switched off/.test(forgeCards({state:'done',rules:[card]},its,{1:1}))&&!/switched off/.test(h)&&forgeCards({state:'done',rules:[card]},its,null,true).includes('<pre class="fcode"></pre>'));
+    ok('the code is typed in one rule after another',JSON.stringify(U.forgeTyped([{code:'abcde'},{code:'xyz'},{code:''},{}],0))==='[0,0,0,0]'&&JSON.stringify(U.forgeTyped([{code:'abcde'},{code:'xyz'}],3.7))==='[3,0]'&&JSON.stringify(U.forgeTyped([{code:'abcde'},{code:'xyz'}],7))==='[5,2]'&&JSON.stringify(U.forgeTyped([{code:'abcde'},{code:'xyz'}],1e9))==='[5,3]'&&U.forgeTyped(null,5).length===0);
+    const d={state:'done',rules:[{id:1,name:'Return Serve',a:'blue.0',b:'red.0'},{id:2,name:'Clash',a:'red.0',b:'blue.1'},{id:3,name:'Wind',a:'red.1',b:'blue.0'}]};
+    ok('each item lists the rules it is part of',U.forgeLine(d,0,0)==='Return Serve, Wind'&&U.forgeLine(d,0,1)==='Clash'&&U.forgeLine(d,1,0)==='Return Serve, Clash'&&U.forgeLine(d,1,1)==='Wind'&&U.forgeLine({state:'working'},0,0)===''&&U.forgeLine(null,0,0)==='');
+    { const said={}, c=(e,t)=>U.forgeCallout(e,d,said,t,1500);
+      ok('a firing shows its shout, or the rule\'s name, and a rule\'s name at most every 1.5 s',c({id:1,say:'RETURN!'},0)==='RETURN!'&&c({id:1},500)===''&&c({id:2},600)==='Clash'&&c({id:2},1000)===''&&c({id:1},1600)==='Return Serve'&&c({id:2,say:'CLANG'},1700)==='CLANG'&&c({id:9},1800)===''&&c({id:1,say:7},9000)==='Return Serve'&&U.forgeCallout({id:1},null,{},0,1500)===''); }
+    ok('a shot that was sent back still shows its thrower\'s drawing',U.shotOwner({side:0,o:1})===1&&U.shotOwner({side:1,o:0})===0&&U.shotOwner({side:1})===1&&U.shotOwner({side:0,o:undefined})===0);
+    { const S=duo(SWORD,BALL), evil=["constructor.constructor('return process')();","while (true) {}","hit.scale(2);"].map(code=>Object.assign({},RACKET,{code}));
+      const inn=U.forgeInstall(S,[evil[0],RACKET,evil[1],null,evil[2],Object.assign({},RACKET,{a:'blue.7'}),Object.assign({},RACKET,{on:'constructor'}),Object.assign({},RACKET,{name:'Twice',cooldown:2})],FS,D.FORGE_API); swing(S,0); S.snapshot(); const p=shotAt(S,1,0,600); run(S,0.1);
+      ok('the page installs a rule the same way the server does: parsed, checked, interpreted, or not at all',inn.length===2&&inn[0].id===1&&inn[0].name==='Return Serve'&&inn[1].id===2&&S.rules.length===2&&S.rules[1].cooldown===2&&p.side===0&&S.snapshot().ev.some(e=>e.e==='rule'&&e.say==='RETURN!')&&U.forgeInstall(S,'x',FS,D.FORGE_API).length===0);
+      const its2=U.forgeItems(S.items); ok('the page describes its items to the forge as the server does',JSON.stringify(its2)===JSON.stringify(F.itemsOf(S))&&F.keyOf(its2)!==''); }
+    ok('no rule text is ever run as JavaScript by the page',!/\beval\s*\(|new\s+Function|\bFunction\s*\(|setTimeout\(\s*['"`]|setInterval\(\s*['"`]|createElement\(\s*['"]script|\.innerHTML\s*=[^;]*\.code\b(?![^;]*fesc)/.test(src.split('/*DUEL-END*/')[1])&&!/innerHTML|document\.|window\./.test(m[1]));
+    ok('the page loads the language and listens for the forge',/<script src="\/forgescript\.js"><\/script>/.test(src)&&/on\('forge',/.test(src)&&/retroWindow\('forge','FORGE\.EXE'/.test(src)&&/\.forge\b/.test(fs.readFileSync(path.join(__dirname,'..','inkshop.css'),'utf8')));
   }
 }
 

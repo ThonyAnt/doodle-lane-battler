@@ -111,3 +111,28 @@ legend{padding:0 3px}
 /* --- END verbatim --- */
 }
 @keyframes blink{50%{filter:brightness(1.6) hue-rotate(-20deg)}}
+/* FORGE.EXE: the window that shows the rules written for a match (see RuleForge in duel.html). It is one of the game's
+   own windows (.rwin), outside #inkos, so these rules stand on their own. */
+.forge{font:11px/1.4 Tahoma,Verdana,"Segoe UI",sans-serif;color:#000;max-height:calc(100vh - 170px);overflow:auto;display:flex;flex-direction:column;gap:6px;user-select:text;-webkit-user-select:text}
+.forge:empty{display:none}
+.forge .fstate{font-weight:700;padding:2px 2px 0}
+.forge .fstate.work .fdots{display:inline-block;animation:forgedots 1s steps(4,end) infinite;overflow:hidden;vertical-align:bottom;width:0}
+@keyframes forgedots{to{width:1.4em}}
+.forge .fnote{color:#404040;padding:0 2px 2px}
+.forge .frule{background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080;padding:5px 6px}
+.forge .frule.off{opacity:.55}
+.forge .fname{display:flex;align-items:baseline;gap:6px}
+.forge .fname b{font-size:13px;overflow-wrap:anywhere}
+.forge .fsrc{margin-left:auto;flex:none;font-size:10px;padding:0 4px;background:#0a246a;color:#fff}
+.forge .fsrc.bi{background:#808080}
+.forge .fblurb{margin:1px 0 3px;overflow-wrap:anywhere}
+.forge .fpair{color:#404040;overflow-wrap:anywhere}
+.forge .fpair .b{color:#1d3fbf;font-weight:700} .forge .fpair .r{color:#b0121f;font-weight:700}
+.forge .fpair i{font-style:normal;white-space:nowrap}
+.forge .fcode{margin:4px 0;padding:5px 6px;min-height:2.7em;background:#000;color:#3f3;font:11px/1.35 "Courier New",monospace;white-space:pre-wrap;overflow-wrap:anywhere;border:1px inset #808080}
+.forge .frule:not(.typed) .fcode:after{content:"_";animation:blink .6s steps(2,end) infinite}
+.forge .fchecks{display:flex;flex-wrap:wrap;gap:2px 8px;font-size:10px;visibility:hidden}
+.forge .frule.typed .fchecks{visibility:visible}
+.forge .fchecks .ok{color:#0a6b2b} .forge .fchecks .no{color:#b0121f}
+/* under an item in the sketchbook: the match rules it is part of */
+.slot small.frules{color:#0a246a;font-weight:600}

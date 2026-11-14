@@ -535,6 +535,7 @@ Window titlebars = platforms
 <script src="/qrcode.js"></script>
 <script src="/sfx.js"></script>
 <script src="/inkshop.js"></script>
+<script src="/forgescript.js"></script>
 <script src="/anim/core.js"></script>
 <script src="/anim/rig.js"></script>
 <script src="/anim/locomotion.js"></script>
@@ -2021,6 +2022,108 @@ const wobj=new Map(), wPending=[[],[]], wBolt={}; let wPen=null;
 const cid=(()=>{ const mk=()=>Math.random().toString(36).slice(2,12);
   try{ let v=sessionStorage.getItem('dd-id'); if(!v){ v=mk(); sessionStorage.setItem('dd-id',v); } return v; }catch(e){ return mk(); } })();
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+/*FORGE-UI-START*/
+// RuleForge on the page: showing a match's rules (see FORGE_API) and, for a match simulated here, installing them.
+// Everything in this block is pure (no DOM, no globals), so tools/test-forge.js runs it as it is. Rule names, blurbs,
+// code and item names were written by a model: each is escaped (fesc) before it becomes HTML, and a rule's code is
+// only ever parsed, checked and interpreted by ForgeScript, never run as JavaScript.
+const fesc=s=>String(s===null||s===undefined?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const FORGE_CHECKS=['shape','parse','check','scenarios','stress'], FORGE_SRC={ai:'written by the model',repaired:'written by the model, then repaired','built-in':'built-in'};
+const forgeRef=s=>{ const m=/^(blue|red)\.([01])$/.exec(typeof s==='string'?s:''); return m?[m[1]==='blue'?0:1,+m[2]]:null; };      // 'red.1' -> [1,1]
+// The item a rule points at, by name, from a snapshot's items: "Blue Tennis Racket".
+function forgeItemName(ref,items){ const p=forgeRef(ref); if(!p) return '?'; const row=Array.isArray(items)?items[p[0]]:null, it=Array.isArray(row)?row[p[1]]:null; return (p[0]?'Red ':'Blue ')+(it&&typeof it.name==='string'&&it.name?it.name:'item '+'AB'[p[1]]); }
+// The contents of the FORGE.EXE window for the latest forge event d ({state:'working'} or {state:'done',ms,rules}):
+// a state line, then a card per rule with its name, its blurb, the two items, the code and a tick per check passed.
+// items names the items; off holds the ids of rules the match has switched off; with typed set the code blocks start
+// empty, for the page to type the code in (forgeTyped).
+function forgeCards(d,items,off,typed){
+  if(!d||(d.state!=='working'&&d.state!=='done')) return '';
+  if(d.state==='working') return '<div class="fstate work">Forging match rules<span class="fdots">...</span></div><div class="fnote">Rules are being written for how these items meet. Each one is tried in test fights before it goes in.</div>';
+  const rules=(Array.isArray(d.rules)?d.rules:[]).filter(r=>r&&typeof r==='object'), own=rules.some(r=>r.source!=='built-in'), isOff=r=>!!(off&&(typeof r.id==='number')&&off[r.id]);
+  let h='<div class="fstate">'+rules.length+' match rule'+(rules.length===1?'':'s')+(!own&&rules.length?' (built-in: the model was slow or away)':typeof d.ms==='number'&&d.ms>0?' forged in '+(d.ms/1000).toFixed(1)+' s':'')+'</div>';
+  rules.forEach((r,i)=>{
+    const a=forgeRef(r.a), ck=r.checks&&typeof r.checks==='object'?r.checks:{}, src=Object.prototype.hasOwnProperty.call(FORGE_SRC,r.source)?r.source:'ai';
+    h+='<div class="frule'+(isOff(r)?' off':'')+'" data-i="'+i+'"><div class="fname"><b>'+fesc(r.name)+'</b><span class="fsrc '+(src==='built-in'?'bi':'ai')+'">'+FORGE_SRC[src]+'</span></div>'
+      +'<div class="fblurb">'+fesc(r.blurb)+'</div>'
+      +'<div class="fpair"><span class="'+(a&&a[0]?'r':'b')+'">'+fesc(forgeItemName(r.a,items))+'</span> vs <span class="'+(a&&a[0]?'b':'r')+'">'+fesc(forgeItemName(r.b,items))+'</span> <i>on '+fesc(r.on)+', every '+fesc(+r.cooldown||0)+' s</i></div>'
+      +'<pre class="fcode">'+(typed?'':fesc(r.code))+'</pre>'
+      +'<div class="fchecks">'+FORGE_CHECKS.map(k=>'<span class="'+(ck[k]===true?'ok':'no')+'">'+(ck[k]===true?'&#10003;':'&#10007;')+' '+k+'</span>').join('')+(isOff(r)?'<span class="no">switched off: it kept failing</span>':'')+'</div></div>';
+  });
+  return h;
+}
+// How many characters of each rule's code are on show, n characters into the typing: one rule after another.
+function forgeTyped(rules,n){ const out=[]; for(const r of Array.isArray(rules)?rules:[]){ const len=typeof (r&&r.code)==='string'?r.code.length:0; out.push(Math.max(0,Math.min(len,Math.floor(n)))); n-=len; } return out; }
+// The names of the rules one item is part of, for the line under it in the sketchbook.
+function forgeLine(d,side,slot){ if(!d||d.state!=='done'||!Array.isArray(d.rules)) return ''; const id=(side?'red':'blue')+'.'+slot; return d.rules.filter(r=>r&&(r.a===id||r.b===id)).map(r=>String(r.name)).join(', '); }
+// What a `rule` event shows over the fighter: the rule's shout, or failing that its name, and the name of one rule
+// not more often than every `every` ms. said (rule id -> when it last showed anything) is kept by the caller.
+function forgeCallout(e,d,said,now,every){
+  const r=d&&Array.isArray(d.rules)?d.rules.find(q=>q&&q.id===e.id):null, text=typeof e.say==='string'&&e.say?e.say:r&&now-(said[e.id]===undefined?-1e9:said[e.id])>=every?String(r.name):'';
+  if(text) said[e.id]=now; return text.slice(0,22);
+}
+// Whose drawing a projectile shows: a shot that a rule or a bubble sent back is still its thrower's item.
+const shotOwner=p=>p.o===0||p.o===1?p.o:p.side;
+// A match's items as the forge is told of them (the sim's items, not a snapshot's).
+const forgeItems=items=>items.map(row=>row.map(it=>it?{name:it.name,kind:it.kind,style:it.style,el:it.el,trait:it.trait,power:it.stats.power,range:it.stats.range,speed:it.stats.speed}:null));
+// Rules from the server into a match simulated in the page. FS is ForgeScript, API is FORGE_API. A rule goes in only if
+// its code parses and names nothing but what its event offers; it runs as the interpreter's function. Gives the rules
+// that went in, each with the id the sim gave it.
+function forgeInstall(S,rules,FS,API){
+  const out=[];
+  for(const r of Array.isArray(rules)?rules:[]){
+    try{
+      const a=forgeRef(r.a), b=forgeRef(r.b); if(!a||!b||typeof r.code!=='string'||!Object.prototype.hasOwnProperty.call(API,r.on)) continue;
+      const p=FS.parse(r.code); if(!p.ok||FS.check(p.ast,API[r.on]).length) continue;
+      const id=S.addRule({name:r.name,blurb:r.blurb,a,b,on:r.on,cooldown:r.cooldown,run:FS.compile(p.ast)});
+      if(id) out.push(Object.assign({},r,{id}));
+    }catch(e){}
+  }
+  return out;
+}
+/*FORGE-UI-END*/
+// The page's side of it. forge is the latest forge event worth showing (null: none); the window types the code in.
+// ?forge=0 in the address switches it off for matches played here and for rooms made from here.
+const FORGE_PAGE=new URLSearchParams(location.search).get('forge')!=='0', FORGE_CPS=160;
+let forge=null, forgeAt=0, forgeOff={}, forgeSaid={}, forgeNames='';
+const forgeNamesNow=()=>view?view.items.map(r=>r.map(it=>it?it.name:'').join('|')).join('/'):'';
+function setForge(d){
+  forge=FORGE_PAGE&&d&&(d.state==='working'||d.state==='done')?{state:d.state,ms:d.ms,rules:(Array.isArray(d.rules)?d.rules:[]).filter(r=>r&&typeof r==='object')}:null;
+  forgeAt=performance.now(); forgeOff={}; forgeSaid={};
+  drawForge(); for(const k of desk) if(k) updateDesk(k);      // and each item's line of rule names
+}
+function drawForge(){ const el=document.querySelector('#forgeBox'); forgeNames=forgeNamesNow(); if(el) el.innerHTML=forgeCards(forge,view&&view.items,forgeOff,true); }
+// Each frame: the code is typed in a few characters at a time, and a rule's checks show once its code is all there.
+function forgeTick(now){
+  const el=document.querySelector('#forgeBox'); if(!el||!forge||forge.state!=='done') return;
+  if(forgeNames!==forgeNamesNow()) drawForge();      // an item's name arrived after its rules did
+  const shown=forgeTyped(forge.rules,(now-forgeAt)/1000*FORGE_CPS);
+  el.querySelectorAll('.frule').forEach((card,i)=>{ const r=forge.rules[i], code=r&&typeof r.code==='string'?r.code:'', pre=card.querySelector('.fcode'); if(pre.textContent.length!==shown[i]) pre.textContent=code.slice(0,shown[i]); card.classList.toggle('typed',shown[i]>=code.length); });
+}
+// A match simulated in this page gets its rules from the server too: asked for 400 ms after its items last changed and
+// installed here (forgeInstall). If they are not in when the countdown starts it waits for them, once and four seconds
+// at most, as a room's does. No server, or FORGE=0 on it: the match simply has no rules.
+const lf={sim:null,ver:-1,key:'',items:null,gen:0,state:'idle',due:0,held:null};
+function localForge(now){
+  if(!FORGE_PAGE||LAB||!window.ForgeScript||!location.protocol.startsWith('http')) return;
+  if(lf.sim!==sim||lf.ver!==sim.ver){
+    const items=forgeItems(sim.items), key=JSON.stringify(items), fresh=lf.sim!==sim; lf.sim=sim; lf.ver=sim.ver;
+    if(fresh||key!==lf.key){      // something a rule could see has changed: the old rules go at once
+      lf.key=key; lf.items=items; lf.gen++; sim.clearRules(); lf.state=items.every(r=>r.some(Boolean))?'working':'idle'; lf.due=now+400;
+      setForge(lf.state==='working'?{state:'working'}:null);
+    }
+  }
+  if(lf.state==='working'&&lf.due&&now>=lf.due){
+    lf.due=0; const gen=lf.gen, S=sim, mine=()=>lf.gen===gen&&sim===S;
+    fetch('/duel/forge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:lf.items})}).then(r=>{
+      if(r.status===429){ if(mine()) lf.due=performance.now()+2100; return null; }      // asked too soon after the last time: once more in a moment
+      if(!r.ok) throw new Error('no forge'); return r.json();
+    }).then(out=>{
+      if(!out||!mine()) return;
+      S.clearRules(); const rules=forgeInstall(S,out.rules,window.ForgeScript,FORGE_API); lf.state='done'; S.setHold(0); setForge({state:'done',ms:out.ms,rules});
+    }).catch(()=>{ if(mine()){ lf.state='idle'; S.setHold(0); setForge(null); } });
+  }
+  if(sim.phase==='count'&&lf.state==='working'&&lf.held!==sim.round){ lf.held=sim.round; sim.setHold(FORGE_LIMITS.hold); } else if(sim.phase==='draw') lf.held=null;
+}
 const mySide=()=>net?net.side:0;
 
 /* ---------- drawings to sprites ---------- */
@@ -2136,7 +2239,8 @@ function updateDesk(d){
   const items=view?view.items[d.side]:[null,null], cost=d.strokes.length?inkCost(d.strokes):0, have=budget(d), ready=!!(view&&view.ready[d.side]);
   d.el.querySelectorAll('.slot').forEach(b=>{ const k=+b.dataset.k, it=items[k];
     b.setAttribute('aria-pressed',k===d.k);
-    b.innerHTML=`${'AB'[k]}: `+(it?`<b>${esc(it.name)}</b><small>${it.kind}${it.el!=='none'?' · '+it.el:''} · ${it.cost} ink</small>`:'<b>empty</b><small>a punch</small>'); });
+    const fl=it?forgeLine(forge,d.side,k):'';      // the match rules this item is part of
+    b.innerHTML=`${'AB'[k]}: `+(it?`<b>${esc(it.name)}</b><small>${it.kind}${it.el!=='none'?' · '+it.el:''} · ${it.cost} ink</small>`+(fl?`<small class="frules">Rules: ${fesc(fl)}</small>`:''):'<b>empty</b><small>a punch</small>'); });
   d.el.querySelector('.have').style.width=have+'%'; d.el.querySelector('.cost').style.width=Math.min(have,cost)+'%';
   d.el.querySelector('.inkn').textContent=Math.round(Math.min(have,cost))+' / '+have;
   d.el.querySelector('.make').disabled=!d.strokes.length||d.busy||ready;
@@ -2291,7 +2395,7 @@ function buildControls(){
 
 /* ---------- modes ---------- */
 function resetLocal(){
-  for(const s of [0,1]){ art[s]=[null,null]; Object.assign(inp[s],{l:0,r:0,d:0}); } fx=[]; view=null; resetAnim();
+  for(const s of [0,1]){ art[s]=[null,null]; Object.assign(inp[s],{l:0,r:0,d:0}); } fx=[]; view=null; resetAnim(); setForge(null);
 }
 function setMode(m){
   deskMenu=false;
@@ -2337,7 +2441,7 @@ function startMatch(bot){
   history.replaceState(null,'',location.pathname+location.search); createRoom(true);
 }
 async function createRoom(watch){
-  const q=new URLSearchParams(); if(STAGE) q.set('stage',STAGE); if(wantBot){ q.set('bot','1'); const sk=document.querySelector('#s-diff'); if(sk) q.set('skill',sk.value); }
+  const q=new URLSearchParams(); if(STAGE) q.set('stage',STAGE); if(!FORGE_PAGE) q.set('forge','0'); if(wantBot){ q.set('bot','1'); const sk=document.querySelector('#s-diff'); if(sk) q.set('skill',sk.value); }
   try{ const r=await fetch('/duel/room'+(q.toString()?'?'+q:''),{method:'POST'}); const o=await r.json(); if(!r.ok) throw new Error(o.error); joinRoom(o.code,watch===true); }
   catch(e){ alert('Could not create a room: '+(e.message||'the server did not answer')); }
 }
@@ -2353,7 +2457,8 @@ function joinRoom(code,watch){
   on('players',d=>{ net.present=d.present; net.bot=!!d.bot; net.screen=net.screen||!!d.screen; setPad(); });
   on('state',accept);
   on('item',d=>{ if(window.SFX&&!(padView&&net.screen)) SFX.play('made'); setArt(d.side,d.slot,d.strokes,d.ver,d.kind,d.style); if(desk[d.side]) updateDesk(desk[d.side]); });
-  on('reset',()=>{ for(const s of [0,1]) art[s]=[null,null]; fx=[]; for(const d of desk) if(d){ d.strokes=[]; d.k=0; } });
+  on('reset',()=>{ for(const s of [0,1]) art[s]=[null,null]; fx=[]; for(const d of desk) if(d){ d.strokes=[]; d.k=0; } setForge(null); });
+  on('forge',setForge);      // the room's rules: being written, or written (see RuleForge)
   on('plats',d=>{ if(!(deskLike()&&deskEdges&&net.watch)) ARENA_PLATS=d.plats||PLATS; });
   on('hello',()=>{ deskSent=''; rLayoutSent=''; rEdgesSent=''; deskTerrain(); });
   on('gone',()=>{ net.gone=true; es.close(); });
@@ -2415,6 +2520,8 @@ function accept(v){
     worldEvent(e);
     e.t0=performance.now(); fx.push(e);
     if(e.e==='block') shake=Math.max(shake,3);
+    if(e.e==='rule') e.txt=forgeCallout(e,forge,forgeSaid,e.t0,FORGE_LIMITS.sayEvery*1000);      // a match rule fired: its shout, or its name
+    if(e.e==='rulefault'&&forge){ forgeOff[e.id]=1; drawForge(); }
     if(e.e==='quake') shake=Math.max(shake,9);
     if(e.e==='hit'&&ANIM.rig&&anim[e.side]&&anim[e.side].rig) ANIM.rig.kick(anim[e.side].rig,(e.dir==='L'?-1:1)*(view?view.f[e.side].face:1),e.n);
     const now=e.t0, soft=CALM?0.3:1;
@@ -2585,6 +2692,8 @@ function retroBuild(){
   Object.assign(rwin.sketch.w.querySelector('.rbody').style,{maxHeight:'calc(100vh - 262px)',overflowY:'auto'});
   retroWindow('net','NetLink \u2014 join',$('overlay'),{left:'calc(50% - 60px)',top:'120px',transform:'translateX(-50%)',minWidth:'360px'},true);
   rwin.net.w.hidden=true;
+  // the rules written for this match: FORGE.EXE, while the players draw and whenever the menu is up
+  { const box=document.createElement('div'); box.id='forgeBox'; box.className='forge'; retroWindow('forge','FORGE.EXE',box,{right:'16px',top:'64px',width:'348px'}); rwin.forge.w.hidden=true; rwin.forge.want=false; }
   // on a big screen, what each player has made (with its stats) is a window too
   retroWindow('load','Loadouts \u2014 what each player has made',$('loadouts'),{left:'calc(50% - 60px)',top:'196px',transform:'translateX(-50%)',width:'min(760px,80vw)'},true);
   rwin.load.w.hidden=true;
@@ -2633,7 +2742,7 @@ function retroSync(menu){
   const v=view, Q=s=>document.querySelector(s), side=mySide1();
   $('cpuSkill').hidden=net?!net.bot:mode==='2p'||mode==='practice';
   $('playBot').setAttribute('aria-pressed',!!(net&&net.bot)); $('playPvp').setAttribute('aria-pressed',!!(net&&!net.bot));
-  rwin.game.want=menu; rwin.sketch.want=menu&&side>=0; rwin.net.want=!$('overlay').hidden; rwin.load.want=!$('loadouts').hidden;
+  rwin.game.want=menu; rwin.sketch.want=menu&&side>=0; rwin.net.want=!$('overlay').hidden; rwin.load.want=!$('loadouts').hidden; rwin.forge.want=!!forge&&(menu||v.phase==='count');
   for(const id in rwin){ const o=rwin[id], show=o.want&&!o.min; if(o.w.hidden===show){ o.w.hidden=!show; if(show) o.w.style.zIndex=++rTop; } o.task.hidden=!o.want; o.task.classList.toggle('on',show&&+o.w.style.zIndex===rTop); if(!o.want) o.min=false; }
   rwin.net.w.querySelector('.rname').textContent=net?'NetLink \u2014 room '+net.code:'NetLink \u2014 join';
   // Fighters panel, score, timeline, status bar (his hud(), reading this match)
@@ -3260,7 +3369,7 @@ function render(now){
   ultBack(v,now);
   // projectiles
   for(const p of v.pr){
-    const pa=p.z?0:age, x=p.x+p.vx*pa, y=GY-(p.y+p.vy*pa), it=v.items[p.side][p.slot];
+    const pa=p.z?0:age, x=p.x+p.vx*pa, y=GY-(p.y+p.vy*pa), ps=shotOwner(p), it=v.items[ps][p.slot];      // ps: whose drawing it is, also once it has been sent back
     if(p.k==='bolt'){ const path=wBolt[p.id]=wBolt[p.id]||[]; path.push({x:x+(Math.random()-.5)*12,y:y+(Math.random()-.5)*12}); if(path.length>10) path.shift();
       L.save(); L.strokeStyle='#fc0'; L.shadowColor='#ff0'; L.shadowBlur=12; L.lineWidth=3; if(path.length>1) FXI.strokePath(path); L.restore(); continue; }
     if(p.st==='wave'){   // the hammer's shock wave: a crest of ink running along the ground, with grit thrown up behind it
@@ -3269,7 +3378,7 @@ function render(now){
       L.lineWidth=3; for(let n=0;n<4;n++){ const bx=-28-n*26, h=10+((now/40+n*7)%18); L.globalAlpha=.7-n*.15; L.beginPath(); L.moveTo(bx,0); L.lineTo(bx-6,-h); L.stroke(); }
       L.restore(); continue; }
     if(p.st==='meteor'){   // the staff's meteor: a mark on the ground where it will land, then the orb and its tail
-      const col=p.el==='none'?PCOL[p.side]:PEN[p.el], r=30; L.save();
+      const col=p.el==='none'?PCOL[ps]:PEN[p.el], r=30; L.save();
       L.strokeStyle=col; L.lineWidth=3; L.globalAlpha=.5+.4*Math.sin(now/45); L.setLineDash([9,7]); L.beginPath(); L.ellipse(x,Math.min(GY,y+Math.max(0,p.y)),96,10,0,0,7); L.stroke(); L.setLineDash([]);
       L.globalAlpha=.3; L.fillStyle=col; L.beginPath(); L.moveTo(x-r,y); L.lineTo(x,y-r*6); L.lineTo(x+r,y); L.closePath(); L.fill();
       L.globalAlpha=1; L.shadowColor=col; L.shadowBlur=22; L.beginPath(); L.arc(x,y,r,0,7); L.fill(); L.shadowBlur=0; L.fillStyle='#fff'; L.beginPath(); L.arc(x-r*0.25,y-r*0.25,r*0.42,0,7); L.fill();
@@ -3279,19 +3388,19 @@ function render(now){
       const born=fleetSeen.get(p.id)||(fleetSeen.set(p.id,now),now), pop=Math.min(1,(now-born)/140), size=(it?it.sz:50)*1.25*(0.4+0.6*pop*(2-pop));
       const ang=p.h||!(p.vx||p.vy)?-(p.a||0):Math.atan2(-p.vy,p.vx), axis=it&&((it.kind==='melee'&&it.style!=='fist')||it.style==='staff');
       L.save(); L.translate(x,y+(p.h?Math.sin(now/170+p.id)*3:0)); L.rotate(ang);
-      if(!p.h){ const g=L.createLinearGradient(-150,0,0,0); g.addColorStop(0,'rgba(255,255,255,0)'); g.addColorStop(1,PCOL[p.side]); L.strokeStyle=g; L.globalAlpha=.55; L.lineCap='round'; L.lineWidth=7; L.beginPath(); L.moveTo(-150,0); L.lineTo(-10,0); L.stroke(); L.globalAlpha=1; }
-      L.shadowColor=PCOL[p.side]; L.shadowBlur=14; L.globalAlpha=0.35+0.65*pop;
-      if(axis){ L.translate(-size/2,0); if(!sprite(p.side,p.slot,size,true)){ L.fillStyle=PCOL[p.side]; L.fillRect(0,-3,size,6); } }
-      else if(!sprite(p.side,p.slot,size)){ L.fillStyle=PCOL[p.side]; L.beginPath(); L.arc(0,0,10,0,7); L.fill(); }
+      if(!p.h){ const g=L.createLinearGradient(-150,0,0,0); g.addColorStop(0,'rgba(255,255,255,0)'); g.addColorStop(1,PCOL[ps]); L.strokeStyle=g; L.globalAlpha=.55; L.lineCap='round'; L.lineWidth=7; L.beginPath(); L.moveTo(-150,0); L.lineTo(-10,0); L.stroke(); L.globalAlpha=1; }
+      L.shadowColor=PCOL[ps]; L.shadowBlur=14; L.globalAlpha=0.35+0.65*pop;
+      if(axis){ L.translate(-size/2,0); if(!sprite(ps,p.slot,size,true)){ L.fillStyle=PCOL[ps]; L.fillRect(0,-3,size,6); } }
+      else if(!sprite(ps,p.slot,size)){ L.fillStyle=PCOL[ps]; L.beginPath(); L.arc(0,0,10,0,7); L.fill(); }
       L.restore(); continue; }
     if(p.k==='shot'){ const col=p.el==='none'?'#111':PEN[p.el]; L.save(); L.translate(x,y); L.rotate(Math.atan2(-p.vy,p.vx)); L.strokeStyle=col; L.fillStyle=col; L.lineCap='round'; L.lineJoin='round';
       if(p.st==='bow'){ if(p.big>1){ L.scale(1+0.5*p.big,1+0.5*p.big); L.globalAlpha=.35; L.lineWidth=9; L.beginPath(); L.moveTo(-120,0); L.lineTo(-44,0); L.stroke(); L.globalAlpha=1; } L.lineWidth=3.5; L.beginPath(); L.moveTo(-44,0); L.lineTo(0,0); L.moveTo(-9,-5); L.lineTo(0,0); L.lineTo(-9,5); L.moveTo(-44,0); L.lineTo(-50,-5); L.moveTo(-44,0); L.lineTo(-50,5); L.stroke(); }
       else if(p.st==='staff'){ const r=8+5*(p.big||0); L.globalAlpha=.3; L.beginPath(); L.moveTo(0,-r); L.lineTo(-r*4.5,0); L.lineTo(0,r); L.closePath(); L.fill(); L.globalAlpha=1; L.beginPath(); L.arc(0,0,r,0,7); L.fill(); L.fillStyle='#fff'; L.beginPath(); L.arc(r*0.2,-r*0.2,r*0.45,0,7); L.fill();
         L.lineWidth=2.5; for(let n=0;n<3;n++){ const a2=now/70+n*2.1; L.beginPath(); L.arc(0,0,r+5,a2,a2+0.9); L.stroke(); } }
-      else if(p.st==='hurl'){ L.rotate(now/40); if(!it||!sprite(p.side,p.slot,it.sz*0.85)){ L.beginPath(); for(let n=0;n<8;n++){ const q=n%2?4:11, a2=n*Math.PI/4; n?L.lineTo(Math.cos(a2)*q,Math.sin(a2)*q):L.moveTo(Math.cos(a2)*q,Math.sin(a2)*q); } L.closePath(); L.fill(); } }
+      else if(p.st==='hurl'){ L.rotate(now/40); if(!it||!sprite(ps,p.slot,it.sz*0.85)){ L.beginPath(); for(let n=0;n<8;n++){ const q=n%2?4:11, a2=n*Math.PI/4; n?L.lineTo(Math.cos(a2)*q,Math.sin(a2)*q):L.moveTo(Math.cos(a2)*q,Math.sin(a2)*q); } L.closePath(); L.fill(); } }
       else{ L.globalAlpha=.35; L.lineWidth=4; L.beginPath(); L.moveTo(-46,0); L.lineTo(-8,0); L.stroke(); L.globalAlpha=1; L.lineWidth=6; L.beginPath(); L.moveTo(-12,0); L.lineTo(0,0); L.stroke(); }
       L.restore(); }
-    else{ L.save(); L.translate(x,y); L.rotate(now/90*Math.sign(p.vx||1)); if(!it||!sprite(p.side,p.slot,it.sz)){ L.fillStyle=PEN[p.el]; L.beginPath(); L.arc(0,0,10,0,7); L.fill(); } L.restore(); }
+    else{ L.save(); L.translate(x,y); L.rotate(now/90*Math.sign(p.vx||1)); if(!it||!sprite(ps,p.slot,it.sz)){ L.fillStyle=PEN[p.el]; L.beginPath(); L.arc(0,0,10,0,7); L.fill(); } L.restore(); }
   }
   if(fleetSeen.size>40) for(const id of [...fleetSeen.keys()]) if(!v.pr.some(p=>p.id===id)) fleetSeen.delete(id);
   drawFighter(v,1,now,age,dt); drawFighter(v,0,now,age,dt);
@@ -3299,9 +3408,9 @@ function render(now){
   if(v.sheet) sheetFront(v,now);
   hpGhostStep(v,now,dt);
   // effects
-  fx=fx.filter(e=>now-e.t0<700);
+  fx=fx.filter(e=>now-e.t0<(e.e==='rule'?900:700));
   for(const e of fx){
-    const a=(now-e.t0)/700, y=GY-(e.y||0); L.globalAlpha=1-a;
+    const a=(now-e.t0)/(e.e==='rule'?900:700), y=GY-(e.y||0); L.globalAlpha=1-a;
     if(e.e==='hit'){ L.strokeStyle=e.el==='none'?'#111':PEN[e.el]; L.lineCap='round'; for(let n=0;n<9;n++){ const t=n*Math.PI*2/9+0.23, r0=8+a*33, r1=r0+(1-a)*(n%2?19:31); L.lineWidth=n%2?2:3; L.beginPath(); L.moveTo(e.x+Math.cos(t)*r0,y+Math.sin(t)*r0); L.lineTo(e.x+Math.cos(t)*r1,y+Math.sin(t)*r1); L.stroke(); }
       if(a<0.3){ const g=1-a/0.3, tilt=((e.x*7+e.n*13)%10)/10*1.6-0.8, len=70+e.n*5, cx=Math.cos(tilt), sy=Math.sin(tilt); L.globalAlpha=g; L.fillStyle=e.el==='none'?'#111':PEN[e.el]; L.beginPath(); L.moveTo(e.x-cx*len,y-sy*len); L.lineTo(e.x+sy*5*g,y-cx*5*g); L.lineTo(e.x+cx*len,y+sy*len); L.lineTo(e.x-sy*5*g,y+cx*5*g); L.closePath(); L.fill(); L.fillStyle='#fff'; L.beginPath(); L.moveTo(e.x-cx*len*0.7,y-sy*len*0.7); L.lineTo(e.x+sy*1.6*g,y-cx*1.6*g); L.lineTo(e.x+cx*len*0.7,y+sy*len*0.7); L.lineTo(e.x-sy*1.6*g,y+cx*1.6*g); L.closePath(); L.fill(); L.globalAlpha=1-a; }
       if(!e.ult){ L.font='26px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=PEN[e.el]; L.fillText('-'+e.n,e.x,y-30-a*30);
@@ -3314,6 +3423,7 @@ function render(now){
     else if(e.e==='quake'){ L.strokeStyle='#111'; L.lineCap='round'; L.lineWidth=4*(1-a)+1; L.beginPath(); L.ellipse(e.x,y+2,e.n*(0.3+a*1.1),6+a*8,0,Math.PI,Math.PI*2); L.stroke();
       L.lineWidth=3; for(let n=0;n<7;n++){ const dx=(n-3)*e.n*0.26*(0.5+a), h=(n%2?26:44)*Math.sin(Math.min(1,a*1.6)*Math.PI); L.beginPath(); L.moveTo(e.x+dx,y-4); L.lineTo(e.x+dx*1.15,y-4-h); L.stroke(); } }
     else if(e.e==='heal'){ L.font='26px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=PEN.plant; L.fillText('+'+e.n,e.x,y-a*30); }
+    else if(e.e==='rule'){ if(e.txt){ L.save(); L.globalAlpha=Math.min(1,(1-a)*2.5); L.font='bold 25px "Gochi Hand",cursive'; L.textAlign='center'; L.lineJoin='round'; L.lineWidth=5; L.strokeStyle='#fffdf6'; L.strokeText(e.txt,e.x,y-16-a*34); L.fillStyle=PCOL[e.side]||'#111'; L.fillText(e.txt,e.x,y-16-a*34); L.restore(); } }      // a match rule's shout over its owner, in their colour
     else if(e.e==='boom'){ L.strokeStyle=e.el==='none'?'#e2a52d':PEN[e.el]; L.lineWidth=6*(1-a)+1; L.beginPath(); L.arc(e.x,y,e.n*(0.3+0.7*Math.min(1,a*2.2)),0,7); L.stroke();
       L.font='30px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=L.strokeStyle; L.fillText('BOOM',e.x,y-e.n*0.6-a*20); }
   }
@@ -3327,6 +3437,7 @@ function render(now){
   if(v.phase==='draw'&&RETRO&&(local[0]||local[1]||!$('overlay').hidden)){ /* a window is open there: the sketchbook, or the join code, which must stay scannable */ }
   else if(v.phase==='draw'){ banner('Round '+v.round+': draw your gear!',40,70);
     const st=s=>NAME[s]+(v.ready[s]?' is ready ✓':' has '+v.items[s].filter(Boolean).length+'/2 drawn'); banner(st(0)+'   ·   '+st(1),22,104,'#59658a'); }
+  else if(v.phase==='count'&&v.t<=0&&forge&&forge.state==='working') banner('Forging rules...',64,190);      // the countdown is over and waits for the match rules (S.setHold)
   else if(v.phase==='count') banner(String(Math.max(1,Math.ceil(v.t))),120,200);
   else if(v.phase==='fight'&&v.t>ROUND_TIME-0.8&&!v.practice) banner('FIGHT!',96,190,'#e2552d');
   else if(v.phase==='fight'&&v.t<=10) banner(String(Math.ceil(v.t)),44,60,'#e2552d');
@@ -3340,10 +3451,11 @@ function frame(now){
   const dt=Math.max(0,Math.min(0.05,(now-last)/1000)); last=now;      // never negative: a late frame must not run the match backwards
   deskSync();
   const ts=LAB?lab.speed:RETRO?FXI.P.speed:1;                                          // his Time scale slider (local matches)
+  if(sim) localForge(now);
   if(sim&&!deskPaused){ if(bot){ bot(sim,dt*ts); if(sim.phase==='draw'&&!sim.ready[1]) sim.setReady(1); } sim.step(dt*ts); if(LAB) labTick(dt*ts); accept(sim.snapshot()); }
   FXI.step(dt);
   if(RETRO){ fpsT+=dt; fpsN++; if(fpsT>0.5){ document.querySelector('#st-fps').textContent=Math.round(fpsN/fpsT)+' fps'; fpsT=0; fpsN=0; } }
-  if(view){ syncUI(); render(now); if(padView&&net&&net.side>=0){ const tc=document.querySelector('.tcs'); if(tc) document.body.style.setProperty('--pad',(tc.getBoundingClientRect().height+12)+'px'); $('strip').hidden=$('stripbar').hidden=false; drawStrip(view); } }
+  if(view){ syncUI(); forgeTick(now); render(now); if(padView&&net&&net.side>=0){ const tc=document.querySelector('.tcs'); if(tc) document.body.style.setProperty('--pad',(tc.getBoundingClientRect().height+12)+'px'); $('strip').hidden=$('stripbar').hidden=false; drawStrip(view); } }
   requestAnimationFrame(frame);
 }
 if(canRead) fetch('/info').then(r=>r.json()).then(o=>{ serverInfo=o; $('reader').textContent='Drawings read by: '+o.reader; canRead=/OpenAI/.test(o.reader); overlayKey=overlayKey.startsWith('wait')?'':overlayKey; }).catch(()=>{ canRead=false; });

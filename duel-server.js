@@ -61,7 +61,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   // items go at once and no forge still running for them may install anything (gen); 400 ms after the last change,
   // with an item on each side, rules for the new ones are forged.
   function scheduleForge(room){
-    if(!FORGE_ON) return;
+    if(!FORGE_ON||room.forge.off) return;
     const fg=room.forge, S=room.sim, items=F.itemsOf(S), key=F.keyOf(items);
     if(fg.sim===S&&fg.key===key) return;
     const was=fg.state, gen=++fg.gen; clearTimeout(fg.timer); S.clearRules();
@@ -84,10 +84,10 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   /* ---------- rooms ---------- */
   const rooms=new Map(), LETTERS='ABCDEFGHJKLMNPQRSTUVWXYZ';
   // bot: Red is played by the game's bot on the server, so one person with a controller can play. skill is its 0 to 1 setting.
-  function newRoom(stage,bot,skill){
+  function newRoom(stage,bot,skill,plain){      // plain: a room without match rules (its page was opened with ?forge=0)
     let code; do{ code=Array.from({length:4},()=>LETTERS[Math.floor(Math.random()*LETTERS.length)]).join(''); }while(rooms.has(code));
     const now=Date.now(), room={code,stage:stage==='sheet'?'sheet':'',sim:D.createDuel(stage==='sheet'?{stage:'sheet'}:undefined),art:[[null,null],[null,null]],players:new Map(),watchers:new Set(),clients:new Set(),last:now,sent:0,seen:now,dirty:true,bot:null,skill:Number.isFinite(skill)?Math.max(0,Math.min(1,skill)):0.55,
-      forge:{sim:null,key:'',gen:0,state:'idle',rules:[],ms:0,timer:null,held:null}};
+      forge:{sim:null,key:'',gen:0,state:'idle',rules:[],ms:0,timer:null,held:null,off:!!plain}};
     if(bot){ room.players.set('(bot)',1); room.bot=D.makeBot(1,()=>room.skill); armBot(room); }
     rooms.set(code,room); return room;
   }
@@ -163,7 +163,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   return async function handle(req,res,url){
     const p=url.pathname;
     // Animation clip files and the preview lab are plain static files.
-    if(req.method==='GET'&&(/^\/anim\/[a-z_]+\.js$/.test(p)||p==='/anim-lab.html'||p==='/inkshop.js'||p==='/sfx.js'||p==='/inkshop.css')){
+    if(req.method==='GET'&&(/^\/anim\/[a-z_]+\.js$/.test(p)||p==='/anim-lab.html'||p==='/inkshop.js'||p==='/forgescript.js'||p==='/sfx.js'||p==='/inkshop.css')){      // forgescript.js: the rule language, for matches simulated in the page
       const file=path.join(__dirname,p.slice(1));
       if(!fs.existsSync(file)){ res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-cache'}); res.end('/* '+p+' is not written yet */'); return true; }
       res.writeHead(200,{'Content-Type':(p.endsWith('.html')?'text/html':p.endsWith('.css')?'text/css':'text/javascript')+'; charset=utf-8','Cache-Control':'no-cache'}); fs.createReadStream(file).pipe(res); return true;
@@ -189,7 +189,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       const out=await F.forgeRules(items); send(200,{rules:out.rules,ms:out.ms}); return true;
     }
     if(req.method==='POST'&&p==='/duel/room'){
-      if(rooms.size>=500) send(503,{error:'Too many rooms are open right now.'}); else send(200,{code:newRoom(url.searchParams.get('stage'),url.searchParams.get('bot')==='1',parseFloat(url.searchParams.get('skill'))).code});      // ?stage=sheet: the spreadsheet stage
+      if(rooms.size>=500) send(503,{error:'Too many rooms are open right now.'}); else send(200,{code:newRoom(url.searchParams.get('stage'),url.searchParams.get('bot')==='1',parseFloat(url.searchParams.get('skill')),url.searchParams.get('forge')==='0').code});      // ?stage=sheet: the spreadsheet stage
       return true;
     }
     if(req.method==='GET'&&p==='/duel/events'){
