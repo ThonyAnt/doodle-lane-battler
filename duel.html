@@ -3604,6 +3604,9 @@ function makeNetBot(side,theta,skillOf){
 // Ready-made doodles, in pad coordinates: one of everything a player can draw. Used by the bot and offered in the
 // sketchbook as stock items, so a move set can be tried without drawing or waiting for the vision model.
 const STOCK=(()=>{
+  // seg: a straight stroke with points along it, so that a long thin part weighs as much as a round one when the sprite's long axis is worked out
+  const seg=(x0,y0,x1,y1,n=10)=>{ const pts=[]; for(let i=0;i<=n;i++) pts.push([Math.round(x0+(x1-x0)*i/n),Math.round(y0+(y1-y0)*i/n)]); return pts; };
+  const wave=(x,y0,y1,amp,turns,n=24)=>{ const pts=[]; for(let i=0;i<=n;i++) pts.push([Math.round(x+Math.sin(i/n*turns*Math.PI*2)*amp),Math.round(y0+(y1-y0)*i/n)]); return pts; };
   const T=Math.PI*2, ring=(cx,cy,rx,ry,a0,a1)=>{ const pts=[]; for(let i=0;i<=20;i++){ const a=a0+(a1-a0)*i/20; pts.push([Math.round(cx+Math.cos(a)*rx),Math.round(cy+Math.sin(a)*ry)]); } return pts; };
   return {
     sword: {label:'Sword',kind:'melee',style:'blade',s:[5,5,5],t:['flurry','guard'],pts:[[[240,285],[240,60]],[[200,235],[280,235]],[[240,30],[226,62],[226,235]],[[240,30],[254,62],[254,235]]]},
@@ -3621,13 +3624,43 @@ const STOCK=(()=>{
     bomb:  {label:'Bomb',kind:'bomb',s:[8,5,2],t:['bounce','heavy'],pts:[ring(240,170,62,62,0,T),[[270,115],[300,80],[290,60]]]},
     shield:{label:'Shield',kind:'shield',s:[5,5,5],t:['thorns','bubble'],pts:[[[160,60],[320,60],[320,170],[240,255],[160,170],[160,60]],[[240,90],[240,210]]]},
     wings: {label:'Wings',kind:'dash',s:[4,6,5],t:['swift','launch'],pts:[[[120,150],[200,90],[280,150]],[[200,150],[280,90],[360,150]],[[150,190],[330,190]]]},
-    snack: {label:'Snack',kind:'heal',s:[5,5,5],t:['cleanse','feast'],pts:[[[240,230],[170,150],[170,110],[205,95],[240,125],[275,95],[310,110],[310,150],[240,230]]]}
+    snack: {label:'Snack',kind:'heal',s:[5,5,5],t:['cleanse','feast'],pts:[[[240,230],[170,150],[170,110],[205,95],[240,125],[275,95],[310,110],[310,150],[240,230]]]},
+    /* The specials (fancy:1): ready-made weapons that show what customizations can do, for players who would rather not
+       draw. Each is a drawing, a leaning, and a signature set of blocks in cu (see fitAll: three blocks and ten points at
+       most; el is the ink it is made in when the pen is plain). The sketchbook lists them first. */
+    fang:  {label:'Vampire Fang',fancy:1,kind:'melee',style:'blade',s:[5,4,6],t:['flurry','lucky'],cu:[{id:'lifesteal'},{id:'mark'}],
+      pts:[seg(240,292,240,222,6),[[212,222],[268,222]],[[226,222],[220,160],[230,100],[262,34]],[[254,222],[262,160],[266,100],[262,34]],[[240,205],[244,150],[254,90]]]},
+    brolly:{label:'Umbrella',fancy:1,kind:'melee',style:'spear',s:[3,7,5],t:['pierce','pull'],el:'water',cu:[{id:'glide'},{id:'guardian'},{id:'rain'}],
+      pts:[seg(240,268,240,36,16),[[240,268],[240,284],[228,294],[216,286]],ring(240,112,58,62,Math.PI,T),[[182,112],[202,98],[221,112],[240,98],[259,112],[278,98],[298,112]]]},
+    rod:   {label:'Fishing Rod',fancy:1,kind:'melee',style:'spear',s:[3,8,4],t:['pull','pierce'],cu:[{id:'tether'},{id:'thrown'},{id:'skid'}],
+      pts:[seg(236,294,246,24,18),ring(228,236,11,11,0,T),[[246,24],[272,40],[284,84],[284,128]],[[284,128],[292,142],[284,152],[274,144]]]},
+    saw:   {label:'Chainsaw',fancy:1,kind:'melee',style:'blade',s:[7,4,4],t:['heavy','flurry'],el:'fire',cu:[{id:'heavy',cost:{cost:'heat'}},{id:'fire'},{id:'echo'}],
+      pts:[[[206,292],[274,292],[274,226],[206,226],[206,292]],[[222,270],[258,270],[258,246],[222,246],[222,270]],seg(224,226,224,56,10),seg(256,226,256,56,10),[[224,56],[240,34],[256,56]],
+        [[256,212],[268,202],[256,192],[268,182],[256,172],[268,162],[256,152],[268,142],[256,132],[268,122],[256,112],[268,102],[256,92],[268,82],[256,72]]]},
+    banana:{label:'Banana',fancy:1,kind:'ranged',style:'hurl',s:[3,6,6],t:['boomerang','flurry'],cu:[{id:'slick'},{id:'swarm'},{id:'split'}],
+      pts:[ring(240,70,130,150,T*0.07,T*0.43),ring(240,96,112,96,T*0.09,T*0.41),[[352,128],[366,116],[362,104]],[[128,128],[118,118]]]},
+    cat:   {label:'Cat',fancy:1,kind:'melee',style:'fist',s:[4,3,8],t:['flurry','swift'],cu:[{id:'pet'},{id:'orbiter'},{id:'airjump'}],
+      pts:[ring(240,170,72,60,0,T),[[182,134],[176,78],[214,114]],[[298,134],[304,78],[266,114]],ring(214,160,7,9,0,T),ring(266,160,7,9,0,T),[[232,182],[240,190],[248,182]],
+        [[240,190],[240,200],[228,206]],[[240,200],[252,206]],[[196,186],[150,178]],[[196,194],[152,202]],[[284,186],[330,178]],[[284,194],[328,202]]]},
+    comet: {label:'Meteor Hammer',fancy:1,kind:'melee',style:'hammer',s:[8,4,3],t:['heavy','launch'],cu:[{id:'shockwave'},{id:'quake'},{id:'giant'}],
+      pts:[seg(240,294,240,136,10),ring(240,82,54,54,0,T),[[240,28],[240,8]],[[286,48],[302,32]],[[294,82],[316,82]],[[194,48],[178,32]],[[186,82],[164,82]],ring(226,70,12,10,0,T),ring(258,96,8,7,0,T)]},
+    wraith:{label:'Ghost Blade',fancy:1,kind:'melee',style:'blade',s:[4,5,6],t:['flurry','guard'],cu:[{id:'echo'},{id:'dashhit'}],
+      pts:[seg(240,292,240,238,5),[[206,238],[274,238]],[[228,238],[220,192],[234,150],[222,108],[236,70],[240,26]],[[252,238],[260,192],[248,150],[262,108],[250,70],[240,26]],
+        ring(240,292,10,8,0,T),[[196,238],[190,226]],[[284,238],[290,226]]]},
+    bubble:{label:'Bubble Wand',fancy:1,kind:'ranged',style:'staff',s:[5,6,4],t:['homing','blast'],el:'water',cu:[{id:'float'},{id:'linger'},{id:'moon'}],
+      pts:[seg(240,294,240,132,12),ring(240,88,44,44,0,T),ring(240,88,30,30,T*0.55,T*0.8),ring(312,60,15,15,0,T),ring(330,118,9,9,0,T),ring(170,52,11,11,0,T)]},
+    pinball:{label:'Pinball Gun',fancy:1,kind:'ranged',style:'gun',s:[3,6,6],t:['lucky','bounce'],cu:[{id:'ricochet'},{id:'split'},{id:'turret'}],
+      pts:[[[140,112],[300,112],[300,146],[198,146],[186,206],[144,206],[140,112]],[[208,146],[216,172],[194,174]],ring(322,129,24,24,0,T),ring(322,129,10,10,0,T),ring(376,129,10,10,0,T),[[160,112],[160,96],[196,96],[196,112]]]},
+    thorn: {label:'Thorn Whip',fancy:1,kind:'melee',style:'spear',s:[4,7,4],t:['pull','pierce'],el:'plant',cu:[{id:'spikes'},{id:'overgrown'},{id:'mark'}],
+      pts:[wave(240,292,30,16,2.5,30),seg(232,292,248,292,2),[[254,250],[270,240]],[[226,214],[210,204]],[[254,170],[270,160]],[[226,130],[210,120]],[[254,90],[270,80]],[[240,30],[232,16],[248,16],[240,30]]]},
+    storm: {label:'Storm Bow',fancy:1,kind:'ranged',style:'bow',s:[6,7,2],t:['pierce','homing'],cu:[{id:'gust'},{id:'spiral'},{id:'empower',when:{when:'charge'}}],
+      pts:[ring(200,150,70,112,-T/4,T/4),seg(200,38,200,262,10),[[150,150],[214,142],[200,158],[262,150],[248,166],[318,150]],[[318,150],[300,138]],[[318,150],[304,164]],ring(118,96,20,14,0,T),ring(142,84,22,16,0,T),ring(98,112,14,10,0,T)]}
   };
 })();
 function stockItem(key,element){
-  const s=STOCK[key]; if(!s) return null; element=ELS.includes(element)?element:'none';
+  const s=STOCK[key]; if(!s) return null; element=ELS.includes(element)&&element!=='none'?element:(s.el||'none');      // a special made with the plain pen comes in its own ink
   const spec={kind:s.kind,style:s.style||'',element,name:(element==='none'?'':{fire:'Fire ',water:'Water ',plant:'Leafy '}[element])+s.label,
-    power:s.s[0],range:s.s[1],speed:s.s[2],traits:s.t,trait:s.t[0]};
+    power:s.s[0],range:s.s[1],speed:s.s[2],traits:s.t,trait:s.t[0],customs:s.cu};
   return {spec,strokes:s.pts.map(pts=>({el:element,pts}))};
 }
 function botLoadout(seed){
@@ -4114,7 +4147,8 @@ function buildDesks(){
       <div class="actions"><button class="undo">Undo</button><button class="clear">Clear</button><button class="primary make">Make it!</button><button class="ready">I'm ready</button></div>
       <div class="read"></div>
       <div class="card" hidden></div>
-      <div class="stock"><span>Ready-made:</span>${Object.keys(STOCK).map(k=>`<button data-stock="${k}">${STOCK[k].label}</button>`).join('')}</div>`;
+      <div class="stock"><span>Specials (each has its own powers):</span>${Object.keys(STOCK).filter(k=>STOCK[k].fancy).map(k=>`<button data-stock="${k}" title="${esc((STOCK[k].cu||[]).map(c=>c.id).join(' + '))}">${STOCK[k].label}</button>`).join('')}</div>
+      <div class="stock"><span>Plain ready-made:</span>${Object.keys(STOCK).filter(k=>!STOCK[k].fancy).map(k=>`<button data-stock="${k}">${STOCK[k].label}</button>`).join('')}</div>`;
     box.appendChild(el);
     const d=desk[side]={el,side,k:0,pen:'none',strokes:[],busy:false,cur:null,pad:el.querySelector('.pad')}; d.g=d.pad.getContext('2d');
     el.querySelectorAll('.slot').forEach(b=>b.onclick=()=>{ d.k=+b.dataset.k; updateDesk(d); });
@@ -6201,7 +6235,7 @@ function shapeFx(e,a,y){
 function labShape(){
   const box=$('labShapes'); if(!box||!sim) return; const kind=MELEE_STYLES.includes(lab.style)?'melee':'ranged';
   if(lab.shape&&!SHAPES[lab.shape].kinds.includes(kind)) lab.shape='';
-  sim.shapeSet(0,0,lab.shape?[{id:lab.shape}]:[]);
+  if(!lab.special||lab.shape) sim.shapeSet(0,0,lab.shape?[{id:lab.shape}]:[]);      // a special preset keeps its own shot shapes unless one is picked here
   box.querySelectorAll('button').forEach(b=>{ b.disabled=!SHAPES[b.dataset.c].kinds.includes(kind); b.classList.toggle('on',b.dataset.c===lab.shape); });
   $('labShapeText').textContent=lab.shape?SHAPES[lab.shape].text+' ('+SHAPES[lab.shape].cost+' points)':'';
 }
@@ -6220,10 +6254,11 @@ function labShapeBuild(el){
 // works, so runs, jumps and combos can be tried by hand too.
 const LAB_STOCK={blade:'sword',spear:'spear',hammer:'hammer',fist:'gloves',dual:'twins',bow:'bow',gun:'gun',akimbo:'pistols',staff:'staff',hurl:'star'};
 const LAB_NAME={blade:'Sword',spear:'Spear',hammer:'Hammer',fist:'Fists',dual:'Twin blades',bow:'Bow',gun:'Gun',akimbo:'Twin pistols',staff:'Staff',hurl:'Thrown'};
-const lab={style:'blade',el:'none',speed:1,loop:false,gap:220,last:null,idle:0,customs:[],low:false,todo:[],tcu:[],cu:'',trig:'',wound:false,leaves:[]};
+const lab={style:'blade',el:'none',speed:1,loop:false,gap:220,last:null,idle:0,customs:[],low:false,todo:[],special:null,tcu:[],cu:'',trig:'',wound:false,leaves:[]};
 const LAB_TF={twoform:{id:'twoform'},twin:{id:'twin',secs:4},giant:{id:'giant',every:3},evolve:{id:'evolve',hits:2},thrown:{id:'thrown'},overgrown:{id:'overgrown',secs:12}};      // transform: quick settings for trying each one
-function labEquip(){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,Object.assign({},st.spec,{customs:(lab.customs||[]).concat(lab.tf?[Object.assign({},LAB_TF[lab.tf],lab.tf==='twoform'&&lab.alt?{alt:lab.alt}:null)]:[])}),50); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0;
-  for(const row of [labLeaves,labCost,labTarget,labTrig,labShape,labSummon,labArenaApply]) row();      // each row puts its own axis's blocks back on the rebuilt item and leaves the others' alone
+function labEquip(){ const st=stockItem(lab.special||LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,lab.special?st.spec:Object.assign({},st.spec,{customs:(lab.customs||[]).concat(lab.tf?[Object.assign({},LAB_TF[lab.tf],lab.tf==='twoform'&&lab.alt?{alt:lab.alt}:null)]:[])}),50); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0;
+  if(!lab.special) for(const row of [labLeaves,labCost,labTarget,labTrig,labShape,labSummon,labArenaApply]) row();      // a special preset comes with its own blocks: the rows are not applied over it (they can still add to it)
+  else{ const box=$('labSpecialV'); if(box) box.textContent=(it.customs||[]).map(c=>(customCatalog(it.kind,it.style).find(x=>x.key===customKey(c))||{label:c.id}).label).join(' + '); }
   if(desk[0]) updateDesk(desk[0]); labCustoms(); }
 // wielder customizations in the move tester: a button for every block in CUSTOMS, by axis, and a slider for every
 // parameter of the ones switched on. All of it is read from the table; a new block needs no line here.
@@ -6408,6 +6443,13 @@ function labBuild(){
   $('labAlt').onchange=e=>{ lab.alt=e.target.value; e.target.blur(); if(lab.tf==='twoform') pickTf('twoform'); };
   $('labTfGo').onclick=e=>{ e.target.blur(); sim.morph(0,0); }; $('labTfBack').onclick=e=>{ e.target.blur(); sim.morph(0,0,true); };
   lab.tf=''; tfs.querySelector('button').classList.add('on');
+  // the special presets (STOCK entries with fancy): one click equips the whole thing
+  { const row=document.createElement('div'); row.className='row'; row.innerHTML='<b>Specials</b><span id="labSpecials" class="row" style="margin:0">'+Object.keys(STOCK).filter(k=>STOCK[k].fancy).map(k=>'<button data-sp="'+k+'">'+esc(STOCK[k].label)+'</button>').join('')+'</span> <small id="labSpecialV" style="color:var(--muted)"></small>';
+    const first=el.querySelector('.row'); first.after(row);
+    const mark=()=>{ row.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.sp===lab.special)); if(!lab.special) $('labSpecialV').textContent=''; };
+    $('labStyles').addEventListener('click',()=>{ lab.special=null; mark(); },true);      // picking a plain weapon leaves the special
+    row.querySelectorAll('button').forEach(b=>b.onclick=()=>{ b.blur(); lab.special=b.dataset.sp; lab.style=STOCK[lab.special].style; lab.cur=lab.style; lab.last=null;
+      document.querySelectorAll('#labStyles button').forEach(q=>q.classList.toggle('on',q.dataset.s===lab.style)); labEquip(); labMoves(); labPlace(); mark(); }); }
   sim.step(0.05); pickEl('none'); pickStyle('blade');
 }
 if(REPLAY) setReplay(REPLAY);      // duel?replay=CODE: watch that room's match again
