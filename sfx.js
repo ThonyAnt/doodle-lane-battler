@@ -34,7 +34,10 @@
   // Recordings: a few takes of each sound, loaded once the audio engine starts. smp plays a random take (never the same
   // one twice running) at a slightly varied speed, and says whether it could.
   const FILES={slash:[1,2,3,4,5,6,7,8,9,10].map(n=>'slash'+n+'.ogg'),swishL:[1,2,3,4].map(n=>'swishL'+n+'.wav'),swishH:[1,2,3,4].map(n=>'swishH'+n+'.wav'),
-    pistol:[1,2,3,4].map(n=>'pistol'+n+'.wav'),magnum:[1,2,3].map(n=>'magnum'+n+'.wav')}, BUF={}, lastTake={}; let loading=false;
+    pistol:[1,2,3,4].map(n=>'pistol'+n+'.wav'),magnum:[1,2,3].map(n=>'magnum'+n+'.wav')};
+  // picked from sfx-library/ (see sfx/CREDITS.md): name, number of takes, file type
+  for(const [k,n,x] of [['punchM',5],['punchH',5],['clang',5],['mine',5],['step',4],['splash',4],['bubble',3,'wav'],['pop',5],['scratch',5],['uiclick',5],['glitch',4],['confirm',4],['zap',4],['error',3]]){ FILES[k]=[]; for(let i=1;i<=n;i++) FILES[k].push(k+i+'.'+(x||'ogg')); }
+  const BUF={}, lastTake={}; let loading=false;
   function loadAll(){ if(loading||!ctx||!window.fetch) return; loading=true;
     for(const set in FILES){ BUF[set]=[]; FILES[set].forEach((f,i)=>{ fetch('/sfx/'+f).then(r=>r.ok?r.arrayBuffer():Promise.reject()).then(a=>new Promise((ok,no)=>ctx.decodeAudioData(a,ok,no))).then(b=>{ BUF[set][i]=b; }).catch(()=>{}); }); } }
   function smp(dst,set,g,rate){ const have=(BUF[set]||[]).map((b,i)=>b?i:-1).filter(i=>i>=0); if(!have.length) return false;
@@ -44,15 +47,15 @@
 
   // name -> [shortest gap between two plays in ms, how to make it]
   const S={
-    click:  [30, d=>{ tone(d,'square',1300,900,0.025,0.10); }],
+    click:  [30, d=>{ if(smp(d,'uiclick',0.5)) return; tone(d,'square',1300,900,0.025,0.10); }],
     swing:  [50, (d,o)=>{ const w=o.w||0.3; if(o.blade?smp(d,'slash',0.75,1.08-0.2*w):smp(d,w>0.55?'swishH':'swishL',0.9,1.1-0.25*w)) return; noise(d,'bandpass',500-200*w,2600-900*w,0.13+0.08*w,0.22+0.12*w,0,1.4,0.03); }],
     slash:  [60, d=>{ if(smp(d,'slash',0.85,0.9)) return; noise(d,'bandpass',900,5200,0.16,0.3,0,2,0.02); tone(d,'sawtooth',1400,500,0.12,0.05); }],
-    hit:    [35, (d,o)=>{ const w=Math.min(1,o.w||0.3); tone(d,'sine',190-70*w,48,0.10+0.12*w,0.5+0.3*w); noise(d,'lowpass',2600-1200*w,400,0.07+0.05*w,0.35+0.25*w);
-              if(o.el==='fire') noise(d,'highpass',2500,6000,0.18,0.12,0.02); if(o.el==='water') tone(d,'sine',500,1100,0.12,0.12,0.02); if(o.el==='plant') tone(d,'triangle',260,180,0.12,0.14,0.02); }],
-    block:  [60, d=>{ tone(d,'square',980,940,0.11,0.10); tone(d,'square',1470,1440,0.09,0.07); noise(d,'highpass',4000,4000,0.03,0.2); }],
+    hit:    [35, (d,o)=>{ const w=Math.min(1,o.w||0.3); if(smp(d,w>=0.5?'punchH':'punchM',0.8+0.2*w,1.08-0.16*w)) tone(d,'sine',150-50*w,46,0.08+0.08*w,0.25+0.25*w); else{ tone(d,'sine',190-70*w,48,0.10+0.12*w,0.5+0.3*w); noise(d,'lowpass',2600-1200*w,400,0.07+0.05*w,0.35+0.25*w); }
+              if(o.el==='fire') noise(d,'highpass',2500,6000,0.18,0.12,0.02); if(o.el==='water'&&!smp(d,'splash',0.5)) tone(d,'sine',500,1100,0.12,0.12,0.02); if(o.el==='plant') tone(d,'triangle',260,180,0.12,0.14,0.02); }],
+    block:  [60, d=>{ if(smp(d,'clang',0.8)) return; tone(d,'square',980,940,0.11,0.10); tone(d,'square',1470,1440,0.09,0.07); noise(d,'highpass',4000,4000,0.03,0.2); }],
     shot:   [45, (d,o)=>{ const st=o.st||'gun';
               if(st==='bow'){ tone(d,'triangle',330,170,0.16,0.3); noise(d,'bandpass',1200,3600,0.14,0.14,0.02,2,0.03); }
-              else if(st==='staff'){ tone(d,'sine',420,1250,0.2,0.2); tone(d,'triangle',630,1880,0.2,0.08); }
+              else if(st==='staff'){ if(smp(d,'zap',0.55)) return; tone(d,'sine',420,1250,0.2,0.2); tone(d,'triangle',630,1880,0.2,0.08); }
               else if(st==='hurl'){ noise(d,'bandpass',700,2400,0.16,0.22,0,1.5,0.04); }
               else if(smp(d,st==='akimbo'?'pistol':'magnum',st==='akimbo'?0.7:0.85,1)){ tone(d,'sine',150,45,0.09,0.35); }
               else{ noise(d,'highpass',1200,500,0.07,0.45); tone(d,'square',720,140,0.07,0.18); } }],
@@ -60,7 +63,7 @@
     quake:  [120,d=>{ noise(d,'lowpass',260,50,0.55,0.9,0,1,0.03); tone(d,'sine',70,34,0.5,0.6); }],
     dash:   [80, d=>{ noise(d,'bandpass',400,3400,0.18,0.3,0,1.2,0.02); tone(d,'sawtooth',180,520,0.14,0.05); }],
     jump:   [60, d=>{ tone(d,'square',300,640,0.09,0.07); }],
-    land:   [80, d=>{ tone(d,'sine',120,58,0.07,0.28); noise(d,'lowpass',500,200,0.05,0.14); }],
+    land:   [80, d=>{ if(smp(d,'step',0.7,0.9)) return; tone(d,'sine',120,58,0.07,0.28); noise(d,'lowpass',500,200,0.05,0.14); }],
     heal:   [150,d=>{ notes(d,'triangle',[523,659,784,1047],0.07,0.16,0.14); }],
     zip:    [60, d=>{ tone(d,'square',1900,820,0.06,0.07); }],
     ult:    [300,d=>{ tone(d,'sawtooth',110,880,0.55,0.16,0,0.2); tone(d,'sawtooth',165,1320,0.55,0.08,0,0.2); noise(d,'bandpass',300,5000,0.6,0.25,0,0.8,0.4); tone(d,'sine',90,30,0.5,0.7,0.5); }],
@@ -69,13 +72,16 @@
     go:     [300,d=>{ tone(d,'square',990,990,0.28,0.14); tone(d,'square',1485,1485,0.28,0.06); }],
     round:  [400,d=>{ notes(d,'triangle',[392,523],0.12,0.2,0.16); }],
     win:    [800,d=>{ notes(d,'square',[523,659,784,1047,784,1047],0.11,0.2,0.11); notes(d,'triangle',[262,330,392,523,392,523],0.11,0.2,0.1); }],
-    made:   [100,d=>{ notes(d,'triangle',[660,990],0.06,0.1,0.16); }],
-    glyph:  [70, d=>{ tone(d,'triangle',880,1320,0.05,0.12); noise(d,'bandpass',3000,5000,0.04,0.08,0,3); }],
+    made:   [100,d=>{ if(smp(d,'confirm',0.6)) return; notes(d,'triangle',[660,990],0.06,0.1,0.16); }],
+    glyph:  [70, d=>{ if(smp(d,'scratch',0.7)) return; tone(d,'triangle',880,1320,0.05,0.12); noise(d,'bandpass',3000,5000,0.04,0.08,0,3); }],
     forge:  [150,d=>{ tone(d,'square',1200,1180,0.09,0.09); tone(d,'square',1800,1780,0.2,0.08,0.09); noise(d,'highpass',5000,5000,0.03,0.2); }],
     recycle:[200,d=>{ for(let i=0;i<4;i++) noise(d,'bandpass',1500+900*i,900+500*i,0.05,0.22,i*0.045,2); }],
     restore:[200,d=>{ notes(d,'sine',[784,1175],0.08,0.22,0.14); }],
-    del:    [300,d=>{ tone(d,'square',233,233,0.32,0.14); tone(d,'square',220,220,0.32,0.14); noise(d,'lowpass',900,100,0.3,0.5); }],
-    hack:   [300,d=>{ notes(d,'square',[880,660,990,740,1175],0.045,0.05,0.09); }],
+    del:    [300,d=>{ if(smp(d,'error',0.8)){ noise(d,'lowpass',900,100,0.3,0.4); return; } tone(d,'square',233,233,0.32,0.14); tone(d,'square',220,220,0.32,0.14); noise(d,'lowpass',900,100,0.3,0.5); }],
+    mine:   [60, d=>{ if(smp(d,'mine',0.8)) return; tone(d,'square',700,300,0.05,0.12); noise(d,'highpass',2500,2500,0.04,0.25); }],
+    bubble: [150,d=>{ if(smp(d,'bubble',0.8)) return; tone(d,'sine',300,900,0.14,0.2); }],
+    pop:    [100,d=>{ if(smp(d,'pop',0.8)) return; tone(d,'sine',900,300,0.05,0.25); }],
+    hack:   [300,d=>{ if(smp(d,'glitch',0.7)) return; notes(d,'square',[880,660,990,740,1175],0.045,0.05,0.09); }],
   };
   function play(name,o){
     const def=S[name]; if(!def||muted||!ctx||ctx.state!=='running') return;

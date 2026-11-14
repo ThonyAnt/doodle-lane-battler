@@ -3194,11 +3194,13 @@ function sfxHear(p,v){
       case 'boom': X.play('boom',{pan,small:!!e.s}); break;
       case 'block': case 'quake': case 'dash': case 'heal': case 'zip': case 'ult': case 'slash': case 'ko': case 'go': case 'del': case 'forge': case 'recycle': case 'restore': X.play(e.e,{pan}); break;
       case 'obj': X.play('glyph',{pan:sfxPan(e.o&&e.o.x)}); break;
+      case 'chip': X.play('mine',{pan}); break;
     }
   }
   if(!p||!p.f||!v.f) return;
   for(const s of [0,1]){ const a=p.f[s], b=v.f[s]; if(!a||!b) continue; const pan=sfxPan(b.x);
     if(b.act&&(!a.act||a.act.m!==b.act.m||b.act.t<a.act.t-0.05)){ const m=MOVES[b.act.m.replace(/_b$/,'')]; if(m&&m.hits) X.play('swing',{pan,w:Math.min(1,(m.dmg||0.6)/1.6),blade:/^(blade|dual)/.test(b.act.m)}); }
+    if(b.bub&&!a.bub) X.play('bubble',{pan}); else if(a.bub&&!b.bub) X.play('pop',{pan});      // the drawn shield bubble going up, and bursting
     if(v.phase==='fight'||v.practice){ if(b.vy>120&&!b.g&&(a.g||b.vy-a.vy>300)) X.play('jump',{pan}); else if(!a.g&&b.g&&a.vy<-260) X.play('land',{pan}); }
   }
   if(v.hack&&!p.hack) X.play('hack');
