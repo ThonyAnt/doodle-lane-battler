@@ -78,6 +78,7 @@ body.retro .seg button{border:2px solid;border-color:#fff #404040 #404040 #fff;p
 .rbody{flex:1;min-height:0;overflow:auto;padding:8px;margin-top:2px}
 .rbody.white{background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080}
 body.retro .arenawrap{z-index:200;pointer-events:none}
+body.retro.menu .arenawrap{z-index:8}      /* behind this game's windows (10 and up) whenever they are showing */
 body.retro .hud,body.retro .rules{display:none!important}
 body.retro #inkos .task{cursor:default}
 body.retro #inkos #artboard{cursor:crosshair}
@@ -272,6 +273,83 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
 .rules{margin:0;padding:10px 14px;list-style:none;display:grid;gap:4px;font-size:14px;background:var(--card);border:2px solid var(--ink);border-radius:14px}
 .chip{display:inline-block;border-radius:6px;padding:0 6px;color:#fff;font-weight:600;font-size:13px}
 .fire{background:var(--fire)} .water{background:var(--water)} .plant{background:var(--plant)}
+/* Retro desktop: the right column is just the hack list and the glyph sheet (they are the instructions). Health, overdrive
+   and ink are drawn over each fighter's head, and CPU skill sits in the Game setup window. */
+#inkos fieldset.gone{display:none}
+#xlbar,#xltabs{display:none}
+/* Spreadsheet stage on the retro desktop: the app window is a spreadsheet program. Its paint tools, colours and timeline go;
+   a toolbar, a name box and formula bar, and sheet tabs come in. The grid itself is drawn on the arena canvas. */
+body.sheetstage #inkos .timeline,body.sheetstage #inkos #artboard .stagelabel,body.sheetstage #inkos .toolbox,body.sheetstage #inkos .palette{display:none}
+body.sheetstage #mainwin .titlebar svg{display:none}
+body.sheetstage #mainwin .titlebar::before{content:"X";font:900 11px/14px Arial,sans-serif;width:14px;height:14px;text-align:center;background:#107c41;color:#fff;flex:none}
+body.sheetstage #xlbar{display:block;flex:0 0 auto;font:11px Tahoma,Arial,sans-serif;color:#000}
+#xlbar .xltools{display:flex;align-items:center;gap:1px;padding:2px 2px 3px;border-bottom:1px solid #808080;box-shadow:0 1px #fff;overflow:hidden;white-space:nowrap}
+#xlbar .xltools span{min-width:20px;height:20px;line-height:18px;text-align:center;border:1px solid transparent;padding:0 2px}
+#xlbar .xltools i{width:2px;height:18px;margin:0 3px;border-left:1px solid #808080;border-right:1px solid #fff}
+#xlbar .xlfont{font-weight:400;background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080;padding:1px 22px 1px 4px;margin:0 2px;min-width:86px;height:20px;line-height:14px}
+#xlbar .xlfont.n{min-width:0;padding-right:14px}
+#xlbar .xlfx{display:flex;align-items:center;gap:4px;padding:3px 2px}
+#xlbar .xlname{background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080;width:74px;padding:1px 5px;height:20px;line-height:14px}
+#xlbar .xlbtns{color:#555;letter-spacing:5px;padding:0 4px}
+#xlbar .xlin{flex:1;background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080;padding:1px 6px;height:20px;line-height:14px;font:12px Arial,sans-serif;overflow:hidden;white-space:nowrap}
+#xlbar .xlin.mad{color:#b0121f;font-weight:700}
+body.sheetstage #xltabs{display:flex;flex:0 0 20px;height:20px;align-items:stretch;font:11px Tahoma,Arial,sans-serif;color:#000;overflow:hidden}
+#xltabs .xlnav{padding:3px 6px;letter-spacing:1px;font-size:8px;line-height:13px;color:#333}
+#xltabs .xltab{padding:2px 12px;border:1px solid #808080;border-top:0;background:#c3c3c3;margin-right:-1px;clip-path:polygon(0 0,100% 0,calc(100% - 7px) 100%,7px 100%)}
+#xltabs .xltab.on{background:#fff;font-weight:700}
+#xltabs .xlscroll{flex:1;margin-left:14px;background:#e6e6e6;border:1px solid #808080;position:relative}
+#xltabs .xlscroll i{position:absolute;left:8%;top:1px;bottom:1px;width:34%;background:#c3c3c3;border:1px solid;border-color:#fff #404040 #404040 #fff}
+.cpuskill{display:inline-grid;grid-template-columns:auto 110px 30px;align-items:center;gap:6px;font-size:13px;font-weight:600}
+#tips{position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:9000;pointer-events:none;background:#fffbe6;border:2px solid var(--ink);border-radius:12px;box-shadow:4px 4px 0 var(--ink);
+  padding:10px 16px;font:600 15px/1.5 var(--body);color:var(--ink);max-width:min(560px,90vw);transition:opacity .5s}
+#tips b{background:var(--hi);border-radius:4px;padding:0 5px}
+#tips.out{opacity:0}
+/* A tablet or phone as a player gets the same pretend old desktop as the big screen: teal background, grey bevelled windows
+   and buttons, navy title bars, plain system type. Only the look changes; the layout is the one above. */
+body.handheld{background:#2b7a77 radial-gradient(ellipse at 70% 30%,#33908c 0,#2b7a77 55%,#215f5d 100%) fixed!important;font-family:Tahoma,Verdana,"Segoe UI",sans-serif;color:#000}
+body.handheld h1{font:700 15px Tahoma,Verdana,sans-serif;background:none;color:#fff;text-shadow:1px 1px 0 #000;padding:0}
+body.handheld .who{border-radius:0;border:2px solid;border-color:#fff #404040 #404040 #fff;font:700 13px Tahoma,Verdana,sans-serif;padding:3px 12px;box-shadow:inset -1px -1px rgba(0,0,0,.35)}
+body.handheld .arenawrap,body.handheld .desk{border-radius:0;border:2px solid;border-color:#fff #404040 #404040 #fff;background:#c3c3c3;box-shadow:inset -1px -1px #808080,inset 1px 1px #dfdfdf,3px 3px 0 rgba(0,0,0,.28)}
+body.handheld .hud{border-bottom:0;font-weight:700}
+body.handheld .hud .bar{border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080;background:#fff}
+body.handheld #clock{font:700 20px Tahoma,Verdana,sans-serif}
+body.handheld .overlay h2{font:700 15px Tahoma,Verdana,sans-serif} body.handheld .overlay p{color:#222}
+body.handheld .desk{padding:3px 8px 8px;grid-template-rows:auto auto auto auto auto auto minmax(0,1fr);
+  grid-template-areas:"title title" "pad slots" "pad ink" "pad actions" "pad read" "pad card" "pad stock"}
+body.handheld .desk h2{display:flex;grid-area:title;margin:0 -5px 2px;height:24px;padding:0 6px;font:700 13px Tahoma,Verdana,sans-serif;color:#fff;background:linear-gradient(90deg,#0a246a,#3a6ea5 60%,#a6caf0)}
+body.handheld .desk h2 .dot{border-color:#fff}
+body.handheld button{font:12px/1.2 Tahoma,Verdana,sans-serif;color:#000;border-radius:0;border:2px solid;border-color:#fff #404040 #404040 #fff;background:#c3c3c3;box-shadow:inset -1px -1px #808080,inset 1px 1px #dfdfdf}
+body.handheld button:hover{background:#c3c3c3}
+body.handheld button:active,body.handheld button[aria-pressed="true"]{border-color:#404040 #fff #fff #404040;box-shadow:inset 1px 1px #808080;background:#e4e4e4}
+body.handheld button:disabled{color:#808080;text-shadow:1px 1px #fff;opacity:1;background:#c3c3c3}
+body.handheld button.primary,body.handheld .actions .ready{font-weight:700}
+body.handheld .actions .make,body.handheld .actions .ready{font-size:14px}
+body.handheld .slot small,body.handheld .trait small,body.handheld .read,body.handheld .stock,body.handheld .fix summary{color:#333}
+body.handheld .read b{color:#000}
+body.handheld .pad{border:2px solid;border-color:#808080 #fff #fff #808080;border-radius:0;box-shadow:inset 1px 1px #404040}
+body.handheld .pen{border-radius:0;border:2px solid;border-color:#fff #404040 #404040 #fff;box-shadow:none}
+body.handheld .pen[aria-pressed="true"]{outline:2px dotted #000;outline-offset:2px;border-color:#404040 #fff #fff #404040}
+body.handheld .inkbar,body.handheld .sbar{border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080;background:#fff}
+body.handheld .inkbar .have{background:#0a246a} body.handheld .inkbar .cost{background:#ffd84a;border-right:2px solid #000}
+body.handheld .card,body.handheld .stock{border-top:1px solid #808080;box-shadow:inset 0 1px #fff;padding-top:8px}
+body.handheld .card{border-top:0;box-shadow:none;padding-top:0}
+body.handheld .card .more{border-style:solid}
+body.handheld .fix button[aria-pressed="true"]{background:#0a246a;color:#fff}
+/* the controller: big grey keys that press in */
+body.handheld .tc button,body.handheld .tc[data-side="0"] button,body.handheld .tc[data-side="1"] button{border-radius:0;border:3px solid;border-color:#fff #404040 #404040 #fff;background:#c3c3c3;color:#000;
+  box-shadow:inset -2px -2px #808080,inset 2px 2px #dfdfdf,3px 3px 0 rgba(0,0,0,.3);font-family:Tahoma,Verdana,sans-serif;font-weight:700}
+body.handheld .tc button.on,body.handheld .tc[data-side] button.on{border-color:#404040 #fff #fff #404040;box-shadow:inset 2px 2px #808080;background:#e4e4e4;transform:translate(2px,2px)}
+body.handheld .tc button small{font-weight:400;color:#000}
+body.handheld .tc button .cdfill{background:rgba(10,36,106,.3)}
+body.handheld .tc[data-side="0"] [data-k="a"],body.handheld .tc[data-side="0"] [data-k="b"]{border-top-color:#1d3fbf;border-top-width:6px}
+body.handheld .tc[data-side="1"] [data-k="a"],body.handheld .tc[data-side="1"] [data-k="b"]{border-top-color:#b0121f;border-top-width:6px}
+body.handheld.playing #strip{border:2px solid;border-color:#808080 #fff #fff #808080;border-radius:0;box-shadow:inset 1px 1px #404040}
+body.handheld.playing #stripbar{color:#fff;text-shadow:1px 1px 0 #000;font:700 13px Tahoma,Verdana,sans-serif}
+body.handheld.playing #stripbar button{text-shadow:none}
+body.handheld #tips{border-radius:0;border:1px solid #000;background:#ffffe1;box-shadow:2px 2px 0 rgba(0,0,0,.4);font:12px/1.6 Tahoma,Verdana,sans-serif}
+@media (max-aspect-ratio:1/1){
+  body.handheld .desk{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr) auto auto auto auto auto;grid-template-areas:"title" "slots" "pad" "ink" "actions" "read" "card" "stock"}
+}
 [hidden]{display:none!important}
 @media (max-width:700px){ h1{font-size:26px} .controls{margin-left:0} .tc .keys{display:none} }
 @media (pointer:coarse){ .tc .keys{display:none} }
@@ -308,7 +386,7 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
         </div>
       </div>
       <div class="panel">
-        <fieldset><legend>Fighters</legend>
+        <fieldset class="gone"><legend>Fighters</legend>
           <div class="pcard"><div class="nm" style="color:#1d3fbf"><span>P1 · You</span><span id="p1st"></span></div>
             <div class="bar hp"><i id="p1hp"></i><span>HP</span></div><div class="bar ink"><i id="p1ink"></i><span>INK</span></div><div class="bar od" id="p1odb"><i id="p1od"></i><span>OVERDRIVE</span></div>
             <div class="wtext" id="p1w">Weapon: fists</div></div>
@@ -317,7 +395,7 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
             <div class="wtext" id="cpw">Weapon: fists</div></div>
         </fieldset>
         <fieldset><legend>Hack.exe — Q to run</legend><div class="hacks" id="hacks"></div></fieldset>
-        <fieldset><legend>Rig Properties</legend>
+        <fieldset class="gone"><legend>Rig Properties</legend>
           <div class="sl"><span>Jelly</span><input type="range" id="s-jelly" min="0" max="1" step=".01"><span id="v-jelly"></span></div>
           <div class="sl"><span>Stretch</span><input type="range" id="s-stretch" min="0" max="1" step=".01"><span id="v-stretch"></span></div>
           <div class="sl"><span>Flab</span><input type="range" id="s-flab" min="0" max="1" step=".01"><span id="v-flab"></span></div>
@@ -326,7 +404,7 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
           <div class="sl"><span>CPU skill</span><input type="range" id="s-diff" min="0" max="1" step=".01"><span id="v-diff"></span></div>
           <div class="chk"><label><input type="checkbox" id="c-onion"> Onion skin</label><label><input type="checkbox" id="c-rig"> Show rig</label></div>
         </fieldset>
-        <fieldset><legend>AI Read Log</legend><div id="log" class="inset"></div></fieldset>
+        <fieldset class="gone"><legend>AI Read Log</legend><div id="log" class="inset"></div></fieldset>
         <fieldset><legend>Glyph Sheet</legend><div class="glyphs" id="glyphs"></div></fieldset>
       </div>
     </div>
@@ -376,16 +454,21 @@ Window titlebars = platforms
     <span class="who" id="who" hidden></span>
     <div class="controls">
       <span class="badge" id="reader">Drawings read by: local guess</span>
-      <div class="seg" role="group" aria-label="Opponent">
+      <div class="seg" role="group" aria-label="Match">
+        <button id="playBot" aria-pressed="false" title="One player with a phone or tablet against the bot">Player vs Bot</button>
+        <button id="playPvp" aria-pressed="false" title="Two players, each with a phone or tablet">Player vs Player</button>
+      </div>
+      <div class="seg legacy" role="group" aria-label="Opponent" hidden>
         <button id="modeBot" aria-pressed="true">vs Bot</button>
         <button id="mode2p" aria-pressed="false">2 players</button>
         <button id="modeOnline" aria-pressed="false">Online</button>
         <button id="modePractice" aria-pressed="false">Practice</button>
       </div>
-      <div class="seg" role="group" aria-label="Where the drawing happens">
+      <div class="seg legacy" role="group" aria-label="Where the drawing happens" hidden>
         <button id="drawHere" aria-pressed="true" title="Draw and play on this device">Draw here</button>
         <button id="drawTablets" aria-pressed="false" title="This device becomes the big screen; two tablets or phones draw and play">Draw on tablets</button>
       </div>
+      <button id="stageBtn" title="Fight inside a banker's spreadsheet">Stage: desktop</button>
       <button id="restart">Restart</button>
       <a href="/" class="badge lanelink">Lane Battler</a>
       <button id="deskResume" hidden>Resume</button><button id="deskQuit" hidden>Quit</button>
@@ -406,19 +489,20 @@ Window titlebars = platforms
   <section class="loadouts" id="loadouts" hidden></section>
   <canvas id="strip" hidden></canvas>
   <div id="stripbar" hidden><button id="hackPrev" aria-label="Previous hack">◀</button><span id="hackName"></span><button id="hackNext" aria-label="Next hack">▶</button><span id="stripInk"></span></div>
+  <div id="tips" hidden></div>
   <section class="tcs" id="tcs" hidden></section>
   <section class="desks" id="desks"></section>
 
   <ul class="rules">
     <li><b>Draw two things</b> before each round: a sword, a bow, a bomb, a shield, wings, a snack. You share 100 ink between them, and more ink means a stronger item.</li>
     <li><b>Fight live:</b> move, double jump, and use your two drawings. An empty slot is a punch. First to 2 rounds wins.</li>
-    <li><b>How to trigger each move</b> (A and B are your two drawings: <b>J</b> and <b>K</b> on a keyboard; with two players on one keyboard the second player uses <b>,</b> and <b>.</b>):
+    <li><b>How to trigger each move</b> (A and B on your controller are your two drawings):
       <br>· <b>Combo:</b> stand still and tap the button again and again. Swords, spears and hammers chain 3 moves, fists chain 4.
       <br>· <b>Running attack:</b> hold a direction until you are sprinting, then press.
       <br>· <b>Air attack:</b> jump, then press.
-      <br>· <b>Special:</b> hold down (S, ↓ or ▼) and press. Melee weapons launch the enemy upward (the hammer spins); bows, guns, staffs and throwing stars fire a slow charged shot.
+      <br>· <b>Special:</b> hold ▼ and press. Melee weapons launch the enemy upward (the hammer spins); bows, guns, staffs and throwing stars fire a slow charged shot.
       <br>· <b>Rapid fire:</b> with a ranged item, keep tapping after the first shot.
-      <br>Each combo move and shot has two animations picked at random. <b>Practice</b> mode has no clock and a dummy that never dies, and lets you swap items at any time.</li>
+      <br>Each combo move and shot has two animations picked at random.</li>
     <li><b>Fighting styles:</b> a sword, a spear, a hammer or gloves each fight differently, and so do a bow, a gun, a magic staff or something you throw. Tap for a combo; attack while running, in the air, or holding down for other moves.</li>
     <li><span class="chip fire">fire</span> burns after the hit · <span class="chip water">water</span> slows and shoves · <span class="chip plant">plant</span> heals you for part of the damage · plain ink hits 15% harder.</li>
     <li>Shields only block from the front. Your own bombs hurt you too. Snacks heal 3 times per round.</li>
@@ -783,6 +867,7 @@ function boardCells(b){
 const STYLE_COUNTER={blade:'wall',fist:'wall',pick:'wall',dual:'wall',akimbo:'circle',spear:'circle',bow:'circle',gun:'circle',staff:'circle',hurl:'circle',hammer:'arrow'};
 function elOfColor(hex){ const m=/^#?([0-9a-f]{6})$/i.exec(hex||''); if(!m) return ELS.includes(hex)?hex:'none';
   const n=parseInt(m[1],16), r=n>>16, g=(n>>8)&255, b=n&255; return r>g*1.35&&r>b*1.35?'fire':b>r*1.25&&b>=g?'water':g>r*1.2&&g>b*1.2?'plant':'none'; }
+const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet stage: cell size, and half the size of the banker's selection
 function createDuel(opts){
   let acc=0, nextId=1; const STEP=1/60, r1=v=>Math.round(v*10)/10;
   let W=Math.max(600,(opts&&opts.width)||AW), PL=(opts&&opts.plats)||PLATS, BOARD=null, SOL=[];  // arena size; the default is the 960-wide stage
@@ -796,28 +881,20 @@ function createDuel(opts){
     objs:[],fields:[],groups:[null,null],hack:null,effects:[],broken:null,breached:false,cells:[],time:0,stop:0};
   const PICK={name:'Pick',kind:'melee',style:'pick',el:'none',cost:0,st:Object.assign(itemStats('melee','none',10),{reach:54,dmg:5})};
   const itemOf=(side,k)=>S.items[side][k]||PUNCH;
+  S.sheet=(opts&&opts.stage==='sheet')?{}:null;        // the spreadsheet stage (see sheetTick)
   S.inkLeft=side=>Math.round(INK_MAX-S.items[side].reduce((n,it)=>n+(it?it.cost:0),0));
   S.setItem=(side,k,spec,cost)=>{
     if(S.phase!=='draw'&&S.phase!=='count'&&!S.practice) return null;
     const other=S.items[side][1-k]; cost=Math.min(cost,INK_MAX-(other?other.cost:0)); if(cost<MIN_COST-0.5) return null;
+    return S.items[side][k]=buildItem(spec,cost);
+  };
+  // Every item, however it is made (drawn before the round, taken ready-made, or forged mid-fight), gets its stats and trait here.
+  function buildItem(spec,cost){
     const style=styleOf(spec.kind,spec.style), tune=Math.max(-2,Math.min(2,Math.round(+spec.tune||0)));
     const raw={power:clampStat(spec.power),range:clampStat(spec.range),speed:clampStat(spec.speed)}, stats=balanceStats(raw,tune);
     const traits=traitChoices(spec.kind,spec.traits,spec.name), trait=traits.includes(spec.trait)?spec.trait:traits[0];
-    return S.items[side][k]={name:spec.name||nameFor(spec),kind:spec.kind,style,el:spec.element,cost,raw,tune,stats,trait,traits,st:itemStats(spec.kind,spec.element,cost,stats),ver:++S.ver};
-  };
-  // Replace the platforms mid-match (the desktop overlay does this as real windows move). Platforms may carry an id and
-  // wx, the left edge of the thing they belong to: a fighter standing on one is carried along when it moves, and falls
-  // if it is no longer under their feet.
-  S.setPlats=list=>{
-    const old=PL; PL=list;
-    for(const f of S.f){
-      if(!f.ground||f.on==null) continue;
-      const a=old.find(p=>p.id===f.on&&f.x>=p.x0-6&&f.x<=p.x1+6&&Math.abs(f.y-p.y)<3); if(!a) continue;
-      const dx=((list.find(p=>p.id===f.on)||a).wx||0)-(a.wx||0), nx=Math.max(18,Math.min(W-18,f.x+dx));
-      const b=list.find(p=>p.id===f.on&&nx>=p.x0-6&&nx<=p.x1+6);
-      if(b){ f.x=nx; f.y=b.y; f.vy=0; }
-    }
-  };
+    return {name:spec.name||nameFor(spec),kind:spec.kind,style,el:spec.element,cost,raw,tune,stats,trait,traits,st:itemStats(spec.kind,spec.element,cost,stats),ver:++S.ver};
+  }
   // Change an item that is already made, while still drawing: what it is, which of its two traits it uses, or its tuning.
   S.tweak=(side,k,ch)=>{
     const it=S.items[side][k]; if(!it||!ch||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
@@ -829,6 +906,20 @@ function createDuel(opts){
   };
   const usesFor=side=>[0,1].map(k=>{ const it=S.items[side][k]; return it&&it.kind==='heal'?it.st.uses+(it.trait==='feast'?1:0):3; });
   const carries=(side,tr)=>S.items[side].some(it=>it&&it.trait===tr);
+  // Replace the platforms mid-match (the desktop overlay does this as real windows move). Platforms may carry an id and
+  // wx, the left edge of the thing they belong to: a fighter standing on one is carried along when it moves, and falls
+  // if it is no longer under their feet.
+  S.setPlats=list=>{ if(!S.sheet) applyPlats(list); };     // on the spreadsheet stage the banker owns the platforms
+  function applyPlats(list){
+    const old=PL; PL=list;
+    for(const f of S.f){
+      if(!f.ground||f.on==null) continue;
+      const a=old.find(p=>p.id===f.on&&f.x>=p.x0-6&&f.x<=p.x1+6&&Math.abs(f.y-p.y)<3); if(!a) continue;
+      const dx=((list.find(p=>p.id===f.on)||a).wx||0)-(a.wx||0), nx=Math.max(18,Math.min(W-18,f.x+dx));
+      const b=list.find(p=>p.id===f.on&&nx>=p.x0-6&&nx<=p.x1+6);
+      if(b){ f.x=nx; f.y=b.y; f.vy=0; }
+    }
+  }
   S.clearItem=(side,k)=>{ if(S.phase==='draw') S.items[side][k]=null; };
   S.setReady=side=>{ if(S.phase==='draw') S.ready[side]=true; };
   // l, r, d are held buttons; j, a, b are running press counts so a quick tap is never lost.
@@ -868,7 +959,7 @@ function createDuel(opts){
     t.od=Math.min(100,t.od+dmg*0.9); if(by&&tr!=='fleet') by.od=Math.min(100,by.od+dmg*1.3);
     if(t.act&&itemOf(t.side,t.act.k).trait==='guard') dmg*=0.92;
     if(blocked){
-      if(t.shieldTr==='thorns'&&by&&by!==t){ const n=dmg*0.35; by.hp-=n; S.events.push({e:'hit',x:Math.round(by.x),y:Math.round(by.y+52),n:Math.max(1,Math.round(n)),el:'none',side:by.side}); }
+      if(t.shieldTr==='thorns'&&by&&by!==t){ const n=dmg*0.35; by.hp-=n; S.events.push({e:'hit',x:Math.round(by.x),y:Math.round(by.y+52),n:Math.max(1,Math.round(n)),el:'none',side:by.side,hap:'thud',dir:'R'}); }
       dmg*=tr==='pierce'?0.6:0.15; kx*=0.3; ky*=0.3;
     } else if(el==='water') kx*=1.45;
     // A hit with no stun only nudges: it adds to the target's speed instead of replacing it, and does not lift them.
@@ -1031,7 +1122,12 @@ function createDuel(opts){
       const touch=!p.safe&&Math.abs(p.x-e.x)<18+10*(p.big||0)&&p.y>e.y-4-10*(p.big||0)&&p.y<e.y+94*e.scale;
       const turn=()=>{ p.back=1; p.vx=-p.vx; p.vy=0; p.grav=0; p.safe=0.3; p.ttl=p.life; };       // a boomerang comes back once
       const wall=SOL.find(o=>p.x>o.x0&&p.x<o.x1&&p.y>o.y0&&p.y<o.y1);
-      if(wall&&p.k!=='bomb'){ if(wall.obj&&wall.obj.dyn){ wall.obj.vx+=p.vx*0.25; wall.obj.vy-=120; } fx('spark',{x:Math.round(p.x),yd:Math.round(-p.y),col:PEN_COL[p.el]||'#fc0'}); p.ttl=0; continue; }
+      if(wall&&p.k!=='bomb'){
+        if(wall.obj&&wall.obj.dyn){ wall.obj.vx+=p.vx*0.25; wall.obj.vy-=120; } fx('spark',{x:Math.round(p.x),yd:Math.round(-p.y),col:PEN_COL[p.el]||'#fc0'});
+        // a bouncy shot comes back off a wall once, and a boomerang turns round at it; anything else stops there
+        if(p.tr==='bounce'&&!p.wall){ p.wall=1; p.x-=p.vx*dt; p.vx=-p.vx; } else if(p.tr==='boomerang'&&!p.back){ p.x-=p.vx*dt; turn(); } else p.ttl=0;
+        continue;
+      }
       if(e.bubble&&p.k!=='bomb'&&Math.hypot(p.x-e.x,p.y-(e.y+55))<e.bubble.r){ p.vx*=-1; p.vy*=-0.5; p.side=e.side; e.bubble.hp--; if(e.bubble.hp<=0) e.bubble=null; ring(p.x,-p.y,'#2bd'); log(e,'shield reflected a projectile'); continue; }
       if(p.k!=='bomb'){
         if(touch){ hurt(e,p.dmg,p.el,Math.sign(p.vx)*p.kb,90,S.f[p.side],p.x-Math.sign(p.vx)*30,p.stun,p.tr,undefined,p.fin); if(p.tr==='boomerang'&&!p.back) turn(); else p.ttl=0; }
@@ -1077,6 +1173,7 @@ function createDuel(opts){
   // The stage each round: inside an art board, his three sketched ledges and a crate.
   function resetWorld(){
     S.objs=[]; S.fields=[]; S.groups=[null,null]; S.hack=null; S.effects=[]; S.broken=null; S.breached=false; S.cells=boardCells(BOARD); fx('clear',{});
+    if(S.sheet) sheetReset();
     if(!BOARD) return;
     const b=BOARD, w=b.x1-b.x0, fl=-b.floor;
     const sk=(x0,x1,y)=>{ const pts=INK.densify([{x:x0,y},{x:x1,y:y+rand(-2,2)}],6).map(p=>({x:p.x,y:p.y+rand(-1.2,1.2)})); addObj({kind:'platform',x:x0,y,w:x1-x0,strokes:[pts],color:'#8a8f99',life:Infinity}); };
@@ -1088,8 +1185,8 @@ function createDuel(opts){
     if(!L) return; const idle=S.phase==='draw'||S.phase==='count'||S.practice;
     if(L.plats) S.setPlats(L.plats);
     if(!idle&&S.cells.length) return;                                   // the board is not rebuilt in the middle of a fight
-    if(L.w) W=Math.max(600,L.w);
-    const b=L.board; BOARD=b&&b.x1-b.x0>300&&b.top-b.floor>180?{x0:rr(b.x0),x1:rr(b.x1),floor:Math.max(0,rr(b.floor)),top:rr(b.top)}:null;
+    if(L.w&&!S.sheet) W=Math.max(600,L.w);
+    const b=S.sheet?null:L.board; BOARD=b&&b.x1-b.x0>300&&b.top-b.floor>180?{x0:rr(b.x0),x1:rr(b.x1),floor:Math.max(0,rr(b.floor)),top:rr(b.top)}:null;
     S.f=[fresh(0),fresh(1)]; S.pr=[]; resetWorld();
   };
   const addObj=o=>{ o.id=oid++; S.objs.push(o);
@@ -1155,8 +1252,7 @@ function createDuel(opts){
     const style={sword:'blade',club:'blade',axe:'blade',spear:'spear',hammer:'hammer',mace:'hammer',bow:'bow'}[R.type]||'blade', kind=style==='bow'?'ranged':'melee';
     const inkLen=g.strokes.reduce((n,p)=>n+pathLen(p),0), mass=clamp(inkLen/130,0.6,2.6), cost=clamp(mass*20,12,52), el=elOfColor(g.color), k=f.held;
     const name=(el==='none'?'':{fire:'Fire ',water:'Water ',plant:'Leafy '}[el])+R.type[0].toUpperCase()+R.type.slice(1);
-    const raw={power:clampStat(2+mass*2.6),range:style==='spear'||style==='bow'?7:5,speed:clampStat(9-mass*2.6)}, stats=balanceStats(raw,0), traits=traitChoices(kind,[],name);
-    const it=S.items[f.side][k]={name,kind,style,el,cost,raw,tune:0,stats,trait:traits[0],traits,st:itemStats(kind,el,cost,stats),ver:++S.ver};
+    const it=S.items[f.side][k]=buildItem({name,kind,style,element:el,power:clampStat(2+mass*2.6),range:style==='spear'||style==='bow'?7:5,speed:clampStat(9-mass*2.6),traits:traitChoices(kind,[],name)},cost);
     f.act=null; f.cd[k]=0;
     fx('forge',{side:f.side,slot:k,kind,style,ver:it.ver,strokes:g.strokes.map(st=>({el,pts:st.map(p=>[rr(p.x),rr(p.y)])}))});
     log(f,'  '+R.type+': m'+mass.toFixed(1)+' \u2192 '+style+' in slot '+'AB'[k]); fade(g);
@@ -1228,6 +1324,61 @@ function createDuel(opts){
     for(const e of S.effects){ e.t-=dt; if(e.t<=0&&!e.ended){ e.ended=true; e.end(); } } S.effects=S.effects.filter(e=>!e.ended);
     if(S.broken) S.broken.t=Math.max(0,S.broken.t-dt);
   }
+  /* -- Spreadsheet stage. A banker is building a valuation model and the fight happens in his sheet. It is a script, not a
+        simulation: one fixed minute of edits. Cells he fills in are platforms; he drags, pastes and deletes them; halfway
+        through he deletes everything in a rage and the errors rain down; near the end he notices the two fighters and
+        goes after them with the cursor, selecting where one stands and pressing Delete. -- */
+  let SP=[], sid=1;
+  const cellAt=(c0,c1,r,lb)=>({id:'s'+(sid++),x0:c0*SHEET_COL,x1:(c1+1)*SHEET_COL,y:r*SHEET_ROW,wx:c0*SHEET_COL,lb});
+  const sheetPush=()=>applyPlats(SP.map(p=>Object.assign({},p)));
+  const say=(h,m,c,r)=>{ h.msg=m; h.said=h.t; if(c!==undefined) h.aim={x:(c+0.5)*SHEET_COL,y:(r-0.5)*SHEET_ROW}; };
+  const SCRIPT=[
+    [0,   h=>{ SP=[cellAt(1,3,3,'Revenue'),cellAt(6,8,3,'EBITDA'),cellAt(3,6,6,'=NPV(WACC,C17:J17)')]; say(h,'=DCF(Anthropik)     // IPO prices at 9am. focus.',4,6); }],
+    [4,   h=>{ SP.push(cellAt(4,5,1,'40.0%')); say(h,'growth = 40%. forever. obviously.',4,1); }],
+    [8,   h=>{ const p=SP.find(p=>p.lb==='Revenue'); if(p) h.move={id:p.id,from:p.x0,to:p.x0+2*SHEET_COL,t0:h.t,dur:1.6}; say(h,'dragging Revenue two columns over...',4,3); }],
+    [12,  h=>{ SP.push(cellAt(6,8,5,'EBITDA (adj.)')); say(h,'Ctrl+C   Ctrl+V     // nobody checks adjusted EBITDA',7,5); }],
+    [16,  h=>{ SP=SP.filter(p=>p.lb!=='=NPV(WACC,C17:J17)'); say(h,'delete the NPV row. never liked it.',5,6); }],
+    [19,  h=>{ SP.push(cellAt(0,0,2,'40.0%'),cellAt(1,1,4,'40.0%'),cellAt(0,0,6,'40.0%')); say(h,'fill down. looks like a model now.',0,4); }],
+    [22,  h=>{ say(h,'why is enterprise value NEGATIVE',9,8); }],
+    [23.5,h=>{ h.all=1; say(h,'THIS MODEL IS COOKED'); }],
+    [24.5,h=>{ h.all=0; SP=[]; fx('quake',{x:rr(W/2),y:0,n:300}); for(let n=0;n<10;n++) h.rain.push({x:50+((n*223)%(W-100)),y:440+n*52,vy:-(240+(n%3)*45)}); say(h,'#REF!   #REF!   #REF!   #REF!'); }],
+    [29.5,h=>{ SP=[cellAt(1,3,3,'Revenue'),cellAt(6,8,3,'EBITDA')]; say(h,'Ctrl+Z   Ctrl+Z   Ctrl+Z   Ctrl+Z',4,3); }],
+    [32.5,h=>{ SP.push(cellAt(3,6,6,'=J16*(1+g)/(WACC-g)')); say(h,'ok. terminal value. breathe.',4,6); }],
+    [36.5,h=>{ say(h,'...are there two guys FIGHTING in my model?'); }],
+    [38.5,h=>{ h.hunt={side:S.f[0].hp>=S.f[1].hp?0:1,t:0,x:W/2,y:220,st:'aim',n:0}; say(h,'GET.   OUT.   OF.   MY.   SHEET.'); }],
+    [50,  h=>{ say(h,'select.  delete.  select.  delete.'); }]
+  ];
+  function sheetReset(){
+    sid=1; SP=[]; const h=S.sheet={t:0,i:1,msg:'',said:0,all:0,move:null,rain:[],hunt:null,cur:{x:W*0.6,y:300},aim:null};
+    SCRIPT[0][1](h); sheetPush();
+  }
+  function sheetTick(dt){
+    const h=S.sheet; h.t+=dt; if(S.practice&&h.t>=ROUND_TIME){ sheetReset(); return; }
+    let changed=false;
+    while(h.i<SCRIPT.length&&h.t>=SCRIPT[h.i][0]){ SCRIPT[h.i][1](h); h.i++; changed=true; }
+    if(h.move){ const m=h.move, p=SP.find(p=>p.id===m.id), u=Math.min(1,(h.t-m.t0)/m.dur);
+      if(p){ const w=p.x1-p.x0; p.x0=m.from+(m.to-m.from)*u; p.x1=p.x0+w; p.wx=p.x0; changed=true; h.aim={x:p.x0+w/2,y:p.y-SHEET_ROW/2}; } if(u>=1||!p) h.move=null; }
+    if(changed) sheetPush();
+    // the errors that rain down after the rage-delete
+    for(const r of h.rain){ r.y+=r.vy*dt; for(const f of S.f) if(!r.hit&&f.hp>0&&Math.abs(r.x-f.x)<30&&r.y>f.y-8&&r.y<f.y+92*f.scale){ r.hit=1; hurt(f,5,'none',0,0,null,r.x,0.12,undefined,'thud'); } }
+    h.rain=h.rain.filter(r=>!r.hit&&r.y>-24);
+    // the hunt: the selection follows one fighter, locks, deletes whatever is inside it, then goes for the other one. It gets quicker.
+    if(h.hunt){
+      const q=h.hunt, f=S.f[q.side], per=Math.max(1.3,2.3-q.n*0.12), aim=per*0.55, lock=per*0.33; q.t+=dt;
+      if(q.t<aim){ const sp=640*dt; q.x+=clamp(f.x-q.x,-sp,sp); q.y+=clamp(f.y+50-q.y,-sp,sp); q.st='aim'; }
+      else if(q.t<aim+lock) q.st='lock';
+      else{
+        for(const g of S.f) if(g.hp>0&&Math.abs(g.x-q.x)<SHEET_HW+8&&Math.abs(g.y+45-q.y)<SHEET_HH+34) hurt(g,12,'none',(sgn(g.x-q.x)||1)*260,380,null,q.x,undefined,undefined,'slam');
+        fx('del',{x:rr(q.x),y:rr(q.y)}); q.t=0; q.n++; q.side=1-q.side; q.st='aim';
+      }
+      h.cur={x:q.x+SHEET_HW,y:q.y-SHEET_HH};
+    }else if(h.aim){ const sp=900*dt; h.cur.x+=clamp(h.aim.x-h.cur.x,-sp,sp); h.cur.y+=clamp(h.aim.y-h.cur.y,-sp,sp); }
+  }
+  function sheetView(){
+    const h=S.sheet; if(!h||h.t===undefined) return null;
+    return {t:r1(h.t),msg:h.msg,said:r1(h.said),all:h.all,cur:[rr(h.cur.x),rr(h.cur.y)],drag:h.move?h.move.id:'',cell:h.aim&&!h.hunt?[Math.floor(h.aim.x/SHEET_COL),Math.floor(h.aim.y/SHEET_ROW)]:null,plats:SP.map(p=>({id:p.id,x0:rr(p.x0),x1:rr(p.x1),y:p.y,wx:rr(p.wx),lb:p.lb})),
+      rain:h.rain.map(r=>[rr(r.x),rr(r.y)]),hunt:h.hunt&&{x:rr(h.hunt.x),y:rr(h.hunt.y),st:h.hunt.st,side:h.hunt.side}};
+  }
   function tick(dt){
     if(S.phase==='over') return;
     if(S.practice){
@@ -1246,7 +1397,7 @@ function createDuel(opts){
     }
     S.time+=dt; SOL=solids();
     for(const f of S.f) control(f,dt);
-    projectiles(dt); world(dt);
+    projectiles(dt); world(dt); if(S.sheet) sheetTick(dt);
     const a=S.f[0], b=S.f[1], d0=a.hp<=0, d1=b.hp<=0;
     if(!S.practice&&(d0||d1||S.t<=0)){
       S.winner=d0&&d1?-1:d0?1:d1?0:Math.abs(a.hp-b.hp)<0.5?-1:a.hp>b.hp?0:1;
@@ -1256,7 +1407,7 @@ function createDuel(opts){
   }
   S.step=dt=>{ acc+=Math.min(0.25,dt); while(acc>=STEP){ acc-=STEP; tick(STEP); } };
   S.snapshot=()=>({phase:S.phase,t:+S.t.toFixed(2),round:S.round,wins:S.wins,ready:S.ready,winner:S.winner,champ:S.champ,ink:[S.inkLeft(0),S.inkLeft(1)],practice:S.practice,hs:S.phase==='fight'&&S.stop>0?1:0,
-    w:W,board:BOARD,broken:S.broken&&{t:r1(S.broken.t),hole:S.broken.hole},breached:S.breached,cells:S.cells.filter(c=>c.hp<2&&c.side!=='c').map(c=>[c.id,c.hp]),
+    w:W,board:BOARD,sheet:sheetView(),broken:S.broken&&{t:r1(S.broken.t),hole:S.broken.hole},breached:S.breached,cells:S.cells.filter(c=>c.hp<2&&c.side!=='c').map(c=>[c.id,c.hp]),
     objs:S.objs.map(o=>[o.id,r1(o.x),r1(o.y),o.life===Infinity?-1:r1(o.life)]),fields:S.fields.map(q=>({a:q.a,b:q.b,u:q.u,life:r1(q.life),max:q.max,col:q.col})),
     hack:S.hack&&{by:S.hack.by,target:S.hack.target,name:S.hack.def.name,desc:S.hack.def.desc,t:+S.hack.t.toFixed(2),max:S.hack.max,counter:S.hack.counter},
     fxs:S.effects.map(e=>({by:e.by,target:e.target,counter:e.counter,name:e.name})),
@@ -1269,6 +1420,7 @@ function createDuel(opts){
       ink2:Math.round(f.ink2),od:Math.round(f.od),stun:f.stun>0?1:0,trap:f.trap>0?1:0,bub:f.bubble?Math.round(f.bubble.r):0,oc:f.overclock>0?1:0,sc:+f.scale.toFixed(2),fl:f.flung>0?1:0})),
     pr:S.pr.map(p=>({id:p.id,k:p.k,st:p.st,big:p.big,side:p.side,slot:p.slot,x:r1(p.x),y:r1(p.y),vx:Math.round(p.vx),vy:Math.round(p.vy),el:p.el,h:p.hover?1:undefined,a:p.st==='fleet'?+p.ang.toFixed(2):undefined})),
     ev:S.events.splice(0)});
+  if(S.sheet) sheetReset();
   return S;
 }
 // A simple opponent: thinks a few times a second and presses the same buttons a player would.
@@ -1375,6 +1527,8 @@ const DESK=new URLSearchParams(location.search).has('desk'), DESK_SCALE=1.15, ho
 // sketchbook, health bars and notes are draggable windows, the fighters run along the taskbar, and the windows' title
 // bars are the platforms. It shares the overlay's machinery; only the backdrop and where the window edges come from differ.
 // Tablets and phones keep the plain layout, and ?plain=1 turns it off.
+// ?stage=sheet plays on the spreadsheet stage. On the retro desktop the sheet is the document open in the app window.
+const STAGE=new URLSearchParams(location.search).get('stage')==='sheet'?'sheet':'';
 const RETRO=!DESK&&!new URLSearchParams(location.search).has('plain')&&innerWidth>=900&&!matchMedia('(pointer:coarse)').matches, TASK_H=32;
 const deskLike=()=>DESK||RETRO, floorGap=()=>RETRO?TASK_H:0;
 let ARENA_W=960, ARENA_PLATS=PLATS, deskStage=true, deskEdges=null, deskSent='', deskMenu=false, deskPaused=false, deskLive=null, OY=0;
@@ -1383,10 +1537,19 @@ if(RETRO){ document.documentElement.classList.add('retro'); document.body.classL
 // One game unit in screen pixels: fixed for a match on this computer, and stretched to the screen for the standard stage.
 // On the InkShop desktop one unit is one pixel, as in Alex's game, so his sizes and distances mean what he intended.
 const deskSc=()=>RETRO?1:deskStage?Math.min(1.6,innerWidth/960):DESK_SCALE;
+// Spreadsheet stage on the retro desktop: the 960-wide sheet is fitted into the app window's canvas area (its art board),
+// with the floor on that area's bottom edge. k is screen pixels per game unit. sheetLive follows the match being shown,
+// so a device that joins a spreadsheet room lays it out the same way.
+let sheetLive=false;
+const sheetOn=()=>!!(STAGE||sheetLive), sheetEmb=()=>RETRO&&sheetOn(), SHEET_GUT=30;      // SHEET_GUT: the row-number column down the left
+function sheetBox(){
+  const b=document.querySelector('#artboard').getBoundingClientRect(), k=Math.max(0.3,Math.min((b.width-6)/(960+SHEET_GUT),(b.height-6)/(GY+2)));
+  return {k,left:b.left+(b.width-(960+SHEET_GUT)*k)/2+SHEET_GUT*k,bottom:b.bottom-3,top:b.top+3};
+}
 // Real windows as terrain. The overlay app reports the visible top edges of the other apps' windows in screen pixels;
 // here they become platforms in game units. They replace the stage's fixed platforms.
 function deskTerrain(){
-  if(!deskLike()||!deskEdges) return;
+  if(!deskLike()||!deskEdges||sheetOn()) return;      // on the spreadsheet stage the banker's cells are the only platforms
   if(typeof net!=='undefined'&&net&&!net.watch) return;      // a player in someone else's room uses that room's terrain
   fitCanvas(); const sc=deskSc(), out=[];
   for(const e of deskEdges){
@@ -1409,6 +1572,7 @@ function fitCanvas(){
     if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
     // A local match uses a screen-wide arena at a fixed size. An online room uses the standard 960-wide stage with its
     // platforms, enlarged to fill the screen's width (within reason) and centred.
+    if(sheetEmb()){ const q=sheetBox(); VS=q.k*r; VW=innerWidth/q.k; OX=q.left/q.k; OY=q.bottom*r-(GY+2)*VS; return; }
     const sc=deskSc();
     VS=sc*r; VW=innerWidth/sc; OX=Math.max(0,(VW-ARENA_W)/2); OY=h-(GY+6)*VS-floorGap()*r; return;
   }
@@ -1700,13 +1864,16 @@ function setMode(m){
   if(m==='online'){ local=[false,false]; ARENA_W=960; ARENA_PLATS=PLATS; view=createDuel().snapshot(); buildDesks(); buildControls(); const code=(location.hash||'').slice(1).toUpperCase(); if(/^[A-Z]{4}$/.test(code)) joinRoom(code,watched()===code); return; }
   if(location.hash) history.replaceState(null,'',location.pathname);
   local=m==='2p'?[true,true]:[true,false];
-  if(deskLike()){ ARENA_W=Math.round(innerWidth/deskSc()); ARENA_PLATS=[]; }
-  sim=createDuel({practice:m==='practice',width:ARENA_W,plats:ARENA_PLATS});
+  if(deskLike()&&!STAGE){ ARENA_W=Math.round(innerWidth/deskSc()); ARENA_PLATS=[]; }
+  sim=createDuel({practice:m==='practice',width:ARENA_W,plats:ARENA_PLATS,stage:STAGE||undefined});
   if(m==='bot'){ bot=makeBot(1,()=>RETRO?FXI.P.diff:0.55); botLoadout().forEach((b,k)=>{ const it=sim.setItem(1,k,b.spec,b.cost); setArt(1,k,b.strokes,it.ver,it.kind,it.style); }); }
   deskTerrain();
   view=sim.snapshot(); buildDesks(); buildControls();
 }
 $('modeBot').onclick=()=>setMode('bot'); $('mode2p').onclick=()=>setMode('2p'); $('modeOnline').onclick=()=>setMode('online'); $('modePractice').onclick=()=>setMode('practice');
+$('playBot').onclick=()=>startMatch(true); $('playPvp').onclick=()=>startMatch(false);
+$('stageBtn').textContent=STAGE?'Stage: spreadsheet':'Stage: desktop'; $('stageBtn').setAttribute('aria-pressed',!!STAGE);
+$('stageBtn').onclick=()=>{ const q=new URLSearchParams(location.search); if(STAGE) q.delete('stage'); else q.set('stage','sheet'); location.href=location.pathname+(q.toString()?'?'+q:''); };
 $('restart').onclick=()=>{ if(net) post({type:'rematch'}); else setMode(mode); };
 
 function post(body){ if(!net) return; fetch('/duel/act',{method:'POST',headers:{'Content-Type':'application/json'},keepalive:true,body:JSON.stringify(Object.assign({room:net.code,id:cid},body))}).catch(()=>{}); }
@@ -1724,20 +1891,28 @@ function setPad(){
   padView=on; document.body.classList.toggle('handheld',on); lastPhase=''; overlayKey='';
   const w=$('who'); w.hidden=!on; if(on){ w.textContent='You are '+NAME[net.side]; w.style.background=PCOL[net.side]; }
 }
+// The game has two ways to play, both with this device as the screen and phones or tablets as the controllers:
+// one player against the bot, or two players against each other.
+let wantBot=false;
+function startMatch(bot){
+  wantBot=!!bot; if(mode!=='online') setMode('online'); else if(net){ net.es.close(); net=null; resetLocal(); lastPhase=''; overlayKey=''; }
+  history.replaceState(null,'',location.pathname+location.search); createRoom(true);
+}
 async function createRoom(watch){
-  try{ const r=await fetch('/duel/room',{method:'POST'}); const o=await r.json(); if(!r.ok) throw new Error(o.error); joinRoom(o.code,watch===true); }
+  const q=new URLSearchParams(); if(STAGE) q.set('stage',STAGE); if(wantBot){ q.set('bot','1'); const sk=document.querySelector('#s-diff'); if(sk) q.set('skill',sk.value); }
+  try{ const r=await fetch('/duel/room'+(q.toString()?'?'+q:''),{method:'POST'}); const o=await r.json(); if(!r.ok) throw new Error(o.error); joinRoom(o.code,watch===true); }
   catch(e){ alert('Could not create a room: '+(e.message||'the server did not answer')); }
 }
 function joinRoom(code,watch){
   if(net) net.es.close();
   watch=!!watch; try{ if(watch) sessionStorage.setItem('dd-watch',code); else sessionStorage.removeItem('dd-watch'); }catch(e){}
-  const es=new EventSource('/duel/events?room='+code+'&id='+cid+(watch?'&watch=1':'')); net={code,es,side:-1,watch,screen:false,present:[false,false],seq:Date.now(),gone:false};
+  const es=new EventSource('/duel/events?room='+code+'&id='+cid+(watch?'&watch=1':'')); net={code,es,side:-1,watch,bot:false,screen:false,present:[false,false],seq:Date.now(),gone:false};
   setScreen(watch); setPad();
   history.replaceState(null,'','#'+code); resetLocal();
   const on=(name,fn)=>es.addEventListener(name,e=>{ if(net&&net.es===es) fn(JSON.parse(e.data)); });
-  on('hello',d=>{ net.side=d.side; local=[d.side===0,d.side===1]; buildDesks(); buildControls(); lastPhase=''; setPad(); });
+  on('hello',d=>{ net.side=d.side; net.bot=!!d.bot; local=[d.side===0,d.side===1]; buildDesks(); buildControls(); lastPhase=''; setPad(); });
   // Once a big screen has been seen the player view stays, so the screen reloading does not flip the layout mid-fight.
-  on('players',d=>{ net.present=d.present; net.screen=net.screen||!!d.screen; setPad(); });
+  on('players',d=>{ net.present=d.present; net.bot=!!d.bot; net.screen=net.screen||!!d.screen; setPad(); });
   on('state',accept);
   on('item',d=>{ setArt(d.side,d.slot,d.strokes,d.ver,d.kind,d.style); if(desk[d.side]) updateDesk(desk[d.side]); });
   on('reset',()=>{ for(const s of [0,1]) art[s]=[null,null]; fx=[]; for(const d of desk) if(d){ d.strokes=[]; d.k=0; } });
@@ -1784,17 +1959,28 @@ function accept(v){
     if(e.e==='ko') shake=Math.max(shake,14*soft);
     if(e.e==='ult'){ shake=Math.max(shake,7*soft); FXI.ring(e.x,-(e.y+60),PCOL[e.side]); FXI.burst(e.x,-(e.y+60),PCOL[e.side],22); }
     if(e.e==='zip') FXI.spark(e.x,-e.y,PCOL[e.side]);
+    if(e.e==='del'){ shake=Math.max(shake,12); sheetDels.push({x:e.x,y:e.y,t0:performance.now()}); }
     if(e.e==='hit'&&navigator.vibrate&&local[e.side]&&navigator.userActivation&&navigator.userActivation.hasBeenActive) navigator.vibrate(30);
   }
   // drawn shapes: follow their positions, forget the ones that are gone
   const seen=new Set(); for(const [id,x,y,life] of v.objs||[]){ seen.add(id); const o=wobj.get(id); if(o){ o.x=x; o.y=y; o.life=life<0?Infinity:life; } }
   for(const id of wobj.keys()) if(!seen.has(id)) wobj.delete(id);
   if(net&&!net.watch&&v.w){ ARENA_W=v.w; }
+  sheetLive=!!v.sheet; if(v.sheet){ ARENA_PLATS=v.sheet.plats; ARENA_W=960; }      // on the spreadsheet stage the rules own the platforms
   view=v; viewAt=performance.now();
 }
 
 /* ---------- interface state ---------- */
 let lastPhase='', overlayKey='', loSig='';
+// The first time a fight starts on this device, say the three things nobody can guess. Shown once per tab.
+function showTips(){
+  try{ if(sessionStorage.getItem('dd-tips')) return; sessionStorage.setItem('dd-tips','1'); }catch(e){}
+  const t=$('tips'), lines=padView?['<b>Left thumb</b> moves; slide between the arrows.','<b>A</b> and <b>B</b> are your two drawings. <b>Mine</b> digs through walls.','<b>Q</b> runs a hack when your gold bar is full. Draw shapes on the strip above.']
+    :RETRO?['<b>Drag the mouse</b> on the canvas to draw: a line is a platform, a box is a crate.','<b>J</b> and <b>K</b> use your two drawings. <b>L</b> mines through walls.','<b>Q</b> runs a hack when the gold bar over your head is full.']
+    :['<b>A D</b> run, <b>W</b> jumps (twice), <b>S</b> drops down.','<b>J</b> and <b>K</b> use your two drawings. <b>L</b> mines.','<b>Q</b> runs a hack when your overdrive is full.'];
+  t.innerHTML=lines.join('<br>'); t.hidden=false; t.classList.remove('out');
+  setTimeout(()=>t.classList.add('out'),7000); setTimeout(()=>{ t.hidden=true; },7600);
+}
 // Desktop mode: the window lets clicks through to the desktop while a fight is on, and takes the mouse only while the
 // menu or the sketchbook is showing. The fight pauses whenever the menu is open or another app has the keyboard.
 function deskSync(){
@@ -1863,15 +2049,20 @@ function retroBuild(){
   FXI.setHooks({stamp:stampGlyph,net:()=>setMode('online')});
   const tip=()=>FXI.toast('A D run \u00b7 W jump (double) \u00b7 S down \u00b7 J and K use your two drawings \u00b7 L mine \u00b7 Q run hack, 1-5 pick \u00b7 mouse draws with the B / R / O tools; Fight tool (F): click attacks');
   FXI.setMenus({
-    file:()=>[['New match','',()=>$('restart').click()],'-',['vs Bot','',()=>setMode('bot'),0,mode==='bot'],['2 players','',()=>setMode('2p'),0,mode==='2p'],['Practice','',()=>setMode('practice'),0,mode==='practice']],
+    file:()=>[['New match','',()=>$('restart').click()],'-',['Player vs Bot','',()=>startMatch(true),0,!!(net&&net.bot)],['Player vs Player','',()=>startMatch(false),0,!!(net&&!net.bot)]],
     edit:()=>[['Undo','Ctrl+Z',null,1]],
     view:()=>[['Game setup window','',()=>{ deskMenu=true; }],['Plain layout','',()=>{ location.search='?plain=1'; }]],
     insert:()=>['sword','spear','hammer','axe','mace','bow','-','platform','crate','wall','shield','arrow'].map(n=>n==='-'?'-':['Stamp: '+n,'',()=>stampGlyph(n)]),
     hack:()=>INK.HACKS.map((h,i)=>[h.name,'Q \u00b7 '+(i+1),()=>{ FXI.hackSel=i; const sd=mySide1(); if(sd>=0){ press(sd,'q',true); } },!(view&&mySide1()>=0&&view.f[mySide1()].od>=100)]),
-    net:()=>[['Draw here','',()=>$('drawHere').click(),0,!bigScreen],['Draw on tablets (big screen)','',()=>$('drawTablets').click(),0,bigScreen],'-',['Online rooms\u2026','',()=>setMode('online')]],
+    net:()=>[['New room: Player vs Bot','',()=>startMatch(true)],['New room: Player vs Player','',()=>startMatch(false)]],
     help:()=>[['Controls','F1',tip],['Glyph grammar','',()=>FXI.toast('Simple = terrain (\u2015 platform, | wall, \u25a1 crate, \u25cb pot/shield/trap). Compound = weapons. \u2192 dash/fling/wind/link \u00b7 \u2715 erase/disarm \u00b7 \u2298 null any hack \u00b7 \u03df lightning')],
       ['About InkShop','',()=>FXI.toast('InkShop 2.0 \u2014 interface, glyph recogniser, hacks and effects from Alex\'s prototype, running on the Doodle Duel engine.')]]});
   FXI.buildUI();
+  { const ab=document.querySelector('#artboard'), tb=t=>t.split(' ').map(x=>x==='|'?'<i></i>':'<span>'+x+'</span>').join('');
+    ab.insertAdjacentHTML('beforebegin','<div id="xlbar"><div class="xltools">'+tb('\u25a1 \u25a4 \u25a3 | \u2702 \u29c9 \u25a7 | \u21b6 \u21b7 | \u03a3 f\u2093 A\u2193 Z\u2193 | \u25a5 100%')+'<b class="xlfont">Arial</b><b class="xlfont n">10</b>'+tb('<b>B</b> <em>I</em> <u>U</u> | \u2261 \u2263 | $ % , | \u25a6')+'</div>'
+      +'<div class="xlfx"><span class="xlname" id="xlname">A1</span><span class="xlbtns">\u2715 \u2713 =</span><span class="xlin" id="xlin"></span></div></div>');
+    ab.insertAdjacentHTML('afterend','<div id="xltabs"><span class="xlnav">\u25c0\u25c0 \u25c0 \u25b6 \u25b6\u25b6</span><span class="xltab">Assumptions</span><span class="xltab on">DCF</span><span class="xltab">Comps</span><span class="xltab">Sheet4</span><span class="xlscroll"><i></i></span></div>');
+    if(STAGE) FXI.setTool('pencil'); }
   document.querySelector('#hint').textContent='A D move \u00b7 W jump \u00b7 J K attack \u00b7 L mine \u00b7 mouse draws (B R O) \u00b7 Q hack';
   // His rig sliders drive the spring layer over this game's clips (anim/rig.js). They start gentler than his defaults,
   // and Exaggerate starts at 1.00 (no change). Time scale and CPU skill were already live.
@@ -1883,22 +2074,26 @@ function retroBuild(){
     on.onchange=()=>ANIM.rig.set('onion',on.checked); rg.onchange=()=>ANIM.rig.set('show',rg.checked);
     on.parentElement.title='Off: afterimages only during a dash. On: always.';
   }
+  { const sk=document.querySelector('#s-diff').parentElement; sk.classList.add('cpuskill'); sk.id='cpuSkill'; document.querySelector('header .controls').insertBefore(sk,$('restart')); }
   document.querySelector('#start').onclick=()=>{ if(view&&view.phase!=='draw'&&view.phase!=='over') deskMenu=!deskMenu; };
   $('deskHint').textContent='Esc or Start: this window';
   retroWindow('game','Game setup',document.querySelector('header'),{left:'calc(50% - 60px)',top:'70px',transform:'translateX(-50%)'});
-  retroWindow('sketch','Sketchbook \u2014 draw your two weapons',$('desks'),{left:'calc(50% - 60px)',top:'150px',transform:'translateX(-50%)',width:'min(760px,80vw)'});
+  retroWindow('sketch','Sketchbook \u2014 draw your two weapons',$('desks'),{left:'calc(50% - 60px)',top:'196px',transform:'translateX(-50%)',width:'min(760px,80vw)'});
   // the sketchbook grew a stats card; keep the window above the taskbar and let it scroll on a short screen
-  Object.assign(rwin.sketch.w.querySelector('.rbody').style,{maxHeight:'calc(100vh - 216px)',overflowY:'auto'});
+  Object.assign(rwin.sketch.w.querySelector('.rbody').style,{maxHeight:'calc(100vh - 262px)',overflowY:'auto'});
   retroWindow('net','NetLink \u2014 join',$('overlay'),{left:'calc(50% - 60px)',top:'120px',transform:'translateX(-50%)',minWidth:'360px'},true);
   rwin.net.w.hidden=true;
+  // on a big screen, what each player has made (with its stats) is a window too
+  retroWindow('load','Loadouts \u2014 what each player has made',$('loadouts'),{left:'calc(50% - 60px)',top:'196px',transform:'translateX(-50%)',width:'min(760px,80vw)'},true);
+  rwin.load.w.hidden=true;
   for(const w of document.querySelectorAll('#inkos .win.small')) makeDraggable(w,w.querySelector('.titlebar'));
   // his NetLink and notes windows, with this game's real rooms and controls
   document.querySelector('#net-go').onmousedown=e=>{ e.stopPropagation(); setMode('online'); };
-  document.querySelector('#nm-host').onchange=()=>{ setMode('online'); createRoom(); }; document.querySelector('#nm-join').onchange=()=>setMode('online');
+  document.querySelector('#nm-host').onchange=()=>startMatch(false); document.querySelector('#nm-join').onchange=()=>setMode('online');
   document.querySelector('#noteswin .body').textContent='CONTROLS\nA/D run   W jump   S down\nJ, K  your two drawings\nL     mine (S+L digs down)\nQ run hack \u00b7 1-5 pick hack\nMouse: draw (B R O tools)\nFight tool (F): click=attack\nMine the frame or run\n  BREAKOUT.exe to get out:\n  window titlebars = platforms';
   const tick=()=>{ document.querySelector('#ink-clock').textContent=new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}); }; tick(); setInterval(tick,20000);
   // drawing on the art board with his tools
-  const s2w=(x,y)=>{ const sc=deskSc(); return {x:x/sc-OX,y:(y-(innerHeight-floorGap()-6*sc))/sc}; };
+  const s2w=(x,y)=>{ if(sheetEmb()){ const q=sheetBox(); return {x:(x-q.left)/q.k,y:(y-q.bottom)/q.k}; } const sc=deskSc(); return {x:x/sc-OX,y:(y-(innerHeight-floorGap()-6*sc))/sc}; };
   addEventListener('pointerdown',e=>{
     const side=mySide1(); if(side<0||!view||view.phase!=='fight'||deskMenu) return;
     if(e.target.closest('.rwin,.menubar,.toolbox,.panel,.titlebar,.timeline,.palette,.statusbar,#taskbar,.menu,.win.small,.icon')) return;
@@ -1934,7 +2129,9 @@ function retroBoard(){
 // Each frame: his panels show this match; a few times a second the layout and window edges are measured.
 function retroSync(menu){
   const v=view, Q=s=>document.querySelector(s), side=mySide1();
-  rwin.game.want=menu; rwin.sketch.want=menu&&side>=0; rwin.net.want=!$('overlay').hidden;
+  $('cpuSkill').hidden=!!(net&&!net.bot);
+  $('playBot').setAttribute('aria-pressed',!!(net&&net.bot)); $('playPvp').setAttribute('aria-pressed',!!(net&&!net.bot));
+  rwin.game.want=menu; rwin.sketch.want=menu&&side>=0; rwin.net.want=!$('overlay').hidden; rwin.load.want=!$('loadouts').hidden;
   for(const id in rwin){ const o=rwin[id], show=o.want&&!o.min; if(o.w.hidden===show){ o.w.hidden=!show; if(show) o.w.style.zIndex=++rTop; } o.task.hidden=!o.want; o.task.classList.toggle('on',show&&+o.w.style.zIndex===rTop); if(!o.want) o.min=false; }
   rwin.net.w.querySelector('.rname').textContent=net?'NetLink \u2014 room '+net.code:'NetLink \u2014 join';
   // Fighters panel, score, timeline, status bar (his hud(), reading this match)
@@ -1942,19 +2139,20 @@ function retroSync(menu){
     Q('#'+p+'hp').style.width=(v.phase==='draw'?100:f.hp)+'%'; Q('#'+p+'ink').style.width=(f.ink2===undefined?100:f.ink2)+'%'; Q('#'+p+'od').style.width=(f.od||0)+'%'; Q('#'+p+'odb').classList.toggle('ready',f.od>=100);
     Q('#'+p+'w').textContent=it?'Weapon: '+it.name+' \u00b7 '+(it.style||it.kind)+' \u00b7 counter: '+(STYLE_COUNTER[it.style]||'wall'):'Weapon: fists \u00b7 counter: wall';
     Q('#'+p+'st').textContent=[f.oc?'OVERCLOCK':'',f.sc<0.85?'SHRUNK':'',f.bub?'SHIELD':'',f.stun?'STUN':'',f.trap?'TRAP':'',f.hp<=0?'K.O.':''].filter(Boolean).join(' '); });
-  const who=s=>NAME[s]+(local[s]&&!(local[0]&&local[1])?' \u00b7 You':mode==='bot'&&s===1?' \u00b7 animator.bot':'');
+  const who=s=>NAME[s]+(local[s]&&!(local[0]&&local[1])?' \u00b7 You':net&&net.bot&&s===1?' \u00b7 animator.bot':'');
   const names=document.querySelectorAll('#inkos .pcard .nm span:first-child'); if(names[0].textContent!==who(0)) names[0].textContent=who(0); if(names[1].textContent!==who(1)) names[1].textContent=who(1);
   Q('#score').textContent=NAME[0]+' '+v.wins[0]+' : '+v.wins[1]+' '+NAME[1]+(v.phase==='fight'&&!v.practice?'  \u00b7  '+Math.ceil(v.t)+'s':v.phase==='draw'?'  \u00b7  draw '+Math.max(0,Math.ceil(v.t)):'');
   Q('#playhead').style.left=(Math.floor(FXI.S.time*12)%200*9)+'px';
   document.querySelectorAll('#hacks > div').forEach((d,i)=>d.classList.toggle('sel',i===FXI.hackSel));
   const mtxt='Mode: '+({bot:'Player vs CPU',practice:'Practice','2p':'2 players',online:bigScreen?'Big screen':'Online'}[mode])+' \u00b7 NetLink: '+(net?'room '+net.code:'local sim');
   if(Q('#st-net').textContent!==mtxt) Q('#st-net').textContent=mtxt;
-  Q('#inkos .titlebar span').textContent='InkShop 2.0 \u2014 arena.ink  ['+mtxt.slice(6).split(' \u00b7 ')[0]+']';
+  const sh=sheetOn(); document.body.classList.toggle('sheetstage',sh);
+  Q('#inkos .titlebar span').textContent=(sh?'Granola Sheets 97 \u2014 Anthropik_IPO_model_v7_FINAL_final(2).xls  [':'InkShop 2.0 \u2014 arena.ink  [')+mtxt.slice(6).split(' \u00b7 ')[0]+']';
   if(++rTick%8) return;
   // layout: the board and arena size when they change (only between fights), window edges whenever they move
   const board=retroBoard(), w=Math.round(innerWidth/deskSc()), lay=JSON.stringify([w,board]);
   const e=retroEdges(), j=JSON.stringify(e); if(j!==rEdgesSent){ rEdgesSent=j; deskEdges=e; deskTerrain(); }
-  if(lay!==rLayoutSent&&(v.phase==='draw'||v.practice||!v.board)){
+  if(!sh&&lay!==rLayoutSent&&(v.phase==='draw'||v.practice||!v.board)){
     rLayoutSent=lay; ARENA_W=w;
     if(sim) sim.setLayout({w,board,plats:ARENA_PLATS}); else if(net&&net.watch) post({type:'layout',w,board,plats:ARENA_PLATS});
   }
@@ -1971,11 +2169,13 @@ function syncUI(){
     playing=!drawing&&v.phase!=='over'; document.body.classList.toggle('playing',playing);
     $('desks').hidden=!(drawing||v.practice||deskLike()); $('tcs').hidden=drawing||v.phase==='over'||!local.some(Boolean);
     if(drawing||v.phase==='end'||v.phase==='over') releaseAll();      // nothing stays held from one round into the next
+    if(v.phase==='fight'&&local.some(Boolean)) showTips();
     if(v.phase==='count'&&!deskLike()) document.querySelector('.arenawrap').scrollIntoView({block:'start',behavior:'smooth'});
   }
   for(const d of desk) if(d&&d.sig!==deskSig(d)) updateDesk(d);
+  $('playBot').setAttribute('aria-pressed',!!(net&&net.bot)); $('playPvp').setAttribute('aria-pressed',!!(net&&!net.bot));
   // The big screen shows what each player has made, with its stats, while they draw.
-  const lo=$('loadouts'), showLo=bigScreen&&(v.phase==='draw'||v.phase==='count'), ls=showLo?JSON.stringify(v.items):'';
+  const lo=$('loadouts'), showLo=bigScreen&&(v.phase==='draw'||v.phase==='count')&&v.items.some(a=>a.some(Boolean))&&!!(net&&net.present.every(Boolean)), ls=showLo?JSON.stringify(v.items):'';
   if(ls!==loSig){ loSig=ls; lo.hidden=!showLo;
     if(showLo) lo.innerHTML=[0,1].map(s=>`<div class="lo" style="border-color:${PCOL[s]}"><h3>${NAME[s]}</h3>${v.items[s].map((it,k)=>{
       if(!it) return `<div class="loitem empty">${'AB'[k]}: nothing yet</div>`; const a=art[s][k];
@@ -1990,16 +2190,16 @@ function syncUI(){
   const o=$('overlay'); let key='';
   if(mode==='online'&&!net) key='menu';
   else if(net&&net.gone) key='gone';
-  else if(net&&(net.side>=0||net.watch)&&!net.present.every(Boolean)) key='wait'+net.code+net.side+net.present;
+  else if(net&&(net.side>=0||net.watch)&&!net.present.every(Boolean)) key='wait'+net.code+net.side+net.present+net.bot;
   else if(net&&net.side<0&&v.phase==='draw') key='';
   else if(v.phase==='over') key='over'+v.champ;
   if(key===overlayKey) return; overlayKey=key; o.hidden=!key; if(!key) return;
   if(key==='menu'){
-    o.innerHTML=`<div class="box"><h2>Play on two devices</h2><p>One player creates a room; the other scans the code or types it in.</p>
-      <div class="actions" style="justify-content:center"><button class="primary" id="mkRoom">Create a room</button><span>or</span><input id="joinCode" maxlength="4" placeholder="CODE" aria-label="Room code"><button id="joinBtn">Join</button></div>
-      <p style="margin:12px 0 6px">Or make this the big screen: it only shows the fight, and two tablets or phones scan its code to draw and play.</p>
-      <button id="mkScreen">Use this as the big screen</button></div>`;
-    $('mkRoom').onclick=()=>createRoom(); $('mkScreen').onclick=()=>createRoom(true); const go=()=>{ const c=$('joinCode').value.trim().toUpperCase(); if(/^[A-Z]{4}$/.test(c)) joinRoom(c); };
+    o.innerHTML=`<div class="box"><h2>Doodle Duel</h2><p>This screen shows the fight. Each player scans its code and uses a phone or tablet as sketchbook and controller.</p>
+      <div class="actions" style="justify-content:center"><button class="primary" id="mkBot">Player vs Bot</button><button class="primary" id="mkPvp">Player vs Player</button></div>
+      <p style="margin:14px 0 6px">Joining a room that is already open?</p>
+      <div class="actions" style="justify-content:center"><input id="joinCode" maxlength="4" placeholder="CODE" aria-label="Room code"><button id="joinBtn">Join</button></div></div>`;
+    $('mkBot').onclick=()=>startMatch(true); $('mkPvp').onclick=()=>startMatch(false); const go=()=>{ const c=$('joinCode').value.trim().toUpperCase(); if(/^[A-Z]{4}$/.test(c)) joinRoom(c); };
     $('joinBtn').onclick=go; $('joinCode').onkeydown=e=>{ if(e.key==='Enter') go(); };
   }else if(key==='gone'){
     o.innerHTML=`<div class="box"><h2>That room has closed</h2><p>Rooms close after a while with nobody in them.</p><button class="primary" id="mkRoom">Create a new room</button></div>`;
@@ -2008,11 +2208,11 @@ function syncUI(){
     const isLocal=/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname), base=isLocal&&serverInfo.lanUrl?serverInfo.lanUrl:location.origin, url=base+'/duel#'+net.code;
     if(padView){ o.innerHTML=`<div class="box"><h2>Waiting for ${NAME[1-net.side]} to scan the big screen</h2><p style="margin:0">You can start drawing now.</p></div>`; return; }
     const head=net.watch?`<h2>Scan to play · room <span class="code">${net.code}</span></h2>
-      <div class="seats">${[0,1].map(s=>`<span class="${net.present[s]?'in':''}" style="${net.present[s]?'background:'+PCOL[s]:''}">${NAME[s]}: ${net.present[s]?'joined ✓':'waiting…'}</span>`).join('')}</div>
-      <p>The first two devices to scan are Blue and Red. This screen shows the fight.</p>`
+      <div class="seats">${[0,1].map(s=>`<span class="${net.present[s]?'in':''}" style="${net.present[s]?'background:'+PCOL[s]:''}">${NAME[s]}: ${net.bot&&s===1?'the bot ✓':net.present[s]?'joined ✓':'waiting…'}</span>`).join('')}</div>
+      <p>${net.bot?'Scan with a phone or tablet to play Blue against the bot.':'The first two devices to scan are Blue and Red.'} This screen shows the fight.</p>`
       :`<h2>Room <span class="code">${net.code}</span> · you are ${NAME[net.side]}</h2><p>Waiting for the other player. The match pauses while someone is away.</p>`;
     o.innerHTML=`<div class="box">${head}
-      <div class="share"><div class="qr" id="roomQr"></div><div><div>Scan, or open</div><div class="link">${esc(url)}</div><div>or choose Online there and type the code.</div></div></div></div>`;
+      <div class="share"><div class="qr" id="roomQr"></div><div><div>Scan, or open</div><div class="link">${esc(url)}</div><div>or open the game there and type the code.</div></div></div></div>`;
     if(typeof qrcode==='function'){ try{ const q=qrcode(0,'M'); q.addData(url); q.make(); $('roomQr').innerHTML=q.createSvgTag({cellSize:4,margin:2,scalable:true}); }catch(e){} }
   }else{
     const mine=local[v.champ]&&!(local[0]&&local[1]);
@@ -2245,18 +2445,127 @@ function worldFront(v,now){
   L.restore();
 }
 const shadowY=f=>{ let y=0; for(const p of ARENA_PLATS) if(f.y>=p.y-1&&f.x>=p.x0-6&&f.x<=p.x1+6) y=Math.max(y,p.y); return y; };
+/* ---------- spreadsheet stage ---------- */
+// The banker's sheet: a formula bar showing what he is typing, column and row headings, faint figures that keep changing,
+// and the cells he has filled in (the platforms) in spreadsheet green.
+// The model on the sheet: an IPO valuation of a made-up AI lab (the name is a joke and the figures are invented), worked out
+// once. Eight years across, the usual lines down, laid out the way bankers do: inputs in blue, totals in bold with a rule above.
+const SHEET_MODEL=(()=>{
+  const yrs=['FY24A','FY25E','FY26E','FY27E','FY28E','FY29E','FY30E','FY31E'], g=[0,3,1.5,1,0.6,0.4,0.4,0.4], n=yrs.length, WACC=0.12, TG=0.04;
+  const rev=[1000]; for(let i=1;i<n;i++) rev.push(rev[i-1]*(1+g[i]));
+  const lin=(a,b)=>rev.map((_,i)=>a+(b-a)*i/(n-1)), mul=(v,p)=>v.map((x,i)=>-x*p[i]), add=(...a)=>a[0].map((_,i)=>a.reduce((t,v)=>t+v[i],0));
+  const cogs=mul(rev,lin(0.62,0.34)), gp=add(rev,cogs), rd=mul(rev,lin(0.70,0.22)), sm=mul(rev,lin(0.22,0.11)), ebitda=add(gp,rd,sm);
+  const da=mul(rev,lin(0.03,0.03)), capex=mul(rev,lin(0.45,0.10)), nwc=mul(rev,lin(0.02,0.02)), fcf=add(ebitda,capex,nwc), df=rev.map((_,i)=>1/Math.pow(1+WACC,i)), pv=fcf.map((x,i)=>x*df[i]);
+  const tv=fcf[n-1]*(1+TG)/(WACC-TG)*df[n-1], ev=pv.reduce((a,b)=>a+b,0)+tv, cash=18000, shares=920;
+  const num=x=>{ const a=Math.round(Math.abs(x)).toLocaleString('en-US'); return x<0?'('+a+')':a; }, pct=x=>(x*100).toFixed(1)+'%', one=(v,f)=>[f(v)];
+  const L=(lb,vals,o)=>Object.assign({lb,vals},o||{});
+  return {yrs,title:'Anthropik, PBC — IPO valuation model (DCF)      $ in millions      DRAFT, do not forward',lines:[
+    L('Revenue',rev.map(num),{bold:1}), L('  % growth',g.map((x,i)=>i?pct(x):'n.a.'),{input:1,it:1}), L('Compute (GPUs)',cogs.map(num)), L('Gross profit',gp.map(num),{bold:1,rule:1}),
+    L('  Gross margin',gp.map((x,i)=>pct(x/rev[i])),{it:1}), L('R&D',rd.map(num)), L('Sales & marketing',sm.map(num)), L('EBITDA',ebitda.map(num),{bold:1,rule:1}),
+    L('  EBITDA margin',ebitda.map((x,i)=>pct(x/rev[i])),{it:1}), L('D&A',da.map(num)), L('CapEx (more GPUs)',capex.map(num)), L('Change in NWC',nwc.map(num)),
+    L('Unlevered FCF',fcf.map(num),{bold:1,rule:1}), L('Discount factor',df.map(x=>x.toFixed(2)),{it:1}), L('PV of FCF',pv.map(num)), L('',[]),
+    L('WACC',one(WACC,pct),{input:1}), L('Terminal growth',one(TG,pct),{input:1}), L('PV of terminal value',one(tv,num)), L('Enterprise value',one(ev,num),{bold:1,rule:1}),
+    L('Net cash',one(cash,num),{input:1}), L('Equity value',one(ev+cash,num),{bold:1}), L('Shares (mm)',one(shares,num),{input:1}), L('Implied price / share',['$'+((ev+cash)/shares).toFixed(2)],{bold:1,rule:1})]};
+})();
+const sheetDels=[];
+function sheetBack(v,now){
+  // Inside the app window the sheet reaches up to the top of the canvas area: more rows, with the formula bar up there.
+  const h=v.sheet, emb=RETRO, bx=emb?sheetBox():null, ty=emb?Math.min(0,GY+2-(bx.bottom-bx.top)/bx.k):0, hd=emb?0:22, x0=emb?0:-OX, x1=emb?960:VW-OX, top=ty+hd+18, rows=Math.ceil((GY-top)/SHEET_ROW), C=SHEET_COL, R=SHEET_ROW, c0=Math.floor(x0/C), c1=Math.ceil(x1/C), ca=x0-c0*C>C*0.35?c0+1:c0;   // ca: the first column with room for the row names, shown as column A
+  L.save(); L.lineCap='butt';
+  if(emb){ L.beginPath(); L.rect(-SHEET_GUT,ty,960+SHEET_GUT,GY+3-ty); L.clip(); L.fillStyle='#fff'; L.fillRect(-SHEET_GUT,ty,960+SHEET_GUT,GY+3-ty); }      // inside the app window
+  // the model: title, a row of years, then the lines. After the rage-delete (no cells left) every formula shows an error.
+  { const M=SHEET_MODEL, full=Math.floor((GY-top)/R), broke=h.plats.length===0&&h.t>1, ink=emb?'#1a1a1a':'#7d8798', blue=emb?'#0000d0':'#6f86c9', F=(b,it)=>(it?'italic ':'')+(b?'700 ':'')+'11px Arial,Helvetica,sans-serif';
+    L.globalAlpha=emb?0.78:1;
+    for(let i=0;i<full;i++){
+      const y=GY-(full-1-i)*R-R/2, yt=y-R/2;
+      if(i===0){ L.fillStyle=ink; L.font=F(1); L.textAlign='left'; L.fillText(M.title,ca*C+6,y,C*9.5); continue; }
+      if(i===1){ L.font=F(1); L.fillStyle=ink; L.textAlign='right'; M.yrs.forEach((t,n)=>L.fillText(t,(ca+2+n)*C-6,y)); L.strokeStyle=ink; L.lineWidth=1.2; L.beginPath(); L.moveTo(ca*C+2,yt+R-1); L.lineTo((ca+9)*C-2,yt+R-1); L.stroke(); continue; }
+      const ln=M.lines[i-2]; if(!ln) break;
+      L.font=F(ln.bold,ln.it); L.textAlign='left'; L.fillStyle=ink; L.fillText(ln.lb,ca*C+6,y,C-8);
+      if(ln.rule){ L.strokeStyle=ink; L.lineWidth=1; L.beginPath(); L.moveTo((ca+1)*C+4,yt+1); L.lineTo((ca+1+ln.vals.length)*C-2,yt+1); L.stroke(); }
+      L.textAlign='right';
+      ln.vals.forEach((t,n)=>{ const err=broke&&!ln.input; L.fillStyle=err?'#c0261d':ln.input?blue:t[0]==='('?(emb?'#a01515':'#c59a9a'):ink; L.fillText(err?'#REF!':t,(ca+2+n)*C-6,y,C-8); });
+    }
+    L.globalAlpha=1; }
+  // grid
+  L.strokeStyle='#e1e6ee'; L.lineWidth=1; L.beginPath();
+  for(let c=c0;c<=c1;c++){ L.moveTo(c*C,top); L.lineTo(c*C,GY); }
+  for(let r=1;r<=rows;r++){ L.moveTo(x0,GY-r*R); L.lineTo(x1,GY-r*R); }
+  L.stroke();
+  if(h.all){ L.fillStyle='rgba(16,124,65,.16)'; L.fillRect(x0,top,x1-x0,GY-top); }
+  // the cells he has filled in: these are what the fighters stand on
+  for(const p of h.plats){
+    const y=GY-p.y, w=p.x1-p.x0;
+    L.fillStyle='#e6f4ea'; L.fillRect(p.x0,y,w,R); L.strokeStyle='#107c41'; L.lineWidth=2.5; L.strokeRect(p.x0,y,w,R);
+    L.fillStyle='#107c41'; L.fillRect(p.x1-4,y+R-4,7,7);
+    L.fillStyle='#0b5c30'; L.font='700 13px Karla,system-ui,sans-serif'; L.textAlign='left'; L.fillText(p.lb||'',p.x0+8,y+R/2,w-14);
+  }
+  // headings and the formula bar
+  // the cell he is working in: a heavy black border with the fill handle, and what he is typing inside it
+  if(h.cell&&!h.all){ const [cc,cr]=h.cell, ax=cc*C, ay=GY-(cr+1)*R, typing=h.msg.slice(0,Math.max(0,Math.floor((h.t-h.said)*34)));
+    L.strokeStyle='#000'; L.lineWidth=3; L.strokeRect(ax,ay,C,R); L.fillStyle='#000'; L.fillRect(ax+C-4,ay+R-4,7,7);
+    if(h.t-h.said<4&&!h.drag){ L.save(); L.beginPath(); L.rect(ax+2,ay+2,C*2.6,R-4); L.clip(); L.fillStyle='#fff'; L.fillRect(ax+2,ay+2,Math.min(C*2.6,L.measureText(typing).width+14),R-4); L.fillStyle='#000'; L.font='12px Arial,sans-serif'; L.textAlign='left'; L.fillText(typing.slice(-26),ax+6,ay+R/2); L.restore(); } }
+  // column letters across the top (and, inside the app window, row numbers down the left) in the old grey style
+  const band=emb?'#d4d0c8':'#f1f3f6';
+  L.fillStyle=band; L.fillRect(x0,ty+hd,x1-x0,18); L.strokeStyle=emb?'#808080':'#cfd6e0'; L.lineWidth=1; L.beginPath(); L.moveTo(x0,top); L.lineTo(x1,top); L.moveTo(x0,ty+hd); L.lineTo(x1,ty+hd);
+  if(emb) for(let c=c0;c<=c1;c++){ L.moveTo(c*C,ty); L.lineTo(c*C,top); }
+  L.stroke();
+  if(emb){ L.fillStyle=band; L.fillRect(-SHEET_GUT,ty,SHEET_GUT,GY+3-ty); L.strokeStyle='#808080'; L.beginPath(); L.moveTo(0,ty); L.lineTo(0,GY); for(let r=0;r<=rows;r++){ L.moveTo(-SHEET_GUT,GY-r*R); L.lineTo(0,GY-r*R); } L.stroke();
+    { const full=Math.floor((GY-top)/R); L.fillStyle='#000'; L.font='11px Tahoma,Arial,sans-serif'; L.textAlign='center'; for(let r=0;r<full;r++) L.fillText(String(full-r),-SHEET_GUT/2,GY-r*R-R/2); }
+    const nm=h.cell?String.fromCharCode(65+Math.max(0,h.cell[0])%26)+(Math.floor((GY-top)/R)-h.cell[1]):'A1', xn=$('xlname'), xi=$('xlin'), tx=h.msg.slice(0,Math.max(0,Math.floor((h.t-h.said)*34)));
+    if(xn&&xn.textContent!==nm) xn.textContent=nm; if(xi&&xi.textContent!==tx){ xi.textContent=tx; xi.classList.toggle('mad',!!(h.hunt||h.all)); } }
+  L.fillStyle=emb?'#000':'#6b7486'; L.font=emb?'11px Tahoma,Arial,sans-serif':'600 11px Karla,system-ui,sans-serif'; L.textAlign='center';
+  for(let c=ca;c<c1;c++) L.fillText(String.fromCharCode(65+(c-ca)%26),c*C+C/2,ty+hd+9);
+  if(!emb){
+  L.fillStyle='#fff'; L.fillRect(x0,ty,x1-x0,22);
+  const typed=h.msg.slice(0,Math.max(0,Math.floor((h.t-h.said)*34))), caret=Math.floor(now/400)%2?'|':'';
+  L.textAlign='left'; L.fillStyle='#8a93a5'; L.font='italic 600 12px Georgia,serif'; L.fillText('fx',x0+10,ty+11);
+  L.fillStyle=h.hunt||h.all?'#b0121f':'#1c2541'; L.font='600 13px Karla,system-ui,sans-serif'; L.fillText(typed+caret,x0+34,ty+11.5);
+  L.textAlign='right'; L.fillStyle='#b4bcc9'; L.font='11px Karla,system-ui,sans-serif'; L.fillText('Anthropik_IPO_model_v7_FINAL_final(2).xls  ·  Granola Capital',x1-10,ty+11.5);
+  }
+  if(emb){ L.strokeStyle='#111'; L.lineWidth=3; L.beginPath(); L.moveTo(0,GY+1.5); L.lineTo(960,GY+1.5); L.stroke(); }
+  L.restore();
+}
+// In front of the fighters: the errors raining down, the banker's pointer, and during the hunt his selection and a very large cursor.
+function sheetArrow(x,y,k){
+  L.save(); L.translate(x,y); L.scale(k,k); L.beginPath(); L.moveTo(0,0); L.lineTo(0,17); L.lineTo(4.4,13); L.lineTo(7.4,19.6); L.lineTo(10,18.4); L.lineTo(7,12); L.lineTo(12.6,12); L.closePath();
+  L.fillStyle='#111'; L.fill(); L.lineJoin='round'; L.strokeStyle='#fff'; L.lineWidth=1.6; L.stroke(); L.restore();
+}
+function sheetFront(v,now){
+  const h=v.sheet; L.save(); L.textBaseline='middle';
+  L.font='800 17px Karla,system-ui,sans-serif'; L.textAlign='center';
+  for(const [x,y] of h.rain){ L.save(); L.translate(x,GY-y); L.rotate(Math.sin(x*0.7)*0.25); L.lineWidth=4; L.strokeStyle='#fff'; L.strokeText('#REF!',0,0); L.fillStyle='#c0261d'; L.fillText('#REF!',0,0); L.restore(); }
+  for(let i=sheetDels.length-1;i>=0;i--){ const d=sheetDels[i], a=(now-d.t0)/320; if(a>=1){ sheetDels.splice(i,1); continue; }
+    L.globalAlpha=1-a; L.fillStyle='#e2241a'; L.fillRect(d.x-SHEET_HW-a*18,GY-d.y-SHEET_HH-a*18,(SHEET_HW+a*18)*2,(SHEET_HH+a*18)*2); L.globalAlpha=1; }
+  if(h.hunt){
+    const q=h.hunt, x=q.x-SHEET_HW, y=GY-q.y-SHEET_HH, w=SHEET_HW*2, hh=SHEET_HH*2, lock=q.st==='lock', blink=lock&&Math.floor(now/90)%2;
+    L.fillStyle=lock?(blink?'rgba(226,36,26,.38)':'rgba(226,36,26,.2)'):'rgba(16,124,65,.14)'; L.fillRect(x,y,w,hh);
+    L.strokeStyle=lock?'#c0261d':'#107c41'; L.lineWidth=3; L.setLineDash(lock?[]:[9,6]); L.lineDashOffset=-now/30; L.strokeRect(x,y,w,hh); L.setLineDash([]);
+    if(lock){ L.font='800 20px Karla,system-ui,sans-serif'; L.textAlign='center'; L.lineWidth=5; L.strokeStyle='#fff'; L.strokeText('DELETE',q.x,y-14); L.fillStyle='#c0261d'; L.fillText('DELETE',q.x,y-14); }
+    sheetArrow(q.x+SHEET_HW-18,GY-q.y-SHEET_HH+6,4.2);       // a very large pointer, tip in the selection's corner
+  }else if(h.drag){
+    const p=h.plats.find(p=>p.id===h.drag); if(p){ L.strokeStyle='#444'; L.lineWidth=2.5; L.setLineDash([7,5]); L.lineDashOffset=-now/40; L.strokeRect(p.x0-3,GY-p.y-3,p.x1-p.x0+6,SHEET_ROW+6); L.setLineDash([]); }
+    sheetArrow(h.cur[0],GY-h.cur[1],2);
+    const mx=h.cur[0]+30, my=GY-h.cur[1]+34; L.strokeStyle='#fff'; L.lineWidth=5; L.lineCap='round'; for(const col of ['#fff','#111']){ L.strokeStyle=col; L.lineWidth=col==='#fff'?5:2; L.beginPath(); L.moveTo(mx-9,my); L.lineTo(mx+9,my); L.moveTo(mx,my-9); L.lineTo(mx,my+9); L.stroke(); }
+  }else{                                     // the fat white cross a spreadsheet shows over its cells
+    const x=h.cur[0], y=GY-h.cur[1]; L.lineJoin='miter';
+    for(const [col,w] of [['#111',13],['#fff',9]]){ L.strokeStyle=col; L.lineWidth=w; L.lineCap='butt'; L.beginPath(); L.moveTo(x-13-(w-9)/2,y); L.lineTo(x+13+(w-9)/2,y); L.moveTo(x,y-13-(w-9)/2); L.lineTo(x,y+13+(w-9)/2); L.stroke(); }
+  }
+  L.restore();
+}
 function render(now){
   const v=view, age=net&&!v.hs?Math.min(0.08,(now-viewAt)/1000):0, dt=Math.max(0,Math.min(0.05,(now-(lastRender||now))/1000)); lastRender=now;
   fitCanvas(); L.setTransform(1,0,0,1,0,0); L.clearRect(0,0,cv.width,cv.height); L.setTransform(VS,0,0,VS,OX*VS,OY);
   if(!deskLike()){ L.fillStyle='#fff'; L.fillRect(-OX,0,VW,440); }
+  if(v.sheet) sheetBack(v,now);
   shake*=Math.exp(-dt*22); if(shake>0.1) L.translate(Math.sin(now*0.112)*shake,Math.cos(now*0.091)*shake*0.35); else shake=0;
   // ground and platforms: plain ink lines, no scenery
   L.strokeStyle='#111'; L.lineCap='round'; L.lineWidth=DESK?3:4; if(RETRO) L.globalAlpha=0; L.beginPath(); L.moveTo(-OX-10,GY+2); L.lineTo(ARENA_W+10+OX,GY+2); L.stroke(); L.globalAlpha=1;
   // corner posts mark where the arena ends when the view is wider than it
-  if(OX>12) for(const px of [0,ARENA_W]){ L.lineWidth=5; L.beginPath(); L.moveTo(px,GY+2); L.lineTo(px,GY-58); L.stroke(); L.lineWidth=3; L.beginPath(); L.moveTo(px,GY-58); L.lineTo(px+(px?-22:22),GY-48); L.lineTo(px,GY-38); L.stroke(); }
+  if(OX>12&&!(RETRO&&v.sheet)) for(const px of [0,ARENA_W]){ L.lineWidth=5; L.beginPath(); L.moveTo(px,GY+2); L.lineTo(px,GY-58); L.stroke(); L.lineWidth=3; L.beginPath(); L.moveTo(px,GY-58); L.lineTo(px+(px?-22:22),GY-48); L.lineTo(px,GY-38); L.stroke(); }
   const terrain=deskLike()&&deskEdges&&!(net&&!net.watch);
   if(terrain){ L.strokeStyle='#ffd84a'; L.globalAlpha=RETRO?0:.85; L.lineWidth=3; }else L.lineWidth=5;
-  for(const p of ARENA_PLATS){ L.beginPath(); L.moveTo(p.x0+(terrain?3:0),GY-p.y+(terrain?0:2)); L.lineTo(p.x1-(terrain?3:0),GY-p.y+(terrain?0:2)); L.stroke(); }
+  if(!v.sheet) for(const p of ARENA_PLATS){ L.beginPath(); L.moveTo(p.x0+(terrain?3:0),GY-p.y+(terrain?0:2)); L.lineTo(p.x1-(terrain?3:0),GY-p.y+(terrain?0:2)); L.stroke(); }
   L.globalAlpha=1; L.strokeStyle='#111';
   worldBack(v,now);
   // the ultimate's wind-up: the stage darkens around the fighter who is casting it (not on the desktop overlay, where it would dim the user's own screen)
@@ -2290,6 +2599,7 @@ function render(now){
   if(fleetSeen.size>40) for(const id of [...fleetSeen.keys()]) if(!v.pr.some(p=>p.id===id)) fleetSeen.delete(id);
   drawFighter(v,1,now,age,dt); drawFighter(v,0,now,age,dt);
   worldFront(v,now);
+  if(v.sheet) sheetFront(v,now);
   // effects
   fx=fx.filter(e=>now-e.t0<700);
   for(const e of fx){
@@ -2335,7 +2645,7 @@ function frame(now){
 }
 if(canRead) fetch('/info').then(r=>r.json()).then(o=>{ serverInfo=o; $('reader').textContent='Drawings read by: '+o.reader; canRead=/OpenAI/.test(o.reader); overlayKey=overlayKey.startsWith('wait')?'':overlayKey; }).catch(()=>{ canRead=false; });
 if(RETRO) retroBuild();
-setMode(/^#[A-Za-z]{4}$/.test(location.hash)?'online':'bot');
+setMode('online');      // every match is a room: a screen, and phones or tablets as controllers
 requestAnimationFrame(frame);
 </script>
 </body>

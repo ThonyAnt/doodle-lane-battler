@@ -9,7 +9,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   const DETAIL=['low','high','auto'].includes(process.env.OPENAI_DETAIL)?process.env.OPENAI_DETAIL:'high';
   const page=path.join(__dirname,'duel.html'), src=fs.readFileSync(page,'utf8');
   const D=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+
-    ';return {createDuel,validItem,localGuess,nameFor,inkCost,stockItem,INK_MAX,PAD_W,PAD_H};')();
+    ';return {createDuel,validItem,localGuess,nameFor,inkCost,stockItem,makeBot,botLoadout,INK_MAX,PAD_W,PAD_H};')();
 
   /* ---------- reading a drawing ---------- */
   async function askOpenAI(png,strokes){
@@ -39,22 +39,30 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
 
   /* ---------- rooms ---------- */
   const rooms=new Map(), LETTERS='ABCDEFGHJKLMNPQRSTUVWXYZ';
-  function newRoom(){
+  // bot: Red is played by the game's bot on the server, so one person with a controller can play. skill is its 0 to 1 setting.
+  function newRoom(stage,bot,skill){
     let code; do{ code=Array.from({length:4},()=>LETTERS[Math.floor(Math.random()*LETTERS.length)]).join(''); }while(rooms.has(code));
-    const now=Date.now(), room={code,sim:D.createDuel(),art:[[null,null],[null,null]],players:new Map(),watchers:new Set(),clients:new Set(),last:now,sent:0,seen:now,dirty:true};
+    const now=Date.now(), room={code,stage:stage==='sheet'?'sheet':'',sim:D.createDuel(stage==='sheet'?{stage:'sheet'}:undefined),art:[[null,null],[null,null]],players:new Map(),watchers:new Set(),clients:new Set(),last:now,sent:0,seen:now,dirty:true,bot:null,skill:Number.isFinite(skill)?Math.max(0,Math.min(1,skill)):0.55};
+    if(bot){ room.players.set('(bot)',1); room.bot=D.makeBot(1,()=>room.skill); armBot(room); }
     rooms.set(code,room); return room;
   }
   const sse=(res,event,data)=>res.write('event: '+event+'\ndata: '+JSON.stringify(data)+'\n\n');
   const broadcast=(room,event,data)=>{ for(const c of room.clients) sse(c.res,event,data); };
-  function present(room){ const p=[false,false]; for(const c of room.clients) if(c.side>=0) p[c.side]=true; return p; }
+  function present(room){ const p=[false,false]; for(const c of room.clients) if(c.side>=0) p[c.side]=true; if(room.bot) p[1]=true; return p; }
+  // Give the bot its two ready-made items for this match and tell every device what they look like.
+  function armBot(room){
+    D.botLoadout().forEach((b,k)=>{ const it=room.sim.setItem(1,k,b.spec,b.cost); if(!it) return;
+      room.art[1][k]={strokes:b.strokes,ver:it.ver,kind:it.kind,style:it.style}; for(const c of room.clients) sse(c.res,'item',{side:1,slot:k,strokes:b.strokes,ver:it.ver,kind:it.kind,style:it.style}); });
+    room.dirty=true;
+  }
   // Who is here: the two seats, and whether a big screen is showing the match (players' devices then act as sketchbook and controller only).
-  const roster=room=>({present:present(room),screen:[...room.clients].some(c=>c.watch)});
+  const roster=room=>({present:present(room),screen:[...room.clients].some(c=>c.watch),bot:!!room.bot});
   // 30 ticks a second. The match only advances while both players are connected.
   setInterval(()=>{
     const now=Date.now();
     for(const room of rooms.values()){
       const dt=Math.min(0.1,(now-room.last)/1000), both=present(room).every(Boolean), S=room.sim; room.last=now;
-      if(both) S.step(dt);
+      if(both){ if(room.bot){ room.bot(S,dt); if(S.phase==='draw'&&!S.ready[1]) S.setReady(1); } S.step(dt); }
       const live=both&&(S.phase==='count'||S.phase==='fight'||S.phase==='end');
       if(room.clients.size&&(live||room.dirty||now-room.sent>=250)){ broadcast(room,'state',S.snapshot()); room.sent=now; room.dirty=false; }
       if(room.clients.size) room.seen=now; else if(now-room.seen>10*60e3) rooms.delete(room.code);
@@ -122,7 +130,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       out?send(200,Object.assign({source:out.source},out.spec)):send(502,{error:'OpenAI could not read the drawing'}); return true;
     }
     if(req.method==='POST'&&p==='/duel/room'){
-      if(rooms.size>=500) send(503,{error:'Too many rooms are open right now.'}); else send(200,{code:newRoom().code});
+      if(rooms.size>=500) send(503,{error:'Too many rooms are open right now.'}); else send(200,{code:newRoom(url.searchParams.get('stage'),url.searchParams.get('bot')==='1',parseFloat(url.searchParams.get('skill'))).code});      // ?stage=sheet: the spreadsheet stage
       return true;
     }
     if(req.method==='GET'&&p==='/duel/events'){
@@ -139,7 +147,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
         if(side>=0) room.players.set(id,side);
       }
       const client={res,id,side,seq:-1,watch}; room.clients.add(client); room.seen=Date.now();
-      sse(res,'hello',{side,code:room.code,watch});
+      sse(res,'hello',{side,code:room.code,watch,bot:!!room.bot});
       room.art.forEach((a,s)=>a.forEach((x,slot)=>{ if(x) sse(res,'item',{side:s,slot,strokes:x.strokes,ver:x.ver,kind:x.kind,style:x.style}); }));
       broadcast(room,'players',roster(room));
       if(room.plats) sse(res,'plats',{plats:room.plats});
@@ -209,7 +217,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       }
       if(body.type==='ready'){ S.setReady(side); room.dirty=true; send(200,{}); return true; }
       if(body.type==='rematch'){
-        room.sim=D.createDuel(); if(room.layout) room.sim.setLayout(room.layout); else if(room.plats) room.sim.setPlats(room.plats); room.art=[[null,null],[null,null]]; room.dirty=true; broadcast(room,'reset',{}); send(200,{}); return true;
+        room.sim=D.createDuel(room.stage?{stage:room.stage}:undefined); if(room.layout) room.sim.setLayout(room.layout); else if(room.plats) room.sim.setPlats(room.plats); room.art=[[null,null],[null,null]]; room.dirty=true; broadcast(room,'reset',{}); if(room.bot){ room.bot=D.makeBot(1,()=>room.skill); armBot(room); } send(200,{}); return true;
       }
       send(400,{error:'Unknown action.'}); return true;
     }
