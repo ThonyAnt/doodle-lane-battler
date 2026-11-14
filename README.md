@@ -1,10 +1,10 @@
-# Doodle Lane Battler
+# Doodle Duel
 
-A one-lane battler where every unit is something you draw. Ink is the price: each stroke spends ink, and the ink you spend sets the unit's strength. A vision model decides what the drawing is (ground, flying or stationary; melee, ranged, area or no attack; fire, water, plant or none), never how strong it is.
+A two-player stickman fight where every weapon is something you draw. A vision model decides what the drawing is; the ink you spend sets how strong it is, and a creative drawing earns special abilities.
 
-Hackathon MVP with three ways to play: against a bot, two players on one screen, or online with each player on their own device.
+Hackathon MVP. The repo is still named after the first game, a one-lane battler, which has been removed; the address `/` now goes straight to the duel.
 
-## Doodle Duel (second game idea)
+## The game
 
 Open `/duel` on the same server for a live two-player stickman fight. Before each round both players draw two things (a sword, a bow, a bomb, a shield, wings, a snack) and share 100 ink between them; the vision model decides what each drawing does and the ink spent sets how strong it is. Then you fight live: move, double jump, and use your two drawings. First to 2 rounds wins. It has the same three ways to play (bot, one screen, online rooms with a QR code).
 
@@ -144,17 +144,15 @@ Needs Node 18 or newer. No dependencies.
 
 1. Copy `.env.example` to `.env` and put your OpenAI API key after `OPENAI_API_KEY=`.
 2. `node server.js`
-3. Open http://localhost:3000
+3. Open http://localhost:3000 (it goes to `/duel`)
 
 Without a key the game still runs; drawings are read by a rough local guess from ink colour and shape.
 
-## Two players on two devices
+## Players on their own devices
 
-1. On the first device choose **Online**, then **Create a room**. You get a 4-letter code, a join link and a QR code.
-2. On the second device scan the QR code, open the link, or choose **Online** and type the code.
-3. The clock starts when the first unit is sent. A third device that joins the same room watches.
+The page you open is the big screen. Choose **Player vs Bot** or **Player vs Player**; you get a room code, a join link and a QR code. Each player scans it with a phone or tablet, which becomes their controller and sketchbook.
 
-The server runs the match; each device only draws and displays, so both players always see the same lane.
+The server runs the match; each device only draws and displays.
 
 **Same Wi-Fi (simplest for a demo):** run `node server.js` on a laptop. When you open the game at `localhost`, the QR code points at the laptop's network address so other devices can reach it. Allow Node through the firewall if your system asks. Some event and campus networks block devices from talking to each other; a phone hotspot avoids that.
 
@@ -171,18 +169,10 @@ The server runs the match; each device only draws and displays, so both players 
 | `ABILITIES` | on | `0` switches that second request off |
 | `NOWS` | off | `1` leaves the WebSocket off (pages with `?net=ws` then fall back to the event stream) |
 
-## Rules
-
-- Fire beats plant, plant beats water, water beats fire (1.5x damage).
-- Flying units cannot be hit by ground melee; ranged and area attacks reach them.
-- Stationary drawings hold a spot in front of your base and are tougher.
-- Ink refills twice as fast in the last 30 seconds. Most base health at 0:00 wins; if tied, the side that pushed further down the lane wins.
-
 ## Files
 
-- `index.html`: the whole game (simulation, bot, drawing pads, rendering).
-- `server.js`: serves the page, reads drawings with OpenAI (the key never reaches the browser), and runs online rooms. It loads the match rules from the marked block in `index.html`, so there is one copy of the rules.
-- `duel.html` and `duel-server.js`: Doodle Duel. Same pattern: the rules sit in a marked block in `duel.html` and the server runs that block for online rooms.
+- `server.js`: starts everything: loads `.env`, sends `/` to `/duel`, and hands the rest to `duel-server.js`.
+- `duel.html` and `duel-server.js`: the game. The rules sit in a marked block in `duel.html` and the server runs that same block for online rooms, so there is one copy of the rules. The server reads drawings with OpenAI; the key never reaches the browser.
 - `inkscript.js`, `abilities.js`: abilities. The first is the script language (parser, checker, interpreter), used by the server and the page; the second writes the prompt and checks what the model answers. `tools/fake-openai.js` stands in for the model.
 - `ws.js`, `wire.js`: the WebSocket link for Doodle Duel rooms (`?net=ws`). The first is the WebSocket itself, the second packs the state into binary frames and deltas; `tools/test-net.js` tests both and `tools/net-bench.js` measures the two links.
 - `anim/`: Doodle Duel animation clips (running, and a move set each for blade, spear, hammer, fists, twin blades, bow, gun, twin pistols, magic staff and thrown weapons) and the engine that plays them; see `anim/README.md`. `anim-lab.html` previews clips and `tools/strip.js` renders them to frame strips.
@@ -190,4 +180,4 @@ The server runs the match; each device only draws and displays, so both players 
 
 ## Status
 
-Online play is tested with two browsers on one machine and a stand-in for the OpenAI endpoint. Not yet tested: the real OpenAI API, real tablets, and play over a slow network. Doodle Duel is tested by simulation, a scripted two-client online match and a desktop browser; drawings were read by the real OpenAI API (`gpt-4.1-mini`, about 1 second each). Balance numbers and the bot's 15% handicap are first guesses. Abilities (the creativity score and the scripts a model writes) have been tried against a stand-in for the model only.
+Online play is tested with two browsers on one machine and a stand-in for the OpenAI endpoint. Not yet tested: the real OpenAI API, real tablets, and play over a slow network. Doodle Duel is tested by simulation, a scripted two-client online match and a desktop browser; drawings were read by the real OpenAI API (`gpt-4.1-mini`, about 1 second each). Balance numbers are first guesses. Abilities (the creativity score and the scripts a model writes) have been tried against a stand-in for the model only.

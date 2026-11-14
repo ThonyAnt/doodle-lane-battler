@@ -1,6 +1,6 @@
-# Doodle Lane Battler: project notes for Claude Code
+# Doodle Duel: project notes for Claude Code
 
-Hackathon MVP. A one-lane battler where every unit is something the player draws. Ink is the price of a drawing and sets the unit's strength; a vision model only decides what kind of unit it is. See README.md for how to run it and the rules.
+Hackathon MVP. A two-player stickman fight where every weapon is something the player draws; a vision model decides what kind of weapon it is. The repo and package are still named `doodle-lane-battler` after the first game, a one-lane battler that lived at `/`. The owner had it removed as obsolete (its page `index.html`, its rooms and its routes `/read`, `/room`, `/events`, `/act`); `/` now redirects to `/duel`. See README.md for how to run it.
 
 ## Working rules
 
@@ -8,8 +8,7 @@ Hackathon MVP. A one-lane battler where every unit is something the player draws
 
 ## Layout
 
-- `index.html`: the whole client. The block between `/*SIM-START*/` and `/*SIM-END*/` is the pure match logic (stats, combat, bot, drawing fallback guess). Keep it free of DOM access.
-- `server.js`: zero-dependency Node server (Node 18+). Serves the page, reads drawings via OpenAI (`POST /read`), and runs online rooms. It extracts and runs the SIM block from `index.html`, so rules exist in one place.
+- `server.js`: zero-dependency Node server (Node 18+). Loads `.env`, redirects `/` to `/duel`, serves `/qrcode.js` and `/info` (who reads drawings, the LAN address), and hands everything else to `duel-server.js`.
 - `qrcode.js`: vendored QR library (MIT). Do not edit.
 - `.env`: holds `OPENAI_API_KEY` (git-ignored). `.env.example` is the template.
 
@@ -126,22 +125,11 @@ Branch `netcode-ws`, plan `docs/superpowers/plans/2026-11-14-netcode-ws.md` (its
 - **The page.** The link code is between `/*NET-PURE-START*/` and `/*NET-PURE-END*/` in `duel.html` (`chooseLink`, `openLink`, `linkMeter`, `linkText`): no DOM, the browser's `WebSocket` and `EventSource` are passed in, so `tools/test-net.js` runs it with stand-ins and against a real server. `joinRoom` collects the handlers (`on(name, fn)`) and hands them to `openLink`; `net.line` is the link, `net.link` is `'ws'`, `'sse'` or `''`. `sendInput()` writes to the socket at once when `net.link==='ws'`, else it is the old one-request-at-a-time code; the 150 ms repeat is unchanged. The receiver hands `accept()` its own copy of each snapshot (`accept` marks the events it is given). The desktop status bar shows link, round trip, jitter and kB/s; with `?net=` a player's badge shows the link.
 - **Measured.** A recorded fight between two bots, 600 snapshots: 1,084,227 bytes of JSON, 46,060 bytes of packed deltas (4.25%); as frames with acknowledgements two frames late, 5.7%. `node tools/net-bench.js --delay=30 --jitter=20` measures press-to-movement time and bytes a second on both links through a relay that delays packets (about 9 minutes; the README has the table): with 30 ms + up to 20 ms each way, median 105.8 ms on the event stream against 92.4 ms on the socket, 95th percentile 175.1 against 110.1 ms, 72,947 against 3,789 bytes a second; with no delay 11.2 against 10.7 ms. A socket held for 100 s in a bot room stayed open (2.8 kB/s).
 - **Tests.** `node tools/test-net.js` (child server on port 3195; the bench uses it too, so never run both at once). Its last part loads the page's whole script in a pretend browser (after the one in `tools/test-replay.js`), joins a real room on each link and presses keys.
-- **Not tested.** A real browser: this was written without one. On Node 22 and later the tests use Node's own `WebSocket` (undici's, not this code) against the server and under the page's script, which is the nearest thing to a browser it has met; `EventSource` is a stand-in everywhere. Real tablets, a real network, a tablet that sleeps and wakes, and Render's proxy (if it does not pass the upgrade the page should fall back within 1.5 s). The old lane battler (`/events` in `server.js`) has no socket.
-
-## Online play
-
-- `POST /room` creates a room with a 4-letter code. `GET /events?room=CODE&id=CLIENT` is a Server-Sent Events stream (`hello`, `players`, `state`, `pending`, `spawn`, `cancel`, `reset`, `gone`). `POST /act` takes `start`, `reset` and `send` (strokes plus a PNG of the pad).
-- The server is authoritative: it owns ink, runs the sim at 20 Hz and broadcasts state at about 10 Hz. Clients send strokes; every client rebuilds unit sprites from those strokes.
-- First client in a room is Blue (side 0), second is Red (side 1), later ones spectate. A client id in sessionStorage lets a player reload and keep their side.
-- Rooms are in memory, so a deployment must be a single instance.
-
-## Tuning numbers (all in the SIM block)
-
-Base health 500, match 90 s, ink max 100, refill 6/s (12/s in the last 30 s), ink cost = stroke length / 28. Unit speed and health were raised/lowered once because the first version stalemated in about 90% of simulated matches. The bot's units are 15% weaker than their ink cost; that number is a guess.
+- **Not tested.** A real browser: this was written without one. On Node 22 and later the tests use Node's own `WebSocket` (undici's, not this code) against the server and under the page's script, which is the nearest thing to a browser it has met; `EventSource` is a stand-in everywhere. Real tablets, a real network, a tablet that sleeps and wakes, and Render's proxy (if it does not pass the upgrade the page should fall back within 1.5 s).
 
 ## State when this file was written
 
-- Tested: match rules by simulation; single-device modes and a full online match between two headless browsers, all against a stand-in for the OpenAI endpoint.
+- Tested when the project began: a full online match between two headless browsers against a stand-in for the OpenAI endpoint.
 - Not tested: the real OpenAI API (accuracy and latency on doodles), real iPads and touch input, play over a slow network.
 - The original default model `gpt-4.1-nano` was retired by OpenAI; the default was then `gpt-4.1-mini`, checked against the real API (about 1 s per drawing). The owner has since made `gpt-6-luna` the default for both the reader and the abilities call (`OPENAI_MODEL`; about 2 s per drawing with no thinking, by the note above `READ_EFFORT` in `duel-server.js`). Set `OPENAI_MODEL=gpt-4.1-mini` to go back. Not checked: how long the abilities call takes with this model.
 
@@ -153,4 +141,4 @@ Base health 500, match 90 s, ink max 100, refill 6/s (12/s in the last 30 s), in
 
 ## Ideas discussed but not built
 
-Mirroring the lane so each player sees their own base on the left, spells drawn directly onto the lane, more lanes, haptic patterns per element (the team has a haptic headband), and a round-based auto-duel mode on the same drawing pipeline.
+Haptic patterns per element (the team has a haptic headband).

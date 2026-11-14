@@ -2,7 +2,7 @@
   "name": "doodle-lane-battler",
   "version": "0.1.0",
   "private": true,
-  "description": "One-lane battler where every unit is something you draw.",
+  "description": "Doodle Duel: a stickman fight where every weapon is something you draw.",
   "scripts": {
     "start": "node server.js",
     "overlay": "electron overlay/main.js",

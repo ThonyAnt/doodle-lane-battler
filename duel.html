@@ -562,7 +562,6 @@ Window titlebars = platforms
       <button id="stageBtn" title="Fight inside a banker's spreadsheet">Stage: desktop</button>
       <button id="sfxBtn" title="Sound effects on or off">Sound: on</button>
       <button id="restart">Restart</button>
-      <a href="/" class="badge lanelink">Lane Battler</a>
       <button id="deskResume" hidden>Resume</button><button id="deskQuit" hidden>Quit</button>
       <span id="deskHint">Esc or Ctrl+Alt+D: this menu</span>
     </div>
@@ -6310,6 +6309,7 @@ function starPath(cx,cy,r,spikes,seed,inner){
 // star outline joins them, shards multiply, and the last frame glows before the camera jolts. Four held pictures in
 // 400 ms: white, black, white, black. That is two flashes, inside the usual limit of three a second, and none at all
 // for people who ask for reduced motion.
+let impactCv=null, impactFull=null, impactKey='';      // a work canvas for the filter; the finished picture of the current held frame; which frame that is
 const IMPACT_MS=400, IMPACT_CUTS=[0,70,150,215], impactLive=now=>{ const k=now-impactAt; return k>=0&&k<IMPACT_MS&&!DESK&&!CALM; };
 function impactFrame(v,now){
   const k=now-impactAt;
@@ -6318,8 +6318,16 @@ function impactFrame(v,now){
   let ph=0; while(ph<3&&k>=IMPACT_CUTS[ph+1]) ph++;
   const dark=ph%2===1, R=ultRect(v), ink=dark?'#fff':'#000', paper=dark?'#000':'#fff', x=impactPt.x, y=GY-impactPt.y, seed=impactAt%977+ph*13.7, col=PFLASH[impactPt.side];
   const flat=typeof L.filter==='string', r=[64,112,160,214][ph], far=Math.hypot(R[2],R[3]);
-  // 1. flatten everything already drawn into ink (browsers without canvas filters get a plain inversion over white paper)
-  if(flat){ L.save(); L.setTransform(1,0,0,1,0,0); L.filter='grayscale(1) contrast(12)'+(dark?' invert(1)':''); L.globalCompositeOperation='copy'; L.drawImage(cv,0,0); L.restore(); }
+  // Filtering the whole canvas and slipping the burst in under it is slow (tens of ms on a large screen), and the fight
+  // is frozen meanwhile. So each of the four held pictures is made once, kept, and copied back on the frames that follow.
+  const key=impactAt+':'+ph+':'+cv.width+'x'+cv.height;
+  if(flat&&impactKey===key&&impactFull){ L.save(); L.setTransform(1,0,0,1,0,0); L.globalCompositeOperation='copy'; L.drawImage(impactFull,0,0); L.restore(); return; }
+  // 1. flatten everything already drawn into ink (browsers without canvas filters get a plain inversion over white paper).
+  //    The filter runs on a copy at most 1600 px wide.
+  if(flat){ impactCv=impactCv||document.createElement('canvas'); const s=Math.min(1,1600/cv.width), w=Math.max(1,Math.round(cv.width*s)), h=Math.max(1,Math.round(cv.height*s));
+    if(impactCv.width!==w||impactCv.height!==h){ impactCv.width=w; impactCv.height=h; }
+    const g=impactCv.getContext('2d'); g.globalCompositeOperation='copy'; g.filter='grayscale(1) contrast(12)'+(dark?' invert(1)':''); g.drawImage(cv,0,0,w,h); g.filter='none';
+    L.save(); L.setTransform(1,0,0,1,0,0); L.globalCompositeOperation='copy'; L.drawImage(impactCv,0,0,cv.width,cv.height); L.restore(); }
   else{ L.save(); L.globalCompositeOperation='destination-over'; L.fillStyle='#fff'; L.fillRect(R[0],R[1],R[2],R[3]); if(dark){ L.globalCompositeOperation='difference'; L.fillRect(R[0],R[1],R[2],R[3]); } L.restore(); }
   // 2. the burst, slipped in UNDER what is already drawn so the figures stay on top. Listed from the top of the pile
   //    down: the hollow the struck fighter shows through, the star, its outline, shards, force lines, and last the paper.
@@ -6328,11 +6336,14 @@ function impactFrame(v,now){
   if(ph===3){ L.shadowColor=col; L.shadowBlur=26; }
   L.fillStyle=ink; starPath(x,y,r,11+ph,seed,0.4); L.fill();
   if(ph>=1){ L.strokeStyle=ink; L.lineWidth=3+ph; L.lineJoin='miter'; starPath(x,y,r*(1.5+ph*0.14),14+ph*2,seed+7,0.62); L.stroke(); }
+  L.shadowBlur=0;      // the glow is for the star and its outline only: on the long force lines it costs a great deal
   for(let i=0;i<4+ph*5;i++){ const a=hash(seed+i*9.1)*6.28, d=r*(1.1+hash(seed+i*4.7)*1.9), s=6+hash(seed+i)*16, px=x+Math.cos(a)*d, py=y+Math.sin(a)*d*0.8;
     L.fillStyle=ink; L.beginPath(); L.moveTo(px+Math.cos(a)*s,py+Math.sin(a)*s); L.lineTo(px+Math.cos(a+2.3)*s*0.45,py+Math.sin(a+2.3)*s*0.45); L.lineTo(px+Math.cos(a-2.3)*s*0.45,py+Math.sin(a-2.3)*s*0.45); L.closePath(); L.fill(); }
   focusLines(x,y,r*1.25,far,26+ph*8,seed,ink,1,0.55+ph*0.12);
-  L.shadowBlur=0; if(flat){ L.fillStyle=paper; L.fillRect(R[0],R[1],R[2],R[3]); }
+  if(flat){ L.fillStyle=paper; L.fillRect(R[0],R[1],R[2],R[3]); }
   L.restore();
+  if(flat){ impactFull=impactFull||document.createElement('canvas'); if(impactFull.width!==cv.width||impactFull.height!==cv.height){ impactFull.width=cv.width; impactFull.height=cv.height; }
+    const g=impactFull.getContext('2d'); g.globalCompositeOperation='copy'; g.drawImage(cv,0,0); impactKey=key; }
 }
 function ultBack(v,now){
   if(impactLive(now)) return;                                                 // the impact frame paints its own stage
