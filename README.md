@@ -12,6 +12,12 @@ Big screen: press **Draw on tablets** in the header (or choose Online, then "Use
 
 Keys: A/D move, W jump, S down, J and K use your two drawings. Tap a blade repeatedly for a 3-hit combo; attack while running, in the air, or holding down for other moves. Bows and guns keep firing as you tap, and down + attack is a charged shot. Second player on one screen: arrows, with , and . to attack. Touch buttons appear under the arena on tablets.
 
+## Retro desktop stage
+
+On a computer, `/duel` is staged on a pretend old desktop, after Alex's InkShop prototype. The menus, the sketchbook, the health bars, a log of what the vision model read and a notes file are draggable windows; the fighters run along the taskbar and the windows' title bars are the platforms. Drag a window and whoever is standing on it rides along; minimise it and they fall. **Esc** or the **Start** button opens the menu mid-fight. With **Draw on tablets** this desktop is the big screen, and its window layout is the room's terrain. Tablets and phones keep the plain layout; add `?plain=1` to get it on a computer.
+
+The fighters use the InkShop figure (curved limbs, solid head) and its translucent weapon smear, with this game's authored attack animations.
+
 ## Desktop overlay (experimental, Windows)
 
 The fighters can play on top of your real desktop instead of in a browser tab. This needs two development dependencies (Electron, and koffi for reading window positions): run `npm install` once, then `npm run overlay`. If npm says it skipped install scripts and the overlay will not start, run `npm run overlay:setup` once to fetch the Electron runtime.

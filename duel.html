@@ -9,7 +9,7 @@
 <style>
 :root{
   --paper:#f3f6fb; --grid:#d3deee; --ink:#1c2541; --muted:#59658a; --hi:#ffd84a; --card:#ffffff;
-  --p1:#2f6fde; --p2:#d9486e; --fire:#e2552d; --water:#2a7fd4; --plant:#2f9e56;
+  --p1:#1d3fbf; --p2:#b0121f; --fire:#e2552d; --water:#2a7fd4; --plant:#2f9e56;
   --display:"Gochi Hand","Comic Sans MS",cursive; --body:"Karla",system-ui,-apple-system,"Segoe UI",sans-serif;
   color-scheme:light;
 }
@@ -50,6 +50,55 @@ body.playing .arenawrap{border-left:0;border-right:0;border-radius:0;box-shadow:
 #clock{font-family:var(--display);font-size:26px;min-width:96px;text-align:center;white-space:nowrap}
 .overlay{position:absolute;inset:46px 0 0 0;display:flex;align-items:center;justify-content:center;padding:12px;background:rgba(243,246,251,.86)}
 .overlay .box{background:var(--card);border:2px solid var(--ink);border-radius:14px;padding:14px 18px;max-width:540px;text-align:center;box-shadow:4px 4px 0 var(--ink)}
+/* Retro desktop: a pretend old desktop as the stage. Grey bevelled windows on teal, a taskbar for a floor. */
+#rdesk,#rtask{display:none}
+html.retro,body.retro{background:#2b7a77!important;font:12px Tahoma,Verdana,"Segoe UI",sans-serif;color:#000}
+body.retro #rdesk{display:block;position:fixed;inset:0 0 34px 0;background:#2b7a77 radial-gradient(ellipse at 70% 30%,#33908c 0,#2b7a77 55%,#215f5d 100%)}
+body.retro .ricon{position:absolute;left:10px;width:78px;text-align:center;color:#fff;text-shadow:1px 1px 0 #000;font-size:11px;user-select:none}
+body.retro .ricon svg{display:block;margin:0 auto 3px}
+body.retro #rtask{display:flex;position:fixed;left:0;right:0;bottom:0;height:34px;background:#c3c3c3;border-top:2px solid #fff;align-items:center;gap:4px;padding:2px 3px;z-index:150}
+body.retro #rtasks{display:flex;gap:3px;flex:1;min-width:0}
+body.retro #rtasks button{width:170px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:400}
+body.retro #rtasks button.up{border-color:#404040 #fff #fff #404040;box-shadow:inset 1px 1px #808080;background:#dedede;font-weight:700}
+body.retro #rstart{font-weight:700;display:flex;gap:5px;align-items:center}
+body.retro #rclock{border:2px solid;border-color:#808080 #fff #fff #808080;padding:3px 10px;font-variant-numeric:tabular-nums}
+body.retro button{font:12px Tahoma,Verdana,"Segoe UI",sans-serif;color:#000;border-radius:0;border:2px solid;border-color:#fff #404040 #404040 #fff;background:#c3c3c3;box-shadow:inset -1px -1px #808080,inset 1px 1px #dfdfdf;padding:3px 10px;min-height:24px}
+body.retro button:hover{background:#cfcfcf}
+body.retro button:active,body.retro button[aria-pressed="true"],body.retro .seg button[aria-pressed="true"]{border-color:#404040 #fff #fff #404040;box-shadow:inset 1px 1px #808080;background:#e4e4e4;color:#000}
+body.retro button.primary{font-weight:700;background:#c3c3c3}
+body.retro button:disabled{color:#808080;text-shadow:1px 1px #fff;opacity:1;background:#c3c3c3}
+body.retro .seg{border:0;border-radius:0;background:none;gap:2px;overflow:visible}
+body.retro .seg button{border:2px solid;border-color:#fff #404040 #404040 #fff;padding:3px 10px}
+.rwin{position:fixed;z-index:10;background:#c3c3c3;padding:2px;border:2px solid;border-color:#fff #404040 #404040 #fff;box-shadow:inset -1px -1px #808080,inset 1px 1px #dfdfdf,3px 3px 0 rgba(0,0,0,.28);display:flex;flex-direction:column;max-width:96vw}
+.rwin[hidden]{display:none!important}
+.rtitle{height:22px;flex:0 0 22px;background:linear-gradient(90deg,#0a246a,#3a6ea5 60%,#a6caf0);color:#fff;font:700 12px Tahoma,Verdana,sans-serif;display:flex;align-items:center;padding:0 3px 0 6px;gap:6px;white-space:nowrap;overflow:hidden;cursor:move;touch-action:none;user-select:none}
+.rtitle .rmin{margin-left:auto;width:18px;min-height:0;height:16px;padding:0;font:700 10px/10px Tahoma;flex:none}
+.rbody{flex:1;min-height:0;overflow:auto;padding:8px;margin-top:2px}
+.rbody.white{background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080}
+body.retro .arenawrap{z-index:200;pointer-events:none}
+body.retro.deskmode .hud,body.retro.deskmode .rules{display:flex!important}
+body.retro.deskmode .rules{display:grid!important;border:0;border-radius:0;padding:0;background:none;font:11px/1.45 "Courier New",monospace;gap:6px}
+body.retro.deskmode header,body.retro.deskmode:not(.menu) header{position:static;transform:none;background:none;border:0;border-radius:0;box-shadow:none;padding:0;max-width:none;display:flex!important;white-space:normal}
+body.retro.deskmode .desks,body.retro.deskmode:not(.menu) .desks{position:static;transform:none;width:auto;display:grid!important}
+body.retro h1{display:none}
+body.retro .badge{border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080;background:#fff;color:#000;font-size:11px;padding:2px 8px}
+body.retro .desk{border:0;border-radius:0;box-shadow:none;background:none;padding:2px}
+body.retro .desk h2,body.retro .overlay h2{font:700 13px Tahoma,Verdana,sans-serif}
+body.retro .pad{border:2px solid;border-color:#808080 #fff #fff #808080;border-radius:0;max-height:38vh}
+body.retro .slot{border-radius:0} body.retro .slot[aria-pressed="true"]{box-shadow:inset 1px 1px #808080;background:#fff}
+body.retro .pen{border-radius:0;width:30px;height:30px;min-height:0} body.retro .pen[aria-pressed="true"]{outline:2px dotted #000;outline-offset:1px}
+body.retro .inkbar,body.retro .bar{border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080;background:#fff}
+body.retro .hud{border:0;padding:2px 4px;gap:10px;min-width:430px}
+body.retro #clock{font:700 15px "Courier New",monospace;background:#000;color:#3f3;padding:2px 8px;min-width:86px}
+body.retro .overlay{position:static;inset:auto;background:none;padding:0;display:block}
+body.retro .overlay[hidden]{display:none}
+body.retro .overlay .box{border:0;border-radius:0;box-shadow:none;background:none;padding:6px;max-width:none}
+body.retro .overlay h2{margin-bottom:6px}
+body.retro .qr{border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080}
+body.retro input{border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080}
+body.retro .stock{border-top:1px solid #808080}
+body.retro #rlog{font:11px/1.5 "Courier New",monospace;white-space:nowrap}
+body.retro #rlog .b{color:#1d3fbf} body.retro #rlog .r{color:#b0121f}
 /* Desktop mode: transparent page, arena across the whole screen, the sketchbook as a floating card. */
 html.deskmode,body.deskmode{background:transparent!important;background-image:none!important;overflow:hidden}
 body.deskmode main{max-width:none;padding:0}
@@ -184,6 +233,12 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
 </style>
 </head>
 <body>
+<div id="rdesk" hidden>
+  <div class="ricon" style="top:14px"><svg width="34" height="30" viewBox="0 0 34 30"><path d="M2 8h11l3 3h16v17H2z" fill="#f5d76e" stroke="#000"/><path d="M2 12h30" stroke="#000"/></svg>My Sketches</div>
+  <div class="ricon" style="top:88px"><svg width="30" height="32" viewBox="0 0 30 32"><path d="M6 9h18l-2 21H8z" fill="#dfe6ee" stroke="#000"/><path d="M3 9h24M11 9V5h8v4M11 14v12M15 14v12M19 14v12" stroke="#000" fill="none"/></svg>Recycle Bin</div>
+  <div class="ricon" style="top:164px"><svg width="28" height="34" viewBox="0 0 28 34"><path d="M3 2h15l7 7v23H3z" fill="#fff" stroke="#000"/><path d="M18 2v7h7" fill="none" stroke="#000"/><path d="M8 24l4-9 4 6 3-3 2 6" fill="none" stroke="#b0121f" stroke-width="2"/></svg>arena.ink</div>
+</div>
+<div id="rtask" hidden><button id="rstart" title="Game menu (Esc)"><svg width="14" height="16" viewBox="0 0 14 16"><path d="M7 1c3 5 5 7 5 10a5 5 0 0 1-10 0c0-3 2-5 5-10z" fill="#1d3fbf" stroke="#000"/></svg>Start</button><div id="rtasks"></div><span id="rclock"></span></div>
 <main>
   <header>
     <h1>Doodle Duel</h1>
@@ -594,22 +649,30 @@ function botLoadout(){
 
 /* ================= page ================= */
 const $=id=>document.getElementById(id);
-const PEN={none:'#1c2541',fire:'#e2552d',water:'#2a7fd4',plant:'#2f9e56'}, PCOL=['#2f6fde','#d9486e'], NAME=['Blue','Red'];
+const PEN={none:'#1c2541',fire:'#e2552d',water:'#2a7fd4',plant:'#2f9e56'}, PCOL=['#1d3fbf','#b0121f'], NAME=['Blue','Red'];
 const GY=392, cv=$('arena'), L=cv.getContext('2d');
 // Match the canvas backing store to the screen's real pixels so lines stay sharp on high-density displays.
 // Desktop mode: set by the overlay app (overlay/main.js), which loads this page with ?desk=1 in a transparent window.
 const DESK=new URLSearchParams(location.search).has('desk'), DESK_SCALE=1.15, host=window.overlayHost||null;
+// Retro desktop: on a computer the game is staged on a pretend old desktop (after Alex's InkShop prototype). The menus,
+// sketchbook, health bars and notes are draggable windows, the fighters run along the taskbar, and the windows' title
+// bars are the platforms. It shares the overlay's machinery; only the backdrop and where the window edges come from differ.
+// Tablets and phones keep the plain layout, and ?plain=1 turns it off.
+const RETRO=!DESK&&!new URLSearchParams(location.search).has('plain')&&innerWidth>=900&&!matchMedia('(pointer:coarse)').matches, TASK_H=34;
+const deskLike=()=>DESK||RETRO, floorGap=()=>RETRO?TASK_H:0;
 let ARENA_W=960, ARENA_PLATS=PLATS, deskStage=true, deskEdges=null, deskSent='', deskMenu=false, deskPaused=false, deskLive=null, OY=0;
-if(DESK){ document.documentElement.classList.add('deskmode'); document.body.classList.add('deskmode'); }
+if(deskLike()){ document.documentElement.classList.add('deskmode'); document.body.classList.add('deskmode'); }
+if(RETRO){ document.documentElement.classList.add('retro'); document.body.classList.add('retro'); }
 // One game unit in screen pixels: fixed for a match on this computer, and stretched to the screen for the standard stage.
 const deskSc=()=>deskStage?Math.min(1.6,innerWidth/960):DESK_SCALE;
 // Real windows as terrain. The overlay app reports the visible top edges of the other apps' windows in screen pixels;
 // here they become platforms in game units. They replace the stage's fixed platforms.
 function deskTerrain(){
-  if(!DESK||!deskEdges) return;
+  if(!deskLike()||!deskEdges) return;
+  if(typeof net!=='undefined'&&net&&!net.watch) return;      // a player in someone else's room uses that room's terrain
   fitCanvas(); const sc=deskSc(), out=[];
   for(const e of deskEdges){
-    const y=Math.round((innerHeight-e.y)/sc-6), x0=Math.max(0,Math.round(e.x0/sc-OX)), x1=Math.min(ARENA_W,Math.round(e.x1/sc-OX));
+    const y=Math.round((innerHeight-floorGap()-e.y)/sc-6), x0=Math.max(0,Math.round(e.x0/sc-OX)), x1=Math.min(ARENA_W,Math.round(e.x1/sc-OX));
     if(y>=26&&x1-x0>=30) out.push({id:e.id,wx:Math.round(e.wx/sc-OX),x0,x1,y});
   }
   ARENA_PLATS=out;
@@ -621,7 +684,7 @@ function deskTerrain(){
 // capped and the view simply shows more floor either side of the arena (OX), so nothing is stretched and the rules do not change.
 let VS=1, OX=0, VW=960, playing=false, bigScreen=false, padView=false;
 function fitCanvas(){
-  if(DESK){
+  if(deskLike()){
     // One game unit is a fixed number of screen pixels, the floor is the bottom edge of the window (the top of the taskbar),
     // and the arena is as wide as the screen.
     const r=Math.min(3,window.devicePixelRatio||1), w=Math.round(innerWidth*r), h=Math.round(innerHeight*r);
@@ -629,7 +692,7 @@ function fitCanvas(){
     // A local match uses a screen-wide arena at a fixed size. An online room uses the standard 960-wide stage with its
     // platforms, enlarged to fill the screen's width (within reason) and centred.
     const sc=deskSc();
-    VS=sc*r; VW=innerWidth/sc; OX=Math.max(0,(VW-ARENA_W)/2); OY=h-(GY+6)*VS; return;
+    VS=sc*r; VW=innerWidth/sc; OX=Math.max(0,(VW-ARENA_W)/2); OY=h-(GY+6)*VS-floorGap()*r; return;
   }
   const r=Math.min(3,window.devicePixelRatio||1), cw=cv.clientWidth||960, full=cw*440/960;
   const ch=Math.round(playing?Math.max(240,Math.min(full,window.innerHeight*(bigScreen?0.86:0.64))):full);
@@ -843,11 +906,11 @@ function setMode(m){
   deskMenu=false;
   mode=m; for(const b of ['Bot','2p','Online','Practice']) $('mode'+b).setAttribute('aria-pressed',m===b.toLowerCase());
   if(net){ net.es.close(); net=null; } setScreen(false); setPad(); sim=null; bot=null; resetLocal(); lastPhase=''; overlayKey='';
-  deskStage=m==='online'; deskSent='';
+  deskStage=m==='online'; deskSent=''; rEdgesSent='';
   if(m==='online'){ local=[false,false]; ARENA_W=960; ARENA_PLATS=PLATS; view=createDuel().snapshot(); buildDesks(); buildControls(); const code=(location.hash||'').slice(1).toUpperCase(); if(/^[A-Z]{4}$/.test(code)) joinRoom(code,watched()===code); return; }
   if(location.hash) history.replaceState(null,'',location.pathname);
   local=m==='2p'?[true,true]:[true,false];
-  if(DESK){ ARENA_W=Math.round(innerWidth/DESK_SCALE); ARENA_PLATS=[]; }
+  if(deskLike()){ ARENA_W=Math.round(innerWidth/DESK_SCALE); ARENA_PLATS=[]; }
   sim=createDuel({practice:m==='practice',width:ARENA_W,plats:ARENA_PLATS});
   if(m==='bot'){ bot=makeBot(1); botLoadout().forEach((b,k)=>{ const it=sim.setItem(1,k,b.spec,b.cost); setArt(1,k,b.strokes,it.ver,it.kind,it.style); }); }
   deskTerrain();
@@ -867,7 +930,7 @@ $('drawTablets').onclick=()=>{ if(net&&net.watch) return; setMode('online'); cre
 $('drawHere').onclick=()=>{ if(net&&net.watch) setMode('bot'); };
 // Player view: a player in a room that has a big screen sees only the sketchbook, then only the controller.
 function setPad(){
-  const on=!!(net&&net.side>=0&&net.screen); if(on===padView) return;
+  const on=!RETRO&&!!(net&&net.side>=0&&net.screen); if(on===padView) return;      // the retro desktop shows everything itself
   padView=on; document.body.classList.toggle('handheld',on); lastPhase=''; overlayKey='';
   const w=$('who'); w.hidden=!on; if(on){ w.textContent='You are '+NAME[net.side]; w.style.background=PCOL[net.side]; }
 }
@@ -888,7 +951,7 @@ function joinRoom(code,watch){
   on('state',accept);
   on('item',d=>{ setArt(d.side,d.slot,d.strokes,d.ver,d.kind,d.style); if(desk[d.side]) updateDesk(desk[d.side]); });
   on('reset',()=>{ for(const s of [0,1]) art[s]=[null,null]; fx=[]; for(const d of desk) if(d){ d.strokes=[]; d.k=0; } });
-  on('plats',d=>{ if(!(DESK&&deskEdges)) ARENA_PLATS=d.plats||PLATS; });
+  on('plats',d=>{ if(!(deskLike()&&deskEdges&&net.watch)) ARENA_PLATS=d.plats||PLATS; });
   on('hello',()=>{ deskSent=''; deskTerrain(); });
   on('gone',()=>{ net.gone=true; es.close(); });
 }
@@ -908,20 +971,21 @@ let lastPhase='', overlayKey='';
 // Desktop mode: the window lets clicks through to the desktop while a fight is on, and takes the mouse only while the
 // menu or the sketchbook is showing. The fight pauses whenever the menu is open or another app has the keyboard.
 function deskSync(){
-  if(!DESK||!view) return;
+  if(!deskLike()||!view) return;
   const fighting=view.phase==='count'||view.phase==='fight'||view.phase==='end', menu=deskMenu||!fighting;
   document.body.classList.toggle('menu',menu);
   $('deskResume').hidden=!(deskMenu&&fighting); $('deskQuit').hidden=!host;
-  deskPaused=!!sim&&fighting&&(deskMenu||!document.hasFocus());     // only a match run on this device can be paused
+  deskPaused=!!sim&&fighting&&(deskMenu||(DESK&&!document.hasFocus()));     // only a match run on this device can be paused
   // The window only takes the mouse while the pointer is over one of the cards, so the rest of the desktop stays usable
   // even with the menu open. When a fight starts it takes the keyboard.
   const live=menu&&deskHover;
   if(live!==deskLive){ deskLive=live; if(host) host.setInteractive(live); }
   if(fighting&&!deskWasFighting&&!deskMenu&&host&&local.some(Boolean)) host.focus();   // a big screen needs no keys
   deskWasFighting=fighting;
+  if(RETRO) retroSync(menu);
 }
 let deskHover=false, deskWasFighting=false;
-if(DESK){
+if(deskLike()){
   const overCard=e=>{ deskHover=!!(e.target&&e.target.closest&&e.target.closest('header,.desks,.overlay .box')); };
   addEventListener('pointermove',overCard,true); addEventListener('pointerdown',overCard,true);
   document.addEventListener('mouseleave',()=>{ deskHover=false; });
@@ -930,6 +994,63 @@ if(DESK){
   addEventListener('keydown',e=>{ if(e.code==='Escape'&&view&&view.phase!=='draw'&&view.phase!=='over'){ deskMenu=!deskMenu; e.preventDefault(); } });
   if(host&&host.onWindows) host.onWindows(edges=>{ deskEdges=edges; deskTerrain(); });
   if(host) host.onMenu(()=>{ deskMenu=!(deskMenu||document.body.classList.contains('menu'))?true:false; });
+}
+/* ---------- retro desktop ---------- */
+const rwin={}; let rTop=20, rEdgesSent='', rTick=0, rLogSig='';
+// Wrap an existing part of the page in a draggable window with a task button.
+function retroWindow(id,title,el,css,white){
+  const w=document.createElement('div'); w.className='rwin'; w.id='rw-'+id;
+  w.innerHTML='<div class="rtitle"><span class="rname"></span><button class="rmin" title="Minimize">_</button></div><div class="rbody'+(white?' white':'')+'"></div>';
+  w.querySelector('.rname').textContent=title; w.querySelector('.rbody').appendChild(el); Object.assign(w.style,css); w.style.zIndex=++rTop;
+  document.body.appendChild(w);
+  const task=document.createElement('button'); task.textContent=title; $('rtasks').appendChild(task);
+  const o=rwin[id]={w,task,min:false,want:true};
+  const front=()=>{ w.style.zIndex=++rTop; };
+  task.onclick=()=>{ if(!o.want) return; o.min=!o.min&&+w.style.zIndex===rTop?true:false; if(!o.min) front(); };
+  w.querySelector('.rmin').onclick=e=>{ e.stopPropagation(); o.min=true; };
+  w.addEventListener('pointerdown',front,true);
+  const bar=w.querySelector('.rtitle'); let grab=null;
+  bar.addEventListener('pointerdown',e=>{ if(e.target.closest('.rmin')) return; const r=w.getBoundingClientRect(); grab=[e.clientX-r.left,e.clientY-r.top]; try{ bar.setPointerCapture(e.pointerId); }catch(_){} });
+  bar.addEventListener('pointermove',e=>{ if(!grab) return; const r=w.getBoundingClientRect();
+    w.style.left=Math.max(40-r.width,Math.min(innerWidth-40,e.clientX-grab[0]))+'px'; w.style.top=Math.max(0,Math.min(innerHeight-TASK_H-22,e.clientY-grab[1]))+'px'; w.style.right='auto'; w.style.transform='none'; });
+  const drop=()=>{ grab=null; }; bar.addEventListener('pointerup',drop); bar.addEventListener('pointercancel',drop);
+  return o;
+}
+function retroBuild(){
+  $('rdesk').hidden=$('rtask').hidden=false; $('deskHint').textContent='Esc or Start: this menu';
+  const H=innerHeight-TASK_H, log=document.createElement('div'); log.id='rlog';
+  retroWindow('ink','InkShop 2.0 \u2014 Doodle Duel',document.querySelector('header'),{left:'50%',top:'10px',transform:'translateX(-50%)'});
+  retroWindow('sketch','Sketchbook',$('desks'),{left:'50%',top:'112px',transform:'translateX(-50%)',width:'min(840px,92vw)'});
+  retroWindow('net','NetLink',$('overlay'),{left:'50%',top:'120px',transform:'translateX(-50%)',minWidth:'360px'},true);
+  retroWindow('hud','Fighters',document.querySelector('.hud'),{left:'5%',top:(H-205)+'px'});
+  retroWindow('log','AI Read Log',log,{left:'calc(50% - 190px)',top:(H-372)+'px',width:'380px',height:'118px'},true);
+  retroWindow('notes','notes.txt \u2014 Notepad',document.querySelector('.rules'),{right:'4%',top:(H-222)+'px',width:'400px',height:'176px'},true);
+  rwin.sketch.w.style.zIndex=++rTop; rwin.ink.w.style.zIndex=++rTop;       // the windows you work in start in front
+  rwin.net.w.hidden=true;                                                   // opens in front when there is something to show
+  $('rstart').onclick=()=>{ if(view&&view.phase!=='draw'&&view.phase!=='over') deskMenu=!deskMenu; };
+  const tick=()=>{ const d=new Date(); $('rclock').textContent=d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}); }; tick(); setInterval(tick,20000);
+}
+// The parts of each open window's top edge that no window in front of it covers, in screen pixels.
+function retroEdges(){
+  const ws=Object.keys(rwin).map(id=>rwin[id].w).filter(w=>!w.hidden).map(w=>({id:w.id,z:+w.style.zIndex||0,r:w.getBoundingClientRect()})).sort((a,b)=>b.z-a.z), out=[];
+  ws.forEach((w,i)=>{
+    const y=w.r.top; if(y<8) return;
+    let parts=[[Math.max(0,w.r.left),Math.min(innerWidth,w.r.right)]];
+    for(let j=0;j<i&&parts.length;j++){ const o=ws[j].r; if(!(o.top<y&&o.bottom>y)) continue;
+      parts=parts.flatMap(([a,b])=>o.right<=a||o.left>=b?[[a,b]]:[[a,Math.min(b,o.left)],[Math.max(a,o.right),b]]).filter(([a,b])=>b-a>=40); }
+    for(const [a,b] of parts) out.push({id:w.id,wx:Math.round(w.r.left),x0:Math.round(a),x1:Math.round(b),y:Math.round(y)});
+  });
+  return out;
+}
+// Each frame: which windows are open, and, a few times a second, where their title bars are.
+function retroSync(menu){
+  const v=view, both=local[0]||local[1];
+  rwin.ink.want=menu; rwin.sketch.want=menu&&!!both; rwin.net.want=!$('overlay').hidden; rwin.hud.want=rwin.log.want=rwin.notes.want=true;
+  for(const id in rwin){ const o=rwin[id], show=o.want&&!o.min; if(o.w.hidden===show){ o.w.hidden=!show; if(show&&(id==='sketch'||id==='net')) o.w.style.zIndex=++rTop; } o.task.hidden=!o.want; o.task.classList.toggle('up',show&&+o.w.style.zIndex===rTop); if(!o.want) o.min=false; }
+  rwin.net.w.querySelector('.rname').textContent=net?'NetLink \u2014 room '+net.code:'NetLink';
+  const sig=JSON.stringify(v.items.map(a=>a.map(i=>i&&i.ver)));
+  if(sig!==rLogSig){ rLogSig=sig; $('rlog').innerHTML=v.items.map((a,s)=>a.map((it,k)=>it?'<div class="'+'br'[s]+'">'+NAME[s]+' '+'AB'[k]+': '+esc(it.name)+' \u00b7 '+it.kind+(it.style?'/'+it.style:'')+(it.el!=='none'?' \u00b7 '+it.el:'')+' \u00b7 '+it.cost+' ink</div>':'').join('')).join('')||'<div>no drawings read yet</div>'; }
+  if(++rTick%8===0){ const e=retroEdges(), j=JSON.stringify(e); if(j!==rEdgesSent){ rEdgesSent=j; deskEdges=e; deskTerrain(); } }
 }
 function syncUI(){
   const v=view;
@@ -941,9 +1062,9 @@ function syncUI(){
   if(v.phase!==lastPhase){
     lastPhase=v.phase; const drawing=v.phase==='draw';
     playing=!drawing&&v.phase!=='over'; document.body.classList.toggle('playing',playing);
-    $('desks').hidden=!(drawing||v.practice||DESK); $('tcs').hidden=drawing||v.phase==='over'||!local.some(Boolean);
+    $('desks').hidden=!(drawing||v.practice||deskLike()); $('tcs').hidden=drawing||v.phase==='over'||!local.some(Boolean);
     if(!drawing) for(const s of [0,1]) for(const k of 'lrd') if(inp[s][k]&&!sim){ /* keep held keys */ }
-    if(v.phase==='count'&&!DESK) document.querySelector('.arenawrap').scrollIntoView({block:'start',behavior:'smooth'});
+    if(v.phase==='count'&&!deskLike()) document.querySelector('.arenawrap').scrollIntoView({block:'start',behavior:'smooth'});
   }
   for(const d of desk) if(d&&d.sig!==deskSig(d)) updateDesk(d);
   document.querySelectorAll('.tc').forEach(el=>{ const s=+el.dataset.side;
@@ -1071,15 +1192,11 @@ function drawFighter(v,i,now,age,dt){
   L.fillStyle='rgba(0,0,0,.09)'; L.beginPath(); L.ellipse(f.x,GY-shadowY(f)+4,28,3.5,0,0,7); L.fill();
   L.save(); L.translate(x,base); L.scale(d*K,K);
   // speed smear behind a dash
-  if(f.dash) for(const [off,al] of [[-70,.12],[-36,.25]]){ L.save(); L.translate(off,0); L.globalAlpha=al; ANIM.draw(L,s,{col}); L.restore(); }
+  if(f.dash) for(const [off,al] of [[-70,.12],[-36,.25]]){ L.save(); L.translate(off,0); L.globalAlpha=al; ANIM.draw(L,s,{col,noodle:true}); L.restore(); }
   const wlen=it&&kind==='melee'?U(it.sz*STYLE[it.style].reach):0;
-  if(wlen&&it.style!=='fist'&&clip.trail.length) ANIM.trail(L,clip,st.t,wlen,ANIM.TRAIL[it.el]);
-  if(wlen&&it.style!=='fist'&&clip.trail.some(w=>st.t>w[0]&&st.t<w[1]+0.02)) for(const [back,al] of [[0.03,0.14],[0.018,0.24],[0.008,0.38]]){
-    const g=ANIM.sample(clip,st.t-back), q=g.p, c=Math.cos(q[22]), n=Math.sin(q[22]), h=ANIM.xf(g,q[12],q[13]), tip=ANIM.xf(g,q[12]+c*50,q[13]+n*50);
-    L.save(); L.globalAlpha=al; L.translate(h[0],h[1]); L.rotate(Math.atan2(tip[1]-h[1],tip[0]-h[0]));
-    if(it.style==='spear'){ L.translate(-wlen*0.22,0); sprite(i,k,wlen*1.22,true); } else sprite(i,k,wlen,true); L.restore();
-  }
-  ANIM.draw(L,s,{col,halo:DESK,
+  // weapon smear: everything the weapon swept in the last moments of an attack
+  if(wlen&&it.style!=='fist'&&f.act) ANIM.smear(L,clip,st.t,it.style==='spear'?wlen*0.96:wlen,it.el==='none'?col:PEN[it.el],0.2);
+  ANIM.draw(L,s,{col,halo:DESK,noodle:true,
     back(c){ if(hideItems) return; for(const n of [0,1]){ const o=items[n]; if(!o||n===k||(o.kind==='shield'&&f.sh)) continue;
       c.save(); c.translate(p[2]-14,p[3]+22); c.rotate(-1.15); c.globalAlpha=.55; sprite(i,n,U(o.sz*0.6),o.kind==='melee'); c.restore(); } },
     weapon(c,ss){
@@ -1118,14 +1235,14 @@ const shadowY=f=>{ let y=0; for(const p of ARENA_PLATS) if(f.y>=p.y-1&&f.x>=p.x0
 function render(now){
   const v=view, age=net?Math.min(0.08,(now-viewAt)/1000):0, dt=Math.max(0,Math.min(0.05,(now-(lastRender||now))/1000)); lastRender=now;
   fitCanvas(); L.setTransform(1,0,0,1,0,0); L.clearRect(0,0,cv.width,cv.height); L.setTransform(VS,0,0,VS,OX*VS,OY);
-  if(!DESK){ L.fillStyle='#fff'; L.fillRect(-OX,0,VW,440); }
+  if(!deskLike()){ L.fillStyle='#fff'; L.fillRect(-OX,0,VW,440); }
   shake*=Math.exp(-dt*22); if(shake>0.1) L.translate(Math.sin(now*0.112)*shake,Math.cos(now*0.091)*shake*0.35); else shake=0;
   // ground and platforms: plain ink lines, no scenery
-  L.strokeStyle='#111'; L.lineCap='round'; L.lineWidth=DESK?3:4; L.beginPath(); L.moveTo(-OX-10,GY+2); L.lineTo(ARENA_W+10+OX,GY+2); L.stroke();
+  L.strokeStyle='#111'; L.lineCap='round'; L.lineWidth=DESK?3:4; if(RETRO) L.globalAlpha=0; L.beginPath(); L.moveTo(-OX-10,GY+2); L.lineTo(ARENA_W+10+OX,GY+2); L.stroke(); L.globalAlpha=1;
   // corner posts mark where the arena ends when the view is wider than it
   if(OX>12) for(const px of [0,ARENA_W]){ L.lineWidth=5; L.beginPath(); L.moveTo(px,GY+2); L.lineTo(px,GY-58); L.stroke(); L.lineWidth=3; L.beginPath(); L.moveTo(px,GY-58); L.lineTo(px+(px?-22:22),GY-48); L.lineTo(px,GY-38); L.stroke(); }
-  const terrain=DESK&&deskEdges;
-  if(terrain){ L.strokeStyle='#ffd84a'; L.globalAlpha=.85; L.lineWidth=3; }else L.lineWidth=5;
+  const terrain=deskLike()&&deskEdges&&!(net&&!net.watch);
+  if(terrain){ L.strokeStyle='#ffd84a'; L.globalAlpha=RETRO?0:.85; L.lineWidth=3; }else L.lineWidth=5;
   for(const p of ARENA_PLATS){ L.beginPath(); L.moveTo(p.x0+(terrain?3:0),GY-p.y+(terrain?0:2)); L.lineTo(p.x1-(terrain?3:0),GY-p.y+(terrain?0:2)); L.stroke(); }
   L.globalAlpha=1; L.strokeStyle='#111';
   // projectiles
@@ -1159,12 +1276,14 @@ function render(now){
   L.globalAlpha=1; L.setTransform(VS,0,0,VS,OX*VS,OY);
   // banners
   const banner=(t,size,y,col)=>{ L.font=size+'px "Gochi Hand",cursive'; L.textAlign='center'; L.lineWidth=8; L.strokeStyle='#fffdf6'; L.strokeText(t,ARENA_W/2,y); L.fillStyle=col||'#1c2541'; L.fillText(t,ARENA_W/2,y); };
-  if(v.phase==='draw'){ banner('Round '+v.round+': draw your gear!',40,70);
+  if(v.phase==='draw'&&RETRO&&(local[0]||local[1]||!$('overlay').hidden)){ /* a window is open there: the sketchbook, or the join code, which must stay scannable */ }
+  else if(v.phase==='draw'){ banner('Round '+v.round+': draw your gear!',40,70);
     const st=s=>NAME[s]+(v.ready[s]?' is ready ✓':' has '+v.items[s].filter(Boolean).length+'/2 drawn'); banner(st(0)+'   ·   '+st(1),22,104,'#59658a'); }
   else if(v.phase==='count') banner(String(Math.max(1,Math.ceil(v.t))),120,200);
   else if(v.phase==='fight'&&v.t>ROUND_TIME-0.8&&!v.practice) banner('FIGHT!',96,190,'#e2552d');
   else if(v.phase==='fight'&&v.t<=10) banner(String(Math.ceil(v.t)),44,60,'#e2552d');
-  else if(DESK&&v.phase==='fight'&&!v.practice) banner(String(Math.ceil(v.t)),26,40,'#59658a');
+  else if(deskLike()&&v.phase==='fight'&&!v.practice&&!RETRO) banner(String(Math.ceil(v.t)),26,40,'#59658a');
+  if(RETRO&&deskPaused) banner('Paused',44,150,'#fff');
   if(DESK&&deskPaused&&!deskMenu) banner('Paused. Press Ctrl+Alt+D to come back.',30,150,'#59658a');
   else if(v.phase==='end') banner(v.winner<0?'Draw round!':NAME[v.winner]+' takes the round!',56,180,v.winner<0?'#1c2541':PCOL[v.winner]);
 }
@@ -1177,6 +1296,7 @@ function frame(now){
   requestAnimationFrame(frame);
 }
 if(canRead) fetch('/info').then(r=>r.json()).then(o=>{ serverInfo=o; $('reader').textContent='Drawings read by: '+o.reader; canRead=/OpenAI/.test(o.reader); overlayKey=overlayKey.startsWith('wait')?'':overlayKey; }).catch(()=>{ canRead=false; });
+if(RETRO) retroBuild();
 setMode(/^#[A-Za-z]{4}$/.test(location.hash)?'online':'bot');
 requestAnimationFrame(frame);
 </script>
