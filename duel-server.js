@@ -11,6 +11,25 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   const D=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+
     ';return {createDuel,validItem,localGuess,nameFor,inkCost,stockItem,makeBot,botLoadout,makeNetBot,botFeatures,netForward,NET_SHAPE,INK_MAX,PAD_W,PAD_H};')();
 
+  /* ---------- the trained CPU ---------- */
+  // Its weights, if this checkout has any: bot-weights.json next to this script (or the file BOT_WEIGHTS names), made by
+  // bot/train.js and bot/eval.js --save. Weights only suit the rules they were trained in, so they carry a short hash of
+  // the rules block; when duel.html has changed since, say so (it is still offered: retrain to be sure of it).
+  const RULES=require('crypto').createHash('sha256').update(src.replace(/\r\n/g,'\n').split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]).digest('hex').slice(0,16);
+  const NET=(()=>{
+    const file=process.env.BOT_WEIGHTS||path.join(__dirname,'bot-weights.json'), size=D.NET_SHAPE.reduce((n,k,i,a)=>i?n+a[i-1]*k+k:0,0);
+    if(!fs.existsSync(file)) return null;
+    try{
+      const o=JSON.parse(fs.readFileSync(file,'utf8'));
+      if(!o||!Array.isArray(o.theta)||o.theta.length!==size||!o.theta.every(Number.isFinite)) throw new Error('it needs "theta": a list of '+size+' numbers');
+      console.log('duel: trained CPU loaded from '+path.basename(file)+(o.gen?', generation '+o.gen:'')+(typeof o.vsClassic==='number'?', beat the classic bot in '+Math.round(o.vsClassic*100)+'% of rounds':''));
+      if(o.rules!==RULES) console.warn('duel: '+path.basename(file)+' was trained under different rules ('+o.rules+'; this duel.html is '+RULES+'). The trained CPU may play badly until it is trained again.');
+      return {theta:Float32Array.from(o.theta)};
+    }catch(e){ console.error('duel: '+path.basename(file)+' could not be used ('+e.message+'). Only the classic CPU is offered.'); return null; }
+  })();
+  // Red's player in a bot room: the network if the room asked for it and there are weights, else the hand-written bot.
+  const makeCpu=room=>room.brain==='net'&&NET?D.makeNetBot(1,NET.theta,()=>room.skill):D.makeBot(1,()=>room.skill);
+
   /* ---------- reading a drawing ---------- */
   async function askOpenAI(png,strokes){
     const r=await fetch(BASE+'/chat/completions',{method:'POST',signal:AbortSignal.timeout(8000),
@@ -40,10 +59,11 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   /* ---------- rooms ---------- */
   const rooms=new Map(), LETTERS='ABCDEFGHJKLMNPQRSTUVWXYZ';
   // bot: Red is played by the game's bot on the server, so one person with a controller can play. skill is its 0 to 1 setting.
-  function newRoom(stage,bot,skill){
+  // brain: 'net' asks for the trained CPU; without weights for it the room quietly gets the classic bot.
+  function newRoom(stage,bot,skill,brain){
     let code; do{ code=Array.from({length:4},()=>LETTERS[Math.floor(Math.random()*LETTERS.length)]).join(''); }while(rooms.has(code));
-    const now=Date.now(), room={code,stage:stage==='sheet'?'sheet':'',sim:D.createDuel(stage==='sheet'?{stage:'sheet'}:undefined),art:[[null,null],[null,null]],players:new Map(),watchers:new Set(),clients:new Set(),last:now,sent:0,seen:now,dirty:true,bot:null,skill:Number.isFinite(skill)?Math.max(0,Math.min(1,skill)):0.55};
-    if(bot){ room.players.set('(bot)',1); room.bot=D.makeBot(1,()=>room.skill); armBot(room); }
+    const now=Date.now(), room={code,stage:stage==='sheet'?'sheet':'',sim:D.createDuel(stage==='sheet'?{stage:'sheet'}:undefined),art:[[null,null],[null,null]],players:new Map(),watchers:new Set(),clients:new Set(),last:now,sent:0,seen:now,dirty:true,bot:null,brain:brain==='net'&&NET?'net':'classic',skill:Number.isFinite(skill)?Math.max(0,Math.min(1,skill)):0.55};
+    if(bot){ room.players.set('(bot)',1); room.bot=makeCpu(room); armBot(room); }
     rooms.set(code,room); return room;
   }
   const sse=(res,event,data)=>res.write('event: '+event+'\ndata: '+JSON.stringify(data)+'\n\n');
@@ -113,7 +133,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   }
 
   /* ---------- http ---------- */
-  return async function handle(req,res,url){
+  const handle=async function(req,res,url){
     const p=url.pathname;
     // Animation clip files and the preview lab are plain static files.
     if(req.method==='GET'&&(/^\/anim\/[a-z_]+\.js$/.test(p)||p==='/anim-lab.html'||p==='/inkshop.js'||p==='/sfx.js'||p==='/inkshop.css')){
@@ -133,7 +153,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       out?send(200,Object.assign({source:out.source},out.spec)):send(502,{error:'OpenAI could not read the drawing'}); return true;
     }
     if(req.method==='POST'&&p==='/duel/room'){
-      if(rooms.size>=500) send(503,{error:'Too many rooms are open right now.'}); else send(200,{code:newRoom(url.searchParams.get('stage'),url.searchParams.get('bot')==='1',parseFloat(url.searchParams.get('skill'))).code});      // ?stage=sheet: the spreadsheet stage
+      if(rooms.size>=500) send(503,{error:'Too many rooms are open right now.'}); else send(200,{code:newRoom(url.searchParams.get('stage'),url.searchParams.get('bot')==='1',parseFloat(url.searchParams.get('skill')),url.searchParams.get('brain')).code});      // ?stage=sheet: the spreadsheet stage; ?bot=1&brain=net: the trained CPU
       return true;
     }
     if(req.method==='GET'&&p==='/duel/events'){
@@ -150,7 +170,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
         if(side>=0) room.players.set(id,side);
       }
       const client={res,id,side,seq:-1,watch}; room.clients.add(client); room.seen=Date.now();
-      sse(res,'hello',{side,code:room.code,watch,bot:!!room.bot});
+      sse(res,'hello',{side,code:room.code,watch,bot:!!room.bot,brain:room.bot?room.brain:''});
       room.art.forEach((a,s)=>a.forEach((x,slot)=>{ if(x) sse(res,'item',{side:s,slot,strokes:x.strokes,ver:x.ver,kind:x.kind,style:x.style}); }));
       broadcast(room,'players',roster(room));
       if(room.plats) sse(res,'plats',{plats:room.plats});
@@ -220,10 +240,12 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       }
       if(body.type==='ready'){ S.setReady(side); room.dirty=true; send(200,{}); return true; }
       if(body.type==='rematch'){
-        room.sim=D.createDuel(room.stage?{stage:room.stage}:undefined); if(room.layout) room.sim.setLayout(room.layout); else if(room.plats) room.sim.setPlats(room.plats); room.art=[[null,null],[null,null]]; room.dirty=true; broadcast(room,'reset',{}); if(room.bot){ room.bot=D.makeBot(1,()=>room.skill); armBot(room); } send(200,{}); return true;
+        room.sim=D.createDuel(room.stage?{stage:room.stage}:undefined); if(room.layout) room.sim.setLayout(room.layout); else if(room.plats) room.sim.setPlats(room.plats); room.art=[[null,null],[null,null]]; room.dirty=true; broadcast(room,'reset',{}); if(room.bot){ room.bot=makeCpu(room); armBot(room); } send(200,{}); return true;
       }
       send(400,{error:'Unknown action.'}); return true;
     }
     send(404,{error:'not found'}); return true;
   };
+  handle.brains=()=>NET?['classic','net']:['classic'];      // which CPUs a bot room can have (for /info and the menu)
+  return handle;
 };

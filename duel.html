@@ -478,6 +478,7 @@ Window titlebars = platforms
         <button id="playBot" aria-pressed="false" title="One player with a phone or tablet against the bot">Player vs Bot</button>
         <button id="playPvp" aria-pressed="false" title="Two players, each with a phone or tablet">Player vs Player</button>
       </div>
+      <button id="cpuBrain" hidden aria-pressed="false" title="Who plays Red in a Player vs Bot room: the hand-written CPU, or the one that learned by playing itself. Applies to the next bot room you start.">CPU: classic</button>
       <div class="seg here" role="group" aria-label="Play on this device" title="No phone or tablet needed: the sketchbook and the fight are both on this device, played with its keyboard or touch buttons">
         <span class="herelabel">On this device:</span>
         <button id="modeBot" aria-pressed="false">vs Bot</button>
@@ -2233,12 +2234,20 @@ function setPad(){
 // The game has two ways to play, both with this device as the screen and phones or tablets as the controllers:
 // one player against the bot, or two players against each other.
 let wantBot=false;
+// Which CPU plays Red in a bot room: the hand-written bot ('classic', always the default) or the trained network ('net').
+// The switch is only shown when the server has weights for the trained one (/info lists it in `brains`).
+let cpuBrain='classic', cpuBrains=['classic'];
+function setBrain(b){
+  cpuBrain=b==='net'&&cpuBrains.includes('net')?'net':'classic';
+  const el=$('cpuBrain'); el.hidden=!cpuBrains.includes('net'); el.textContent='CPU: '+(cpuBrain==='net'?'trained':'classic'); el.setAttribute('aria-pressed',cpuBrain==='net');
+}
+$('cpuBrain').onclick=()=>setBrain(cpuBrain==='net'?'classic':'net');
 function startMatch(bot){
   wantBot=!!bot; if(mode!=='online') setMode('online'); else if(net){ net.es.close(); net=null; resetLocal(); lastPhase=''; overlayKey=''; }
   history.replaceState(null,'',location.pathname+location.search); createRoom(true);
 }
 async function createRoom(watch){
-  const q=new URLSearchParams(); if(STAGE) q.set('stage',STAGE); if(wantBot){ q.set('bot','1'); const sk=document.querySelector('#s-diff'); if(sk) q.set('skill',sk.value); }
+  const q=new URLSearchParams(); if(STAGE) q.set('stage',STAGE); if(wantBot){ q.set('bot','1'); const sk=document.querySelector('#s-diff'); if(sk) q.set('skill',sk.value); if(cpuBrain==='net') q.set('brain','net'); }
   try{ const r=await fetch('/duel/room'+(q.toString()?'?'+q:''),{method:'POST'}); const o=await r.json(); if(!r.ok) throw new Error(o.error); joinRoom(o.code,watch===true); }
   catch(e){ alert('Could not create a room: '+(e.message||'the server did not answer')); }
 }
@@ -2249,7 +2258,7 @@ function joinRoom(code,watch){
   setScreen(watch); setPad();
   history.replaceState(null,'','#'+code); resetLocal();
   const on=(name,fn)=>es.addEventListener(name,e=>{ if(net&&net.es===es) fn(JSON.parse(e.data)); });
-  on('hello',d=>{ net.side=d.side; net.bot=!!d.bot; local=[d.side===0,d.side===1]; buildDesks(); buildControls(); lastPhase=''; setPad(); });
+  on('hello',d=>{ net.side=d.side; net.bot=!!d.bot; net.brain=d.brain||''; local=[d.side===0,d.side===1]; buildDesks(); buildControls(); lastPhase=''; setPad(); });
   // Once a big screen has been seen the player view stays, so the screen reloading does not flip the layout mid-fight.
   on('players',d=>{ net.present=d.present; net.bot=!!d.bot; net.screen=net.screen||!!d.screen; setPad(); });
   on('state',accept);
@@ -2423,7 +2432,7 @@ function retroBuild(){
     view:()=>[['Game setup window','',()=>{ deskMenu=true; }],['Plain layout','',()=>{ location.search='?plain=1'; }]],
     insert:()=>['sword','spear','hammer','axe','mace','bow','-','platform','crate','wall','shield','arrow'].map(n=>n==='-'?'-':['Stamp: '+n,'',()=>stampGlyph(n)]),
     hack:()=>INK.HACKS.map((h,i)=>[h.name,'Q \u00b7 '+(i+1),()=>{ FXI.hackSel=i; const sd=mySide1(); if(sd>=0){ press(sd,'q',true); } },!(view&&mySide1()>=0&&view.f[mySide1()].od>=100)]),
-    net:()=>[['New room: Player vs Bot','',()=>startMatch(true)],['New room: Player vs Player','',()=>startMatch(false)]],
+    net:()=>[['New room: Player vs Bot','',()=>startMatch(true)],['New room: Player vs Player','',()=>startMatch(false)]].concat(cpuBrains.includes('net')?['-',['Bot rooms use the trained CPU','',()=>setBrain(cpuBrain==='net'?'classic':'net'),0,cpuBrain==='net']]:[]),
     help:()=>[['Controls','F1',tip],['Glyph grammar','',()=>FXI.toast('Simple = terrain (\u2015 platform, | wall, \u25a1 crate, \u25cb pot/shield/trap). Compound = weapons. \u2192 dash/fling/wind/link \u00b7 \u2715 erase/disarm \u00b7 \u2298 null any hack \u00b7 \u03df lightning')],
       ['About InkShop','',()=>FXI.toast('InkShop 2.0 \u2014 interface, glyph recogniser, hacks and effects from Alex\'s prototype, running on the Doodle Duel engine.')]]});
   FXI.buildUI();
@@ -2615,7 +2624,7 @@ function syncUI(){
     const isLocal=/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname), base=isLocal&&serverInfo.lanUrl?serverInfo.lanUrl:location.origin, url=base+'/duel#'+net.code;
     if(padView){ o.innerHTML=`<div class="box"><h2>Waiting for ${NAME[1-net.side]} to scan the big screen</h2><p style="margin:0">You can start drawing now.</p></div>`; return; }
     const head=net.watch?`<h2>Scan to play · room <span class="code">${net.code}</span></h2>
-      <div class="seats">${[0,1].map(s=>`<span class="${net.present[s]?'in':''}" style="${net.present[s]?'background:'+PCOL[s]:''}">${NAME[s]}: ${net.bot&&s===1?'the bot ✓':net.present[s]?'joined ✓':'waiting…'}</span>`).join('')}</div>
+      <div class="seats">${[0,1].map(s=>`<span class="${net.present[s]?'in':''}" style="${net.present[s]?'background:'+PCOL[s]:''}">${NAME[s]}: ${net.bot&&s===1?(net.brain==='net'?'the trained bot ✓':'the bot ✓'):net.present[s]?'joined ✓':'waiting…'}</span>`).join('')}</div>
       <p>${net.bot?'Scan with a phone or tablet to play Blue against the bot.':'The first two devices to scan are Blue and Red.'} This screen shows the fight.</p>`
       :`<h2>Room <span class="code">${net.code}</span> · you are ${NAME[net.side]}</h2><p>Waiting for the other player. The match pauses while someone is away.</p>`;
     o.innerHTML=`<div class="box">${head}
@@ -3247,7 +3256,7 @@ function frame(now){
   if(view){ syncUI(); render(now); if(padView&&net&&net.side>=0){ const tc=document.querySelector('.tcs'); if(tc) document.body.style.setProperty('--pad',(tc.getBoundingClientRect().height+12)+'px'); $('strip').hidden=$('stripbar').hidden=false; drawStrip(view); } }
   requestAnimationFrame(frame);
 }
-if(canRead) fetch('/info').then(r=>r.json()).then(o=>{ serverInfo=o; $('reader').textContent='Drawings read by: '+o.reader; canRead=/OpenAI/.test(o.reader); overlayKey=overlayKey.startsWith('wait')?'':overlayKey; }).catch(()=>{ canRead=false; });
+if(canRead) fetch('/info').then(r=>r.json()).then(o=>{ serverInfo=o; cpuBrains=Array.isArray(o.brains)?o.brains:['classic']; setBrain(cpuBrain); $('reader').textContent='Drawings read by: '+o.reader; canRead=/OpenAI/.test(o.reader); overlayKey=overlayKey.startsWith('wait')?'':overlayKey; }).catch(()=>{ canRead=false; });
 if(RETRO) retroBuild();
 /* ---------- move tester (/moves) ---------- */
 // Pick a weapon, press a move: the fighter does it against a dummy with everything the game draws (trails, hit-stop,

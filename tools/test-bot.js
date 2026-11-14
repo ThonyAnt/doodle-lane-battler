@@ -164,7 +164,7 @@ async function trainerTests(){
     ok('three generations write three checkpoints and a log',files.filter(f=>/^gen-\d{4}\.json$/.test(f)).length===3&&logLines===4,files);
     ok('a checkpoint holds 1232 finite weights',ck.theta.length===1232&&ck.theta.every(Number.isFinite)&&ck.gen===3);
     ok('and they have moved off zero, with the fitness, the seed and the rules they were trained in',()=>ck.theta.some(v=>v!==0)&&Number.isFinite(ck.fitness)&&Number.isFinite(ck.seed)&&ck.rules===require('../bot/arena.js').RULES&&'vsClassic' in ck,()=>({fitness:ck.fitness,seed:ck.seed,rules:ck.rules}));
-    ok('the log has the six columns and one row a generation',()=>{ const r=rows(dir); return r[0].join()==='gen,secs,best,mean,vsClassic,roundsPerSec'&&r.slice(1).map(x=>x[0]).join()==='1,2,3'&&r.slice(1).every(x=>x.length===6&&+x[1]>0&&Number.isFinite(+x[2])&&Number.isFinite(+x[3])&&+x[2]>=+x[3]&&+x[5]>0); },()=>rows(dir));
+    ok('the log has the six columns and one row a generation',()=>{ const r=rows(dir); return r[0].join()==='gen,secs,best,mean,vsClassic,roundsPerSec'&&r.slice(1).map(x=>x[0]).join()==='1,2,3'&&r.slice(1).every((x,i,all)=>x.length===6&&x[1]!==''&&+x[1]>=(i?+all[i-1][1]:0)&&Number.isFinite(+x[2])&&Number.isFinite(+x[3])&&+x[2]>=+x[3]&&+x[5]>0); },()=>rows(dir));
     ok('the win rate against the classic bot is measured on its generations only',()=>{ const r=rows(dir), v=ckpt(dir,2).vsClassic; return typeof v==='number'&&v>=0&&v<=1&&ckpt(dir,1).vsClassic===null&&ck.vsClassic===null&&r[2][4]!==''&&+r[2][4]===v&&r[1][4]===''&&r[3][4]===''; },()=>rows(dir).map(x=>x[4]));
     ok('a champion joins the league on its generations',()=>/league.*7 opponents/.test(stdout)&&!/8 opponents/.test(stdout));
     ok('nothing half-written is left behind',files.every(f=>/^gen-\d{4}\.json$/.test(f)||f==='log.csv'),files);
@@ -196,7 +196,69 @@ async function trainerTests(){
   }finally{ rmrf(tmp); }
 }
 
+// 5. in the game: a child server on port 3194 (no API key), with and without weights for the trained CPU.
+// The weights file is named by the BOT_WEIGHTS setting, so a real bot-weights.json in the checkout is never touched.
+async function gameTests(){
+  const PORT=3194, base='http://127.0.0.1:'+PORT, tmp=fs.mkdtempSync(path.join(os.tmpdir(),'doodle-game-')), A=require('../bot/arena.js');
+  // "Random" weights with one habit, so the test can tell it from the classic bot: small random numbers everywhere, a move
+  // output held at -1 (back away from the foe, which the classic bot never does from the start) and the buttons held off.
+  const runner=()=>{ const th=randomTheta(9,0.01); th[L3+8*16+0]=-1; for(const o of [1,2,3,4,5,6]) th[L3+8*16+o]=-0.5; return Array.from(th); };
+  const file=(name,o)=>{ const f=path.join(tmp,name); fs.writeFileSync(f,typeof o==='string'?o:JSON.stringify(o)); return f; };
+  const good=file('good.json',{theta:runner(),rules:A.RULES,gen:7,vsClassic:0.5}), stale=file('stale.json',{theta:runner(),rules:'0123456789abcdef',gen:7,vsClassic:0.5}), short=file('short.json',{theta:[1,2,3],rules:A.RULES});
+  const live=[];
+  async function serve(weights){
+    const child=cp.spawn(process.execPath,[path.join(root,'server.js')],{cwd:root,env:Object.assign({},process.env,{PORT:String(PORT),BOT_WEIGHTS:weights,OPENAI_API_KEY:''}),stdio:['ignore','pipe','pipe']}), o={child,log:''}; live.push(child);
+    child.stdout.on('data',d=>o.log+=d); child.stderr.on('data',d=>o.log+=d); o.gone=new Promise(r=>child.on('exit',r));
+    for(let i=0;i<80&&!/Drawings read by/.test(o.log)&&child.exitCode===null;i++) await sleep(50);
+    o.stop=async()=>{ child.kill(); await Promise.race([o.gone,sleep(3000)]); if(child.exitCode===null&&child.signalCode===null){ child.kill('SIGKILL'); await o.gone; } };
+    return o;
+  }
+  const get=p=>fetch(base+p).then(r=>r.json()), post=(p,body)=>fetch(base+p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})}).then(r=>r.json());
+  // Sit in the room as Blue, press Ready, and watch Red for `secs` seconds of the fight.
+  const watchRed=(code,secs,id)=>new Promise(resolve=>{
+    const out={hello:null,start:null,end:null,acted:false,fought:false,clock:0}; let buf='', t0=0, c0=0, done=false;
+    const finish=()=>{ if(done) return; done=true; clearTimeout(guard); req.destroy(); resolve(out); }, guard=setTimeout(finish,(secs+12)*1000);
+    const req=http.get(base+'/duel/events?room='+code+'&id='+(id||'tester'),res=>{ res.setEncoding('utf8');
+      res.on('data',chunk=>{ buf+=chunk; let k;
+        while((k=buf.indexOf('\n\n'))>=0){ const msg=buf.slice(0,k), ev=/^event: (.*)$/m.exec(msg), data=/^data: (.*)$/m.exec(msg); buf=buf.slice(k+2); if(!ev||!data) continue;
+          if(ev[1]==='hello'){ out.hello=JSON.parse(data[1]); post('/duel/act',{room:code,id:id||'tester',type:'ready'}); }
+          if(ev[1]==='state'){ const v=JSON.parse(data[1]), red=v.f[1];
+            if(v.phase==='fight'){ if(out.start===null){ out.start=red.x; t0=Date.now(); c0=v.t; } out.fought=true; out.end=red.x; out.clock=+(c0-v.t).toFixed(1); if(red.act||Math.abs(red.x-out.start)>5) out.acted=true; if(Date.now()-t0>=secs*1000) finish(); }
+            else if(out.fought) finish(); } } });
+    }); req.on('error',finish);
+  });
+  try{
+    { const sv=await serve(good), info=await get('/info').catch(e=>({error:String(e)}));
+      ok('/info lists the trained brain when weights exist',()=>info.brains.join()==='classic,net',info.brains||info);
+      const code=(await post('/duel/room?bot=1&brain=net')).code, seen=await watchRed(code,5), redXStart=seen.start, redXAfter5s=seen.end;
+      ok('a brain=net room is played by the network: Red moves',Math.abs(redXAfter5s-redXStart)>20&&redXAfter5s-redXStart>20&&seen.hello&&seen.hello.brain==='net',{redXStart,redXAfter5s,hello:seen.hello});
+      await post('/duel/act',{room:code,id:'tester',type:'rematch'}); const again=await watchRed(code,2);
+      ok('after a rematch the room still has the network',again.end-again.start>20,{start:again.start,end:again.end});
+      const plain=(await post('/duel/room?bot=1')).code, cl=await watchRed(plain,2,'other');
+      ok('a bot room that does not ask for it gets the classic bot',cl.hello&&cl.hello.brain==='classic'&&cl.clock>1&&!(cl.end-cl.start>20),{hello:cl.hello,start:cl.start,end:cl.end,clock:cl.clock});
+      ok('the right weights load without complaint',/trained CPU/.test(sv.log)&&!/different rules/.test(sv.log),sv.log.split('\n').filter(l=>/duel:/.test(l)));
+      await sv.stop(); }
+    { const sv=await serve(path.join(tmp,'none.json')), noWeightsInfo=await get('/info').catch(e=>({error:String(e)}));
+      const code=(await post('/duel/room?bot=1&brain=net')).code, seen=await watchRed(code,3), noWeightsRoomPlays=seen.fought&&seen.clock>1&&!(seen.end-seen.start>20);      // the round runs (with some loadouts the classic bot waits where it stands) and Red does not run off
+      ok('without weights the room quietly uses the classic bot',()=>noWeightsInfo.brains.join()==='classic'&&noWeightsRoomPlays&&seen.hello.brain==='classic'&&!/rror/.test(sv.log),{brains:noWeightsInfo.brains,seen,log:sv.log.split('\n').slice(3)});
+      await sv.stop(); }
+    { const sv=await serve(stale), info=await get('/info').catch(e=>({})), serverLogWithStaleHash=sv.log; await sv.stop();
+      ok('weights from other rules are reported',/different rules/.test(serverLogWithStaleHash)&&(info.brains||[]).join()==='classic,net',serverLogWithStaleHash.split('\n').filter(l=>/rules/.test(l))); }
+    { const sv=await serve(short), info=await get('/info').catch(e=>({})); await sv.stop();
+      ok('a weights file of the wrong shape is refused and said so',(info.brains||[]).join()==='classic'&&/could not be used/.test(sv.log),sv.log.split('\n').filter(l=>/duel:/.test(l))); }
+    // the bench and the checker take the weights too
+    { const r=cp.spawnSync(process.execPath,[path.join(root,'tools','balance.js'),'bot','--brain=net','--weights='+good,'--n=4'],{encoding:'utf8',timeout:120000});
+      ok('tools/balance.js bot --brain=net plays the trained CPU through the bench',r.status===0&&/trained CPU/.test(r.stdout)&&/AVERAGE/.test(r.stdout),(r.stdout||'').split('\n')[0]||r.stderr);
+      const none=cp.spawnSync(process.execPath,[path.join(root,'tools','balance.js'),'bot','--brain=net','--weights='+path.join(tmp,'none.json'),'--n=4'],{encoding:'utf8',timeout:120000});
+      ok('and says so when there are no weights to play',none.status!==0&&/no weights/.test(none.stderr),(none.stderr||'').split('\n')[0]); }
+    { const saved=path.join(tmp,'saved.json'), r=cp.spawnSync(process.execPath,[path.join(root,'bot','eval.js'),good,'--n=8','--save='+saved],{encoding:'utf8',timeout:120000}), out=r.stdout||'';
+      ok('bot/eval.js plays the weights against the classic bot and the three scripted players and gives a verdict',r.status===0&&['classic0.55','masher','jumper','kiter'].every(k=>new RegExp('^'+k.replace('.','\\.')+' +\\d+%','m').test(out))&&/presses a second/.test(out)&&/knockout/.test(out)&&/shipping bar: (CLEARED|MISSED)/.test(out),out.split('\n').slice(-3));
+      ok('and --save writes them in the shape the server loads',()=>{ const o=JSON.parse(fs.readFileSync(saved,'utf8')); return o.theta.length===1232&&o.rules===A.RULES&&o.gen===7&&typeof o.vsClassic==='number'; }); }
+  }finally{ for(const c of live) if(c.exitCode===null&&c.signalCode===null) c.kill('SIGKILL'); rmrf(tmp); }
+}
+
 (async()=>{
   await trainerTests();
+  await gameTests();
   console.log(bad?bad+' failed':'all bot tests pass'); process.exit(bad?1:0);
 })().catch(e=>{ console.log('FAIL the tests crashed: '+(e&&e.stack||e)); process.exit(1); });

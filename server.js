@@ -131,7 +131,7 @@ http.createServer(async (req,res)=>{
       const [file,type]=FILES[url.pathname];
       res.writeHead(200,{'Content-Type':type,'Cache-Control':'no-cache'}); return fs.createReadStream(path.join(__dirname,file)).pipe(res);
     }
-    if(req.method==='GET'&&url.pathname==='/info') return send(200,{reader:KEY?'OpenAI':'local guess (no key on the server)',lanUrl:lanUrl()});
+    if(req.method==='GET'&&url.pathname==='/info') return send(200,{reader:KEY?'OpenAI':'local guess (no key on the server)',lanUrl:lanUrl(),brains:duel.brains()});
 
     // Single-device modes: classify one drawing.
     if(req.method==='POST'&&url.pathname==='/read'){

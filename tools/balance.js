@@ -5,6 +5,7 @@
 //   node tools/balance.js ults     how much of each ultimate's damage actually lands
 //   node tools/balance.js flow     round length, comebacks, how much the first hit decides
 // Options: --n=200 rounds per pairing, --skill=0.55 bot skill, --file=duel.html, --old=<git ref> to play that version's bot.
+//   bot --brain=net puts the trained CPU through the same table (weights from --weights=<file>, default bot-weights.json).
 // The scripted people are guesses at how people play, and bots are not people: use the numbers to compare, not as truth.
 const fs=require('fs'), path=require('path'), cp=require('child_process');
 const arg=k=>{ const a=process.argv.find(x=>x.startsWith('--'+k+'=')); return a?a.split('=')[1]:undefined; };
@@ -50,6 +51,16 @@ function round(a,b,flip,opts){
 function duel(a,b,n,opts){ let wa=0,wb=0,t=0; const rs=[]; for(let i=0;i<(n||N);i++){ const r=round(a,b,i%2,opts); if(r.w===0) wa++; else if(r.w===1) wb++; t+=r.t; rs.push(r); } return {a:Math.round(100*wa/(n||N)),b:Math.round(100*wb/(n||N)),secs:+(t/(n||N)).toFixed(1),rs}; }
 const botP=(items,skill,old,costs)=>{ const bots=[bot(0,skill,old),bot(1,skill,old)]; return {items,costs,play:(S,side,dt)=>bots[side](S,dt)}; };
 const personP=(items,kind)=>{ const ps=[person(kind),person(kind)]; return {items,play:(S,side,dt)=>ps[side](S,side,dt)}; };
+// --brain=net: the trained CPU in the bot's place (the `bot` command only). Its weights are a bot-weights.json or any checkpoint from bot/train.js.
+let THETA=null, WEIGHTS='';
+if(arg('brain')==='net'){
+  WEIGHTS=path.resolve(arg('weights')||path.join(__dirname,'..','bot-weights.json')); let o=null; try{ o=JSON.parse(fs.readFileSync(WEIGHTS,'utf8')); }catch(e){}
+  const size=D.NET_SHAPE?D.NET_SHAPE.reduce((n,k,i,a)=>i?n+a[i-1]*k+k:0,0):0;
+  if(!o||!Array.isArray(o.theta)||!size||o.theta.length!==size||!o.theta.every(Number.isFinite)){ console.error('--brain=net: no weights to play in '+WEIGHTS+' (train some with bot/train.js, or name a checkpoint with --weights=<file>)'); process.exit(1); }
+  THETA=Float32Array.from(o.theta);
+}
+const netP=(items,skill)=>{ const bots=[0,1].map(s=>D.makeNetBot(s,THETA,()=>skill===undefined?SKILL:skill)); return {items,play:(S,side,dt)=>bots[side](S,dt)}; };
+const cpuP=(items,skill)=>THETA?netP(items,skill):botP(items,skill,!!OLD);
 
 if(arg('ink')) Object.assign(D.INK_CURVE,JSON.parse(arg('ink')));     // e.g. --ink='{"exp":0.5}' to try a different ink curve
 if(arg('moves')){ const o=JSON.parse(arg('moves')); for(const m in o) Object.assign(D.MOVES[m],o[m]); }   // e.g. --moves='{"hammer_air":{"dmg":1}}'
@@ -71,11 +82,12 @@ if(cmd==='melee'){            // quick look at the melee styles only, against th
   console.log(JSON.stringify(D.BOT),'avg',Object.keys(tot).map(k=>k+' '+Math.round(tot[k]/MS.length)).join('  '),' | ',MS.map(st=>st+':'+Object.values(out[st]).join('/')).join(' '));
 }
 if(cmd==='bot'){
-  console.log('Bot win % against scripted people holding the same weapon (rounds per cell: '+N+', bot skill '+SKILL+(OLD?', OLD bot from '+arg('old'):'')+')');
+  console.log(THETA?'The trained CPU\'s win % against scripted people holding the same weapon (rounds per cell: '+N+', skill '+SKILL+', weights '+path.relative(process.cwd(),WEIGHTS)+')'
+    :'Bot win % against scripted people holding the same weapon (rounds per cell: '+N+', bot skill '+SKILL+(OLD?', OLD bot from '+arg('old'):'')+')');
   const out={}; const tot={masher:0,jumper:0,kiter:0};
-  for(const st of STYLES){ out[st]={}; for(const k of ['masher','jumper','kiter']){ const r=duel(botP([spec(KEY[st])],SKILL,!!OLD),personP([spec(KEY[st])],k)); out[st][k]=r.a; tot[k]+=r.a; } }
+  for(const st of STYLES){ out[st]={}; for(const k of ['masher','jumper','kiter']){ const r=duel(cpuP([spec(KEY[st])],SKILL),personP([spec(KEY[st])],k)); out[st][k]=r.a; tot[k]+=r.a; } }
   out.AVERAGE={}; for(const k in tot) out.AVERAGE[k]=Math.round(tot[k]/STYLES.length); console.table(out);
-  if(!OLD){ const sk={}; for(const s of [0,0.25,0.55,0.8,1]){ let a=0; for(const st of ['blade','gun','hammer']) a+=duel(botP([spec(KEY[st])],s),personP([spec(KEY[st])],'masher'),Math.round(N/2)).a; sk['skill '+s]={'vs masher':Math.round(a/3)}; } console.log('How the skill setting changes it (sword, gun, hammer averaged)'); console.table(sk); }
+  if(!OLD){ const sk={}; for(const s of [0,0.25,0.55,0.8,1]){ let a=0; for(const st of ['blade','gun','hammer']) a+=duel(cpuP([spec(KEY[st])],s),personP([spec(KEY[st])],'masher'),Math.round(N/2)).a; sk['skill '+s]={'vs masher':Math.round(a/3)}; } console.log('How the skill setting changes it (sword, gun, hammer averaged)'); console.table(sk); }
 }
 if(cmd==='versus'){ if(!OLD) throw new Error('needs --old=<git ref>'); const out={}; let tot=0;
   for(const st of STYLES){ const newP=botP([spec(KEY[st])],SKILL), oldBots=[OLD.makeBot(0,()=>SKILL),OLD.makeBot(1,()=>SKILL)], oldP={items:[spec(KEY[st])],play:(S,side,dt)=>oldBots[side](S,dt)}; const r=duel(newP,oldP); out[st]={'new bot wins':r.a,'old bot wins':r.b,secs:r.secs}; tot+=r.a; }
