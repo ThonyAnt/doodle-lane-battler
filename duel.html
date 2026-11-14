@@ -112,6 +112,28 @@ body.retro .overlay h2{margin-bottom:6px}
 body.retro .qr{border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080}
 body.retro .rwin input{border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080}
 body.retro .stock{border-top:1px solid #808080}
+/* The item card (stats, trait, tuning, "not right?") in the old-desktop look. The stats sit in an etched group box and
+   each bar is the old progress bar: a sunken white well filled with solid blocks, in the 16-colour palette (maroon for
+   power, navy for range, green for speed). Applies to the retro desktop and to tablets, which wear the same look. */
+body.retro .card,body.handheld .card{border-top:0;box-shadow:none;padding-top:2px;gap:7px;font:11px Tahoma,Verdana,"Segoe UI",sans-serif;color:#000}
+body.retro .stats,body.handheld .stats{position:relative;margin-top:7px;padding:11px 9px 8px;border:1px solid #808080;box-shadow:1px 1px 0 #fff,inset 1px 1px 0 #fff;display:grid;gap:5px}
+body.retro .stats::before,body.handheld .stats::before{content:"Stats";position:absolute;left:8px;top:-8px;padding:0 4px;background:#c3c3c3;font:11px Tahoma,Verdana,"Segoe UI",sans-serif;color:#000}
+body.retro .stat,body.handheld .stat{grid-template-columns:76px 1fr 30px;gap:8px;font:11px Tahoma,Verdana,"Segoe UI",sans-serif;color:#000}
+body.retro .stat b,body.handheld .stat b{font-weight:700}
+body.retro .sbar,body.handheld .sbar{height:16px;box-sizing:border-box;border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080;box-shadow:inset 1px 1px #404040;background:#fff;padding:2px 2px 1px 3px}
+body.retro .sbar i,body.handheld .sbar i{transition:none;background:repeating-linear-gradient(90deg,#000080 0 8px,transparent 8px 10px)}
+/* whole blocks only: the fill is cut back to a multiple of one block (browsers without round() keep the plain width) */
+body.retro .sbar i,body.handheld .sbar i{width:calc(round(down,var(--w),10px) - 2px)!important}
+body.retro .stat.pw .sbar i,body.handheld .stat.pw .sbar i{background:repeating-linear-gradient(90deg,#800000 0 8px,transparent 8px 10px)}
+body.retro .stat.rg .sbar i,body.handheld .stat.rg .sbar i{background:repeating-linear-gradient(90deg,#000080 0 8px,transparent 8px 10px)}
+body.retro .stat.sp .sbar i,body.handheld .stat.sp .sbar i{background:repeating-linear-gradient(90deg,#008000 0 8px,transparent 8px 10px)}
+body.retro .trait small,body.retro .fix summary,body.handheld .trait small,body.handheld .fix summary{color:#404040;font-size:11px}
+body.retro .trait,body.handheld .trait{padding:4px 8px}
+body.retro .trait[aria-pressed="true"],body.handheld .trait[aria-pressed="true"]{background:#fff;box-shadow:inset 1px 1px #808080}
+body.retro .tune button,body.retro .fix button,body.retro .card .more,body.handheld .tune button,body.handheld .fix button{font:11px Tahoma,Verdana,"Segoe UI",sans-serif}
+body.retro .card .more{border-style:solid;border-width:2px}
+body.retro .fix button[aria-pressed="true"]{background:#000080;color:#fff}
+body.retro .loitem .stat{grid-template-columns:76px 1fr 30px}
 body.retro #rlog{font:11px/1.5 "Courier New",monospace;white-space:nowrap}
 body.retro #rlog .b{color:#1d3fbf} body.retro #rlog .r{color:#b0121f}
 /* Player view, during a fight: a live strip of the arena to draw quick shapes on with a finger or Pencil. */
@@ -407,6 +429,20 @@ body.handheld.playing #hackMenu button[aria-pressed="true"]{background:#0a246a;c
 .abil.fornow{opacity:.6;border-style:dashed}
 .loab{display:flex;align-items:center;gap:8px;font-size:13px;margin:2px 0 4px} .loab .cbar{flex:0 0 70px}
 body.handheld .nameit{flex:1 1 100%;max-width:none;min-height:36px;border-radius:0;border-width:2px;border-style:solid;border-color:#808080 #fff #fff #808080}
+/* The same in the old-desktop look, to sit with the stats group box: sunken white wells, square corners, the system
+   font, and the creativity score as the old progress bar in purple blocks. */
+body.retro .nameit{border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080;box-shadow:inset 1px 1px #404040;font:11px Tahoma,Verdana,"Segoe UI",sans-serif;color:#000;padding:3px 5px}
+body.retro .creat,body.handheld .creat,body.retro .loab,body.handheld .loab{font:11px Tahoma,Verdana,"Segoe UI",sans-serif;color:#000;gap:8px}
+body.retro .cbar,body.handheld .cbar{height:16px;box-sizing:border-box;border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080;box-shadow:inset 1px 1px #404040;background:#fff;padding:2px 2px 1px 3px}
+body.retro .cbar i,body.handheld .cbar i{background:repeating-linear-gradient(90deg,#800080 0 8px,transparent 8px 10px)}
+body.retro .why,body.handheld .why,body.retro .abb,body.handheld .abb{font:11px Tahoma,Verdana,"Segoe UI",sans-serif;color:#404040}
+body.retro .abb,body.handheld .abb{color:#000}
+body.retro .abil,body.handheld .abil{border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080;background:#fff;color:#000;padding:4px 6px}
+body.retro .abil.fornow,body.handheld .abil.fornow{border-style:dashed;border-color:#808080}
+body.retro .abn b,body.handheld .abn b{font:700 12px Tahoma,Verdana,"Segoe UI",sans-serif}
+body.retro .absrc,body.handheld .absrc{border-radius:0;background:#000080;font:10px Tahoma,Verdana,"Segoe UI",sans-serif;padding:0 4px}
+body.retro .abw,body.handheld .abw,body.retro .abfold summary,body.handheld .abfold summary{font:11px Tahoma,Verdana,"Segoe UI",sans-serif;color:#404040}
+body.retro .abcode,body.handheld .abcode{border-radius:0;background:#000;color:#3f3;font:11px/1.35 "Courier New",monospace}
 </style>
 </head>
 <body>
@@ -4592,7 +4628,7 @@ function updateDesk(d){
 // The three stats mean something different for things that are not weapons, so they are named for what they do.
 const STAT_NAMES={melee:['Power','Range','Speed'],ranged:['Power','Range','Speed'],bomb:['Power','Blast size','Reload'],
   shield:['Block time','Mobility','Recharge'],dash:['Impact','Distance','Recharge'],heal:['Healing','Helpings','Recharge']};
-const statBars=it=>['pw','rg','sp'].map((k,n)=>[k,(STAT_NAMES[it.kind]||STAT_NAMES.melee)[n]]).map(([k,l])=>`<div class="stat ${k}"><span>${l}</span><div class="sbar"><i style="width:${Math.round(it[k]*100/9)}%"></i></div><b>${it[k].toFixed(1)}</b></div>`).join('');
+const statBars=it=>['pw','rg','sp'].map((k,n)=>[k,(STAT_NAMES[it.kind]||STAT_NAMES.melee)[n]]).map(([k,l])=>`<div class="stat ${k}"><span>${l}</span><div class="sbar"><i style="width:${Math.round(it[k]*100/9)}%;--w:${Math.round(it[k]*100/9)}%"></i></div><b>${it[k].toFixed(1)}</b></div>`).join('');
 const FIXES=[['melee','blade','Sword'],['melee','spear','Spear or whip'],['melee','hammer','Hammer'],['melee','fist','Fists'],['melee','dual','Twin blades'],['ranged','bow','Bow'],['ranged','gun','Gun'],['ranged','akimbo','Twin guns'],['ranged','staff','Magic'],['ranged','hurl','Thrown'],['bomb','','Bomb'],['shield','','Shield'],['dash','','Speed'],['heal','','Healing']];
 // The names of the blocks an item carries (the always-on ones among its abilities, and any set by hand in the move tester).
 const customNames=it=>{ const cat=customCatalog(it.kind,it.style); return (it.cu||[]).map(c=>(cat.find(x=>x.key===customKey(c))||{label:c.id}).label); };
@@ -4956,11 +4992,13 @@ function sfxHear(p,v){
       case 'block': case 'quake': case 'dash': case 'heal': case 'zip': case 'ult': case 'slash': case 'ko': case 'go': case 'del': case 'forge': case 'recycle': case 'restore': X.play(e.e,{pan}); break;
       case 'obj': X.play('glyph',{pan:sfxPan(e.o&&e.o.x)}); break;
       case 'cu': if(e.snd) X.play(e.snd,{pan}); break;      // wielder customizations: a block names the sound of its event
+      case 'chip': X.play('mine',{pan}); break;
     }
   }
   if(!p||!p.f||!v.f) return;
   for(const s of [0,1]){ const a=p.f[s], b=v.f[s]; if(!a||!b) continue; const pan=sfxPan(b.x);
-    if(b.act&&(!a.act||a.act.m!==b.act.m||b.act.t<a.act.t-0.05)){ const m=MOVES[b.act.m.replace(/_b$/,'')]; if(m&&m.hits) X.play('swing',{pan,w:Math.min(1,(m.dmg||0.6)/1.6)}); }
+    if(b.act&&(!a.act||a.act.m!==b.act.m||b.act.t<a.act.t-0.05)){ const m=MOVES[b.act.m.replace(/_b$/,'')]; if(m&&m.hits) X.play('swing',{pan,w:Math.min(1,(m.dmg||0.6)/1.6),blade:/^(blade|dual)/.test(b.act.m)}); }
+    if(b.bub&&!a.bub) X.play('bubble',{pan}); else if(a.bub&&!b.bub) X.play('pop',{pan});      // the drawn shield bubble going up, and bursting
     if(v.phase==='fight'||v.practice){ if(b.vy>120&&!b.g&&(a.g||b.vy-a.vy>300)) X.play('jump',{pan}); else if(!a.g&&b.g&&a.vy<-260) X.play('land',{pan}); }
   }
   if(v.hack&&!p.hack) X.play('hack');
