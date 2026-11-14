@@ -161,19 +161,19 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
   ok('fire on a soaked fighter bursts into steam and dries them',Math.abs(steam.d/base-1.25)<0.03&&steam.tag==='steam'&&steam.b.slow===0,+steam.d.toFixed(1));
   const g=hit('plant','plant',b=>{ b.slow=2; }); ok('a plant hit on a soaked fighter is tagged overgrown',g.tag==='grow');
 }
-{ // target: customization blocks that put a status on the fighter a weapon hits (TARGET_FX, S.setCustoms)
+{ // target: customization blocks that put a status on the fighter a weapon hits (TARGET_FX, S.targetSet)
   const SW={kind:'melee',style:'blade',element:'none',name:'S',power:5,range:5,speed:5,traits:['swift','guard'],trait:'swift'};
-  const mk=cu=>{ const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,SW,50); const got=S.setCustoms(0,0,cu); b.x=a.x+60; b.face=-1; return {S,a,b,got}; };
+  const mk=cu=>{ const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,SW,50); const got=S.targetSet(0,0,cu); b.x=a.x+60; b.face=-1; return {S,a,b,got}; };
   const swing=S=>{ S.play(0,'blade1'); run(S,0.5); }, tg=S=>S.snapshot().ev.filter(e=>e.e==='tg').map(e=>e.k+':'+e.id);
   { const {S,got}=mk([{id:'nope'},null,7,{id:'shrink',secs:99,size:'big'},{id:'shrink'},{id:'mark',boost:NaN},{id:'float'}]);
     ok('target: unknown ids, repeats and a third block are dropped, numbers are clamped',JSON.stringify(got)==='[{"id":"shrink","secs":5,"size":0.6},{"id":"mark","secs":5,"boost":1.5}]',got);
-    let threw=''; try{ for(const v of [undefined,null,5,'s',{},[[]],[{id:{}}]]) S.setCustoms(0,0,v); S.setCustoms(9,0,[]); S.setCustoms(0,'a',[]); S.setCustoms(); }catch(e){ threw=e.message; }
-    ok('target: bad input never throws, and an empty hand has nothing to customize',threw===''&&S.setCustoms(1,1,[{id:'mark'}])===null,threw);
-    S.setItem(0,1,{kind:'shield',element:'none',name:'W'},20); ok('target: a shield cannot carry one',S.setCustoms(0,1,[{id:'mark'}]).length===0);
-    S.setCustoms(0,0,[{id:'tether',len:500}]); const it=S.tweak(0,0,{tune:1}); ok('target: a tweaked item keeps its customizations',!!it&&it.customs.length===1&&it.customs[0].len===300,it&&it.customs);
+    let threw=''; try{ for(const v of [undefined,null,5,'s',{},[[]],[{id:{}}]]) S.targetSet(0,0,v); S.targetSet(9,0,[]); S.targetSet(0,'a',[]); S.targetSet(); }catch(e){ threw=e.message; }
+    ok('target: bad input never throws, and an empty hand has nothing to customize',threw===''&&S.targetSet(1,1,[{id:'mark'}])===null,threw);
+    S.setItem(0,1,{kind:'shield',element:'none',name:'W'},20); ok('target: a shield cannot carry one',S.targetSet(0,1,[{id:'mark'}]).length===0);
+    S.targetSet(0,0,[{id:'tether',len:500}]); const it=S.tweak(0,0,{tune:1}); ok('target: a tweaked item keeps its customizations',!!it&&it.customs.length===1&&it.customs[0].len===300,it&&it.customs);
     ok('target: the snapshot lists them on the item',S.snapshot().items[0][0].cu[0].id==='tether'); }
   { const {S,b}=mk([{id:'shrink'}]); swing(S); const on=tg(S); run(S,1);
-    ok('target shrink: the hit fighter is small, and the snapshot says whose doing it is',on.includes('on:shrink')&&Math.abs(b.scale-0.6)<0.03&&S.snapshot().f[1].tg.shrink[1]===0,[on,b.scale]);
+    ok('target shrink: the hit fighter is small, and the snapshot says whose doing it is',on.includes('on:shrink')&&Math.abs(b.scale-0.6)<0.03&&S.snapshot().f[1].ts.shrink[1]===0,[on,b.scale]);
     const t0=b.tfx.shrink.t; swing(S); ok('target: a second hit neither refreshes nor stacks',b.tfx.shrink.t<t0);
     run(S,2.3); ok('target shrink: it ends with an event and they grow back',tg(S).includes('off:shrink')&&b.scaleGoal===1&&b.tfx.shrink.t===0,b.tfx);
     swing(S); ok('target: after it ends the same block cannot land again at once',b.tfx.shrink.t===0); run(S,2.6); swing(S); ok('target: but can once the rest is over',b.tfx.shrink.t>0); }

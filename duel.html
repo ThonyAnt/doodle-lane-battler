@@ -975,7 +975,7 @@ const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet s
 // A recording holds about LOG_ROOM characters of commands (some forty long matches' worth). When it is full it stops:
 // the match goes on, the log is marked full, and it replays up to the tick it stopped at.
 const LOG_ROOM=2e6;
-const LOG_V=1, COMMANDS=['setItem','tweak','setCustoms','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold'];
+const LOG_V=1, COMMANDS=['setItem','tweak','targetSet','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold'];
 const INPUT_KEYS=['l','r','d','j','a','b','m','q','h','u'], viaJSON=v=>JSON.parse(JSON.stringify(v)), round1=v=>Math.round(v*10)/10;
 const packInput=i=>{ const o={}; for(const k of INPUT_KEYS){ const v=i?i[k]:undefined; o[k]=k==='l'||k==='r'||k==='d'?(v?1:0):v===undefined?null:v; } return viaJSON(o); };   // held buttons as 0 or 1, press counts as given, a missing one as null
 const unpackInput=o=>{ const i={}; for(const k of INPUT_KEYS) if(o[k]!==null&&o[k]!==undefined) i[k]=o[k]; return i; };
@@ -1048,7 +1048,7 @@ const FORGE_LIMITS={reflect:[0.5,1.5],slow:[0.3,1],turn:[-180,180],shotPower:[0.
 // The Math a rule gets: these ten and nothing else of the real one. The two-argument ones take exactly two.
 const FORGE_MATH=Object.freeze({abs:v=>Math.abs(v),sign:v=>Math.sign(v),floor:v=>Math.floor(v),round:v=>Math.round(v),sqrt:v=>Math.sqrt(v),sin:v=>Math.sin(v),cos:v=>Math.cos(v),min:(a,b)=>Math.min(a,b),max:(a,b)=>Math.max(a,b),hypot:(a,b)=>Math.hypot(a,b)});
 /* ---------- target: customization blocks that put something on the fighter a weapon hits ----------
-   An item may carry customizations: it.customs=[{id,...numbers}], set with S.setCustoms(side,slot,list). The ones here
+   An item may carry customizations: it.customs=[{id,...numbers}], set with S.targetSet(side,slot,list). The ones here
    are the "effect on the target" blocks. Each entry of TARGET_FX: name, cost (points of a weapon's customization budget;
    a first guess, not tuned), secs [default,least,most] (how long it stays on the fighter), rest (seconds after it ends in
    which the same block cannot be put on that fighter again), p (its other numbers, each [default,least,most]) and say
@@ -1756,7 +1756,7 @@ function createDuel(opts){
         no block can be kept on a fighter for more than about 60% of the time, however fast the hits come;
       - a fighter casting an ultimate is never given one (refused, not saved up), and one already on a fighter does
         nothing to them while they cast. Their clocks stop while an ultimate plays, as the round clock does;
-      - events: {e:'tg',k:'on'|'off'|'pop'|'swap',id,side (who has it),by,x,y}; the snapshot has f.tg={id:[secs,by,v]}. */
+      - events: {e:'tg',k:'on'|'off'|'pop'|'swap',id,side (who has it),by,x,y}; the snapshot has f.ts={id:[secs,by,v]}. */
   const TF_NAME=(HACKS.find(h=>h.id==='transform')||{}).name;
   const targetOn=(f,id)=>{ const e=f.tfx[id]; return e&&e.t>0&&!casting(f)?e:null; };
   const targetDir=f=>targetOn(f,'mirror')?-1:1;                                   // mirror: left is right
@@ -1767,7 +1767,7 @@ function createDuel(opts){
   // Set an item's customizations (in the manner of S.tweak: while drawing, or any time in practice). Unknown ids, ones the
   // item's kind cannot carry, repeats and anything past TARGET_MAX are dropped; bad numbers become the defaults. Returns
   // what the item now carries, or null if there is no such item or it is too late.
-  S.setCustoms=(side,k,list)=>{
+  S.targetSet=(side,k,list)=>{
     const it=(side===0||side===1)&&(k===0||k===1)?S.items[side][k]:null; if(!it||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
     const out=[]; if(Array.isArray(list)) for(const c of list.slice(0,16)){ const o=targetCustom(c,it.kind); if(o&&out.length<TARGET_MAX&&!out.some(q=>q.id===o.id)) out.push(o); }
     return it.customs=out;
@@ -1942,7 +1942,7 @@ function createDuel(opts){
       act:f.act?{k:f.act.k,m:f.act.m+(f.act.v?'_b':''),t:+f.act.t.toFixed(3),r:+f.act.rate.toFixed(2)}:null,
       sh:f.shield>0?1:0,hurt:f.hurt>0?1:0,burn:f.burn>0?1:0,slow:f.slow>0?1:0,dash:f.dash>0?1:0,held:f.held,
       cd:[+(f.cd[0]/f.cdMax[0]).toFixed(2),+(f.cd[1]/f.cdMax[1]).toFixed(2)],uses:f.uses,
-      ink2:Math.round(f.ink2),od:Math.round(f.od),stun:f.stun>0?1:0,trap:f.trap>0?1:0,bub:f.bubble?Math.round(f.bubble.r):0,oc:f.overclock>0?1:0,sc:+f.scale.toFixed(2),fl:f.flung>0?1:0,tg:targetView(f)})),
+      ink2:Math.round(f.ink2),od:Math.round(f.od),stun:f.stun>0?1:0,trap:f.trap>0?1:0,bub:f.bubble?Math.round(f.bubble.r):0,oc:f.overclock>0?1:0,sc:+f.scale.toFixed(2),fl:f.flung>0?1:0,ts:targetView(f)})),
     pr:S.pr.map(p=>({id:p.id,k:p.k,st:p.st,big:p.big,side:p.side,slot:p.slot,x:r1(p.x),y:r1(p.y),vx:Math.round(p.vx),vy:Math.round(p.vy),el:p.el,o:p.os,h:p.hover?1:undefined,a:p.st==='fleet'?+p.ang.toFixed(2):undefined,z:S.ult>=0&&!(p.tr==='fleet'&&p.side===S.ult)?1:undefined})),
     ev:S.events.splice(0)});
   // A fingerprint of where the match stands: the phase, clock, round and wins, and everything about every fighter and
@@ -3494,7 +3494,7 @@ function pickClip(v,i,st,age){
    Each is drawn on the fighter who has it for as long as it lasts, in the colour of the player whose weapon did it, and
    flickers for its last 0.6 s. Starting, ending, a mark paying out and a swap are `tg` events (targetFx). */
 function targetTell(v,i,x,base,now,age){
-  const f=v.f[i], tg=f.tg, sc=f.sc||1, tm=now/1000, T2=Math.PI*2, head=base-100*sc, mid=base-52*sc;
+  const f=v.f[i], tg=f.ts, sc=f.sc||1, tm=now/1000, T2=Math.PI*2, head=base-100*sc, mid=base-52*sc;
   const tri=(ax,ay,dx,dy,n)=>{ L.beginPath(); L.moveTo(ax+dx*n,ay+dy*n); L.lineTo(ax-dx*n*0.5-dy*n*0.8,ay-dy*n*0.5+dx*n*0.8); L.lineTo(ax-dx*n*0.5+dy*n*0.8,ay-dy*n*0.5-dx*n*0.8); L.closePath(); L.fill(); };
   for(const id in tg){
     const left=tg[id][0], by=tg[id][1], val=tg[id][2], col=PCOL[by]||'#111', pale=PFLASH[by]||'#ddd';
@@ -3636,7 +3636,7 @@ function drawFighter(v,i,now,age,dt){
     if(f.trap){ L.save(); L.strokeStyle=PCOL[1-i]; L.lineWidth=2; L.globalAlpha=.7; for(let n=0;n<4;n++){ L.beginPath(); L.arc(x,cyy-5,40+n*3,tm*3+n,tm*3+n+2); L.stroke(); } L.restore(); }
     if(f.stun){ L.save(); L.fillStyle='#fb0'; L.font='12px sans-serif'; for(let n=0;n<3;n++){ const a=tm*6+n*T2/3; L.fillText('\u2605',x+Math.cos(a)*16-5,base-98*(f.sc||1)+Math.sin(a)*5); } L.restore(); }
     if(f.oc){ L.save(); L.strokeStyle='#0cf'; L.globalAlpha=.35+.2*Math.sin(tm*20); L.lineWidth=2; L.beginPath(); L.arc(x,cyy,34,0,T2); L.stroke(); L.restore(); } }
-  if(f.tg) targetTell(v,i,x,base,now,age);      // target: what a customized weapon's hit left on them
+  if(f.ts) targetTell(v,i,x,base,now,age);      // target: what a customized weapon's hit left on them
   // status
   L.lineCap='round';
   if(f.burn){ L.strokeStyle=PEN.fire; L.lineWidth=2.5; for(let n=0;n<3;n++){ const fx0=x-12+n*12, fy=base-104-((now/6+n*23)%22); L.beginPath(); L.moveTo(fx0,fy+8); L.lineTo(fx0+3,fy+2); L.lineTo(fx0,fy-4); L.stroke(); } }
@@ -4161,8 +4161,8 @@ function labPlay(m,alt){
 // target: the "On hit" row. The chosen blocks go on the weapon under test through the rules' own call, and the buttons
 // show what the rules kept. The dummy gets gloves carrying the same blocks, so "Take a hit" puts them on the blue fighter.
 function labTarget(){
-  const got=sim.setCustoms(0,0,lab.cu.map(id=>({id})))||[]; lab.cu=got.map(c=>c.id);
-  if(lab.cu.length){ const st=stockItem('gloves','none'), it=sim.setItem(1,0,st.spec,50); if(it){ setArt(1,0,st.strokes,it.ver,it.kind,it.style); sim.setCustoms(1,0,got); } }
+  const got=sim.targetSet(0,0,lab.cu.map(id=>({id})))||[]; lab.cu=got.map(c=>c.id);
+  if(lab.cu.length){ const st=stockItem('gloves','none'), it=sim.setItem(1,0,st.spec,50); if(it){ setArt(1,0,st.strokes,it.ver,it.kind,it.style); sim.targetSet(1,0,got); } }
   else sim.items[1][0]=null;
   sim.f[1].held=0;
   document.querySelectorAll('#labTarget button').forEach(b=>b.classList.toggle('on',lab.cu.includes(b.dataset.c)));
