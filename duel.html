@@ -285,6 +285,7 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
 .tc button .cdfill{position:absolute;left:0;right:0;bottom:0;height:calc(var(--cd,0)*100%);background:rgba(28,37,65,.28);pointer-events:none}
 .tc .keys{visibility:hidden;font-size:0;flex:1;min-width:20px}
 .fnote{display:none}
+.read .alts button{margin:0 2px;padding:3px 9px;font:inherit;font-weight:700}
 .tc[data-side="0"]{border-color:var(--p1)} .tc[data-side="1"]{border-color:var(--p2)}
 .rules{display:none!important;margin:0;padding:10px 14px;list-style:none;gap:4px;font-size:14px;background:var(--card);border:2px solid var(--ink);border-radius:14px}
 .chip{display:inline-block;border-radius:6px;padding:0 6px;color:#fff;font-weight:600;font-size:13px}
@@ -1223,6 +1224,7 @@ function createDuel(opts){
     const it=S.items[side][k]; if(!it||!ch||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
     const spec={name:it.name,kind:it.kind,style:it.style,element:it.el,power:it.raw.power,range:it.raw.range,speed:it.raw.speed,traits:it.traits,trait:it.trait,tune:it.tune};
     if(ch.kind!==undefined){ if(!KINDS.includes(ch.kind)) return null; spec.kind=ch.kind; spec.style=String(ch.style||''); }
+    if(typeof ch.name==='string'){ const nm=ch.name.replace(/[<>&"']/g,'').trim().slice(0,22); if(nm) spec.name=nm; }
     if(ch.trait!==undefined) spec.trait=String(ch.trait);
     if(ch.tune!==undefined) spec.tune=ch.tune;
     return S.setItem(side,k,spec,it.cost);
@@ -2682,19 +2684,23 @@ async function makeItem(d){
   const strokes=d.strokes, k=d.k, png=d.pad.toDataURL('image/png').split(',')[1], read=d.el.querySelector('.read');
   d.busy=true; updateDesk(d); read.textContent='Reading your drawing…';
   try{
-    let spec, source;
+    let spec, source, alts=[];
     if(net){
       const r=await fetch('/duel/act',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room:net.code,id:cid,type:'item',slot:k,strokes,png})});
       const o=await r.json(); if(!r.ok) throw new Error(o.error||'The server could not take that drawing.');
-      spec=o; source=o.source;
+      spec=o; source=o.source; alts=Array.isArray(o.alts)?o.alts:[];
     }else{
       spec=null;
-      if(canRead) try{ const r=await fetch('/duel/read',{method:'POST',body:await (await fetch('data:image/png;base64,'+png)).blob()}); if(r.ok){ spec=validItem(await r.json()); source='OpenAI'; } }catch(e){}
+      if(canRead) try{ const r=await fetch('/duel/read',{method:'POST',body:await (await fetch('data:image/png;base64,'+png)).blob()}); if(r.ok){ const o=await r.json(); spec=validItem(o); alts=Array.isArray(o.alts)?o.alts:[]; source='OpenAI'; } }catch(e){}
       if(!spec){ spec=localGuess(strokes); source='local guess'; }
       const it=sim.setItem(d.side,k,spec,inkCost(strokes)); if(!it) throw new Error('Too late: the round has started.');
       setArt(d.side,k,strokes,it.ver,it.kind,it.style); accept(sim.snapshot()); if(window.SFX) SFX.play('made'); spec={name:it.name,kind:it.kind,element:it.el};
     }
     read.innerHTML=`<b>${esc(spec.name)}</b>: ${spec.kind}${spec.element!=='none'?', '+spec.element:''}`;
+    // The reader's other two readings, as one-tap corrections.
+    if(alts.length){ const box=document.createElement('span'); box.className='alts'; box.append(' Or: ');
+      for(const a of alts.slice(0,2)){ const b=document.createElement('button'); b.textContent=String(a.name||'').slice(0,22); b.onclick=async()=>{ box.remove(); await tweak(d,{kind:a.kind,style:a.style||'',name:String(a.name||'')}); const it=view&&view.items[d.side][k]; if(it) read.firstChild.textContent=it.name; }; box.append(b,' '); }
+      read.append(box); }
     d.strokes=[]; if(!(view&&view.items[d.side][1-k])) read.innerHTML+=' Slot '+'AB'[1-k]+' is still empty.';
   }catch(e){ read.textContent=e.message; }
   d.busy=false; updateDesk(d);
