@@ -3,6 +3,8 @@
 // Every generation it writes <out>/gen-NNNN.json ({gen, theta, fitness, vsClassic, ...}) and adds a row to <out>/log.csv.
 // Run the same command again and it carries on from the newest whole checkpoint. Ctrl-C (or a kill, or the lid closing)
 // loses at most the generation in progress: a checkpoint is written under a temporary name and renamed when complete.
+// To stop a run you cannot reach with Ctrl-C (started by another program, or on Windows, where one process cannot send
+// another a Ctrl-C), create an empty file named `stop` in <out>: the run notices within half a second and ends the same way.
 // Options (defaults): --hours=6  --gens=<no limit>  --workers=8  --out=bot/checkpoints  --pop=64  --rounds=24
 //   --sigma=0.1  --lr=0.03  --decay=0.005  --skill=0.55 (the reaction time it trains at)  --seed=<random>
 //   --league-every=25  a generation's weights join the league as an opponent this often
@@ -102,6 +104,9 @@ async function main(){
     console.log('stopped ('+why+') during generation '+(state.gen+1)+(state.gen?'; the newest checkpoint is '+name(state.gen):'')+'. Run the same command to carry on.');
     pool.close().then(()=>bye(0),()=>bye(0)); };
   process.on('SIGINT',()=>stop('Ctrl-C')); process.on('SIGTERM',()=>stop('terminated'));
+  // The stop file: the same clean stop, asked for through the folder. One left over from an earlier run is cleared first.
+  const STOP=path.join(OUT,'stop'), unstop=()=>{ try{ fs.unlinkSync(STOP); }catch(e){} }; unstop();
+  setInterval(()=>{ if(fs.existsSync(STOP)){ unstop(); stop('stop file'); } },400).unref();
   await pool.ready;
 
   // the league: the six fixed opponents and some earlier selves, read back from their checkpoints

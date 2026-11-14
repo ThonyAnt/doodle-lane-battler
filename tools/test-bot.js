@@ -190,8 +190,10 @@ async function trainerTests(){
     const kill=path.join(tmp,'kill'), child=cp.spawn(process.execPath,[train,'--gens=1000000','--hours=1'].concat(tiny,['--out='+kill]),{stdio:['ignore','pipe','pipe']}); let outK='', code=null;
     child.stdout.on('data',d=>outK+=d); child.stderr.on('data',d=>outK+=d); const gone=new Promise(r=>child.on('exit',(c,sig)=>{ code=sig||c; r(); }));
     for(let i=0;i<300&&code===null&&!(fs.existsSync(kill)&&gens(kill).length>=2);i++) await sleep(100);
-    child.kill('SIGINT'); const tk=Date.now(); await Promise.race([gone,sleep(15000)]); if(code===null) child.kill('SIGKILL');
-    ok('Ctrl-C stops it cleanly and quickly',()=>code===0&&Date.now()-tk<6000&&/stopped/.test(outK),()=>({code,ms:Date.now()-tk,last:outK.trim().split('\n').slice(-2)}));
+    // Windows cannot hand a child process a Ctrl-C (kill('SIGINT') there ends it outright, handlers unrun), so on Windows the
+    // run is stopped through its stop file, which ends it by the same path.
+    if(process.platform==='win32') fs.writeFileSync(path.join(kill,'stop'),''); else child.kill('SIGINT'); const tk=Date.now(); await Promise.race([gone,sleep(15000)]); if(code===null) child.kill('SIGKILL');
+    ok((process.platform==='win32'?'the stop file':'Ctrl-C')+' stops it cleanly and quickly',()=>code===0&&Date.now()-tk<6000&&/stopped/.test(outK)&&!fs.existsSync(path.join(kill,'stop')),()=>({code,ms:Date.now()-tk,last:outK.trim().split('\n').slice(-2)}));
     ok('and what it leaves can be carried on from',()=>{ const n=gens(kill).length, newest=ckpt(kill,n), again=run(kill,['--gens=1']); return newest.gen===n&&newest.theta.length===1232&&again.status===0&&+(/^gen +(\d+)/m.exec(again.stdout)||[])[1]===n+1&&rows(kill).slice(1).map(x=>+x[0]).every((g,i)=>g===i+1); });
   }finally{ rmrf(tmp); }
 }
