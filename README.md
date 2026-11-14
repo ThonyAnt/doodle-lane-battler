@@ -10,6 +10,15 @@ Open `/duel` on the same server for a live two-player stickman fight. Before eac
 
 Keys: A/D move, W jump, S down, J and K use your two drawings. Tap a blade repeatedly for a 3-hit combo; attack while running, in the air, or holding down for other moves. Bows and guns keep firing as you tap, and down + attack is a charged shot. Second player on one screen: arrows, with , and . to attack. Touch buttons appear under the arena on tablets.
 
+## Desktop overlay (experimental, Windows)
+
+The fighters can play on top of your real desktop instead of in a browser tab. This needs Electron, which is a development dependency: run `npm install` once, then `npm run overlay`.
+
+- The fight runs along the top edge of the taskbar, across the whole screen. Clicks pass through to whatever is underneath; only the menu and sketchbook cards take the mouse.
+- **Esc** or **Ctrl+Alt+D** opens the menu (mode, restart, sketchbook, quit) and pauses. **Ctrl+Alt+Q** quits.
+- The fight pauses whenever another app has the keyboard; press Ctrl+Alt+D to come back.
+- Modes: vs bot, two players on one keyboard, and practice. No online rooms and no platforms yet; the fighters do not know about your windows.
+
 ## Run
 
 Needs Node 18 or newer. No dependencies.
