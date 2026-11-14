@@ -431,4 +431,65 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
     const h=S.hash(), R=D.replayDuel(JSON.parse(JSON.stringify(S.log()))); ok('leaves: a match that uses them replays to the same hash',seen>0&&S.phase==='fight'&&R.hash()===h,{seen,phase:S.phase,h,r:R.hash()});
     const n=S.lv.length; S.lv.push({id:999,lq:999,k:'fire',side:0,x:5,y:0,w:10,life:1,max:1,t:0,cd:0}); ok('leaves: the hash covers what is left behind',S.hash()!==h); S.lv.length=n; }
 }
+{ // costs: what a weapon's power spends (COSTS, S.costSet, f.cs); 'heavy' is the power they are tried with
+  const C=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {COSTS,COST_UP,cleanCost,costCustoms,costPoints,replayDuel,makeBot};')();
+  const SW={kind:'melee',style:'blade',element:'none',name:'Sword',traits:['swift'],trait:'swift'};
+  const mk=cost=>{ const S=D.createDuel({practice:true,seed:5}); S.step(1/60); S.setItem(0,0,SW,50); if(cost!==undefined) S.costSet(0,0,cost?[{id:'heavy',cost}]:[{id:'heavy'}]);
+    S.f[0].x=300; S.f[1].x=370; S.f[0].face=1; S.kept=[]; return S; };
+  const look=S=>{ const v=S.snapshot(); for(const e of v.ev) if(e.e==='cost') S.kept.push(e.k); return v.f[0].cs[0]; };
+  const swing=(S,m)=>{ const b=S.f[1]; b.hp=HP0; b.x=S.f[0].x+70; b.vx=0; b.hurt=0; S.f[0].act=null; S.f[0].cd[0]=0; S.play(0,m||'blade1'); };
+  const dmg=S=>{ const hp=S.f[1].hp; for(let i=0;i<90&&S.f[1].hp===hp;i++) S.ticks(1); return +(hp-S.f[1].hp).toFixed(2); };
+  const S0=mk(); swing(S0); const plain=dmg(S0), S1=mk(null); swing(S1); const heavy=dmg(S1);
+  ok('cost: a heavy weapon with nothing to pay hits 35% harder',plain>0&&Math.abs(heavy/plain-C.COST_UP)<0.01,{plain,heavy});
+  ok('cost: an item without customizations has no cost view',look(S0)===null&&look(S1).c==='');
+  { const S=mk({cost:'ammo',size:3,reload:1}); const left=[]; for(let i=0;i<3;i++){ swing(S); S.ticks(2); left.push(look(S).n); } S.f[0].act=null; S.ticks(4);
+    const v=look(S); ok('ammo: each attack takes a round; empty, it is held by its cooldown while it reloads',left.join()==='2,1,0'&&v.lk===1&&v.ok===0&&S.f[0].cd[0]>0.8&&S.kept.includes('reload'),{left,v});
+    inp(S,0,{a:1}); run(S,0.5); ok('ammo: it cannot be used while reloading',!S.f[0].act); run(S,0.7); const w=look(S);
+    ok('ammo: reloaded and usable again',w.n===3&&w.lk===0&&w.ok===1&&S.f[0].cd[0]<=0&&S.kept.includes('loaded'),w);
+    const S2=mk({cost:'ammo',size:4,reload:1.2,pause:0.5}); swing(S2); S2.ticks(2); S2.f[0].act=null; const one=look(S2).n; run(S2,0.9); ok('ammo: a pause tops it up',one===3&&look(S2).n===4); }
+  { const S=mk({cost:'heat'}); const heat=[]; for(let i=0;i<4;i++){ swing(S); S.ticks(2); heat.push(look(S).v); }
+    ok('heat: four quick attacks take it to the top',heat.join()==='0.28,0.56,0.84,1'&&S.kept.includes('overheat'),heat);
+    ok('heat: the attack that overheats it still hits hard',dmg(S)===heavy); run(S,0.6); const v=look(S);
+    ok('heat: overheated, it is held by its cooldown',v.lk===1&&v.ok===-1&&S.f[0].cd[0]>0.8,v); run(S,1.6); const w=look(S);
+    ok('heat: cooled, it works again',w.lk===0&&w.v===0&&w.ok===1&&S.f[0].cd[0]<=0&&S.kept.includes('cool'),w);
+    const S2=mk({cost:'heat'}); swing(S2); S2.ticks(2); S2.f[0].act=null; run(S2,0.95); ok('heat: it cools when left alone',Math.abs(look(S2).v-0.13)<0.03,look(S2).v);
+    const S3=mk({cost:'heat',per:0.6}); swing(S3); S3.ticks(2); swing(S3); S3.ticks(2); swing(S3,'blade2'); const pw=S3.f[0].act.pw, d=dmg(S3); ok('heat: an attack chained from an overheated weapon is weak',pw===-1&&d<plain,{pw,d}); }
+  { const S=mk({cost:'ink',per:20}); S.f[0].ink2=50; swing(S); S.ticks(2); const took=50-S.f[0].ink2; ok('ink: a paid attack drinks ink and hits hard',Math.abs(took-20)<0.5&&dmg(S)===heavy,took);
+    S.f[0].ink2=5; const v=look(S); swing(S); const pw=S.f[0].act.pw; ok('ink: with too little it comes out plain and takes none',v.ok===0&&pw===0&&S.f[0].ink2<6&&dmg(S)===plain&&(look(S),S.kept.includes('dry')),{v,pw}); }
+  { const S=mk({cost:'blood',per:5}); const hp=S.f[0].hp; swing(S); const lost=hp-S.f[0].hp; ok('blood: an attack costs its holder health',lost===5&&S.f[0].act.pw===1&&(look(S),S.kept.includes('blood')),lost);
+    S.f[0].hp=5.5; swing(S); ok('blood: it never takes the last of it',S.f[0].hp===5.5&&S.f[0].act.pw===0); }
+  { const S=mk({cost:'windup',hold:0.4}); const P=mk(); swing(P); let t0=0; while(P.f[1].hp===HP0&&t0<240){ P.ticks(1); t0++; }
+    swing(S); run(S,0.2); const mid=look(S), still=S.f[0].act&&S.f[0].act.t===0; let t1=24; while(S.f[1].hp===HP0&&t1<240){ S.ticks(1); t1++; }
+    ok('wind-up: the move waits at its start while the ring fills, then lands late and hard',still&&Math.abs(mid.r-0.5)<0.05&&Math.abs((t1-t0)/120-0.4)<0.03&&Math.abs(HP0-S.f[1].hp-heavy)<0.01,{mid,t0,t1}); }
+  { const S=mk({cost:'fragile',hits:3,mend:1}), a=S.f[0], b=S.f[1]; S.setItem(1,0,SW,40);
+    const hitMe=()=>{ a.hurt=0; a.act=null; b.act=null; b.hurt=0; b.x=a.x+60; b.face=-1; S.play(1,'blade1'); run(S,0.5); };
+    hitMe(); const one=look(S).n; hitMe(); hitMe(); const v=look(S); ok('fragile: it cracks with each hit its holder takes, and breaks',one===1&&v.n===3&&v.ok===-1&&S.kept.includes('crack')&&S.kept.includes('break'),v);
+    b.act=null; a.hurt=0; swing(S); const pw=a.act.pw, d=dmg(S); ok('fragile: broken, it is weak',pw===-1&&d<plain,{pw,d});
+    b.x=a.x+400; a.act=null; inp(S,0,{r:1}); run(S,1.3); const moved=look(S).n; inp(S,0,{r:0}); run(S,1.4); const w=look(S);
+    ok('fragile: walking does not mend it, standing still does',moved===3&&w.n===0&&w.ok===1&&S.kept.includes('mend'),w); }
+  { const S=mk({cost:'ammo'}); S.setItem(0,0,{kind:'ranged',style:'gun',element:'none',name:'Gun',traits:['bounce'],trait:'bounce'},50); S.f[1].x=S.f[0].x+400; S.play(0,'gun_shot'); run(S,0.25); const p0=S.pr[0]&&S.pr[0].dmg; S.pr.length=0;
+    S.costSet(0,0,[{id:'heavy',cost:{cost:'ammo'}}]); S.f[0].act=null; S.play(0,'gun_shot'); run(S,0.25); const p=S.pr[0];
+    ok('cost: a paid shot is marked and does 35% more',!!p&&p.pw===1&&Math.abs(p.dmg/p0-C.COST_UP)<1e-6&&S.snapshot().pr[0].pw===1,p&&[p0,p.dmg]); }
+  { const S=mk(); let threw=0; const junk=[undefined,null,7,'x',{},[null],[7],[{id:'nope'}],[{id:'heavy',cost:'x'}],[{id:'heavy',cost:{cost:'nope'}}],[{id:'heavy',cost:{cost:'ammo',size:'abc',reload:-9}}],[{id:'heavy',cost:{cost:'heat',per:1e9,cool:NaN}}],[{id:'__proto__'}],[{id:'heavy',cost:{cost:'constructor'}}]];
+    for(const j of junk){ try{ S.costSet(0,0,j); run(S,0.05); S.snapshot(); }catch(e){ threw++; } }
+    for(const a of [[9,0,[]],[0,5,[]],['a','b',[]],[0,1,[{id:'heavy'}]],[]]){ try{ S.costSet(...a); }catch(e){ threw++; } }
+    ok('cost: junk customizations, sides and slots never throw',threw===0,threw);
+    ok('cost: unknown ids are dropped; numbers are clamped or fall back',C.costCustoms([{id:'nope'},{id:'heavy',cost:{cost:'nope'}}]).length===1&&JSON.stringify(C.cleanCost({cost:'ammo',size:'abc',reload:-9}))==='{"cost":"ammo","size":4,"reload":0.6,"pause":0.7}',C.cleanCost({cost:'ammo',size:'abc',reload:-9}));
+    S.setItem(0,1,{kind:'shield',element:'none',name:'Shield'},30); ok('cost: only weapons take a customization',S.costSet(0,1,[{id:'heavy'}])===null);
+    S.costSet(0,0,[{id:'heavy',cost:{cost:'ammo'}}]); const it=S.tweak(0,0,{tune:1}); ok('cost: a tweaked item keeps it, and it uses +3 -1 points',!!it&&!!it.customs&&it.customs[0].cost.cost==='ammo'&&C.costPoints(it)===2&&S.snapshot().items[0][0].cu[0].id==='heavy');
+    const M=D.createDuel({seed:3}); M.setItem(0,0,SW,40); const yes=!!M.costSet(0,0,[{id:'heavy',cost:{cost:'heat'}}]); M.setReady(0); ok('cost: in a match it can be set while drawing, not after "ready"',yes&&M.costSet(0,0,[])===null); }
+  { const S=mk({cost:'heat',per:0.6}); swing(S); S.ticks(2); swing(S); S.ticks(2); S.f[0].act=null; run(S,0.1); const held=S.f[0].cd[0]>1; S.f[0].od=100; S.f[1].x=S.f[0].x+200;
+    ok('cost: an ultimate is not held back by an overheated weapon',held&&S.startUlt(0)===true&&S.f[0].act.pw===undefined);
+    const B=mk({cost:'blood',per:5}); B.f[0].od=100; const hp=B.f[0].hp; B.startUlt(0); run(B,1); ok('cost: an ultimate pays nothing',B.f[0].hp===hp); }
+  { // two bots, each with a cost on its weapon: the match ends and its recording replays to the same fingerprint
+    const S=D.createDuel({seed:41,record:true}), sp=(style,kind)=>({kind:kind||'melee',style,element:'none',name:'W',traits:['swift'],trait:'swift'});
+    S.setItem(0,0,sp('blade'),46); S.setItem(0,1,{kind:'shield',element:'none',name:'Shield'},30); S.setItem(1,0,sp('gun','ranged'),46); S.setItem(1,1,sp('hammer'),30);
+    S.costSet(0,0,[{id:'heavy',cost:{cost:'heat'}}]); S.costSet(1,0,[{id:'heavy',cost:{cost:'ammo',size:3}}]); S.costSet(1,1,[{id:'heavy',cost:{cost:'fragile'}}]);
+    const b0=C.makeBot(0,()=>0.6,51), b1=C.makeBot(1,()=>0.6,52), seen={}; let n=0, stuck=[0,0], worst=0;
+    while(S.phase!=='over'&&n++<120*400){ b0(S,1/120); b1(S,1/120); if(S.phase==='draw'){ S.setReady(0); S.setReady(1); } S.ticks(1); for(const e of S.snapshot().ev) if(e.e==='cost') seen[e.k]=1;
+      if(S.phase==='fight'&&S.ult<0&&S.stop<=0) for(const i of [0,1]){ const f=S.f[i]; stuck[i]=f.cd[0]<=0||f.cd[1]<=0||f.act?0:stuck[i]+1/120; worst=Math.max(worst,stuck[i]); } }
+    const R=C.replayDuel(S.log()); R.seek(R.total);
+    ok('cost: bots with costs finish a match, and nobody is without an attack for over 2 s',S.phase==='over'&&worst<=2.05&&!!seen.overheat&&!!seen.reload,{worst:+worst.toFixed(2),seen:Object.keys(seen)});
+    ok('cost: the recording replays to the same fingerprint',R.hash()===S.hash(),[S.hash(),R.hash()]); }
+}
 console.log(bad?bad+' failed':'all world rules pass'); process.exit(bad?1:0);
