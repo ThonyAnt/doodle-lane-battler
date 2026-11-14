@@ -312,10 +312,6 @@ body.sheetstage #xltabs{display:flex;flex:0 0 18px;height:18px;align-items:stret
 #xltabs .xlscroll i{flex:1;position:relative;background:repeating-conic-gradient(#fff 0 25%,#c3c3c3 0 50%) 0 0/2px 2px}
 #xltabs .xlscroll i::after{content:"";position:absolute;left:0;top:0;bottom:0;width:64%;background:#c3c3c3;border:1px solid;border-color:#fff #404040 #404040 #fff;box-shadow:inset -1px -1px #808080}
 .cpuskill{display:inline-grid;grid-template-columns:auto 110px 30px;align-items:center;gap:6px;font-size:13px;font-weight:600}
-#tips{position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:9000;pointer-events:none;background:#fffbe6;border:2px solid var(--ink);border-radius:12px;box-shadow:4px 4px 0 var(--ink);
-  padding:10px 16px;font:600 15px/1.5 var(--body);color:var(--ink);max-width:min(560px,90vw);transition:opacity .5s}
-#tips b{background:var(--hi);border-radius:4px;padding:0 5px}
-#tips.out{opacity:0}
 /* A tablet or phone as a player gets the same pretend old desktop as the big screen: teal background, grey bevelled windows
    and buttons, navy title bars, plain system type. Only the look changes; the layout is the one above. */
 body.handheld{background:#2b7a77 radial-gradient(ellipse at 70% 30%,#33908c 0,#2b7a77 55%,#215f5d 100%) fixed!important;font-family:Tahoma,Verdana,"Segoe UI",sans-serif;color:#000}
@@ -358,7 +354,6 @@ body.handheld .tc[data-side="1"] [data-k="a"],body.handheld .tc[data-side="1"] [
 body.handheld.playing #strip{border:2px solid;border-color:#808080 #fff #fff #808080;border-radius:0;box-shadow:inset 1px 1px #404040}
 body.handheld.playing #stripbar{color:#fff;text-shadow:1px 1px 0 #000;font:700 13px Tahoma,Verdana,sans-serif}
 body.handheld.playing #stripbar button{text-shadow:none}
-body.handheld #tips{border-radius:0;border:1px solid #000;background:#ffffe1;box-shadow:2px 2px 0 rgba(0,0,0,.4);font:12px/1.6 Tahoma,Verdana,sans-serif}
 @media (max-aspect-ratio:1/1){
   body.handheld .desk{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr) auto auto auto auto auto;grid-template-areas:"title" "slots" "pad" "ink" "actions" "read" "card" "stock"}
 }
@@ -502,7 +497,6 @@ Window titlebars = platforms
   <section class="loadouts" id="loadouts" hidden></section>
   <canvas id="strip" hidden></canvas>
   <div id="stripbar" hidden><button id="hackPrev" aria-label="Previous hack">◀</button><span id="hackName"></span><button id="hackNext" aria-label="Next hack">▶</button><span id="stripInk"></span></div>
-  <div id="tips" hidden></div>
   <section class="tcs" id="tcs" hidden></section>
   <section class="desks" id="desks"></section>
 
@@ -2170,15 +2164,6 @@ function accept(v){
 
 /* ---------- interface state ---------- */
 let lastPhase='', overlayKey='', loSig='';
-// The first time a fight starts on this device, say the three things nobody can guess. Shown once per tab.
-function showTips(){
-  try{ if(sessionStorage.getItem('dd-tips')) return; sessionStorage.setItem('dd-tips','1'); }catch(e){}
-  const t=$('tips'), lines=padView?['<b>Left thumb</b> moves; slide between the arrows.','<b>A</b> and <b>B</b> are your two drawings. <b>Mine</b> digs through walls.','<b>Q</b> runs a hack when your gold bar is full. Draw shapes on the strip above.']
-    :RETRO?['<b>Drag the mouse</b> on the canvas to draw: a line is a platform, a box is a crate.','<b>J</b> and <b>K</b> use your two drawings. <b>L</b> mines through walls.','<b>Q</b> runs a hack when the gold bar over your head is full.']
-    :['<b>A D</b> run, <b>W</b> jumps (twice), <b>S</b> drops down.','<b>J</b> and <b>K</b> use your two drawings. <b>L</b> mines.','<b>Q</b> runs a hack when your overdrive is full.'];
-  t.innerHTML=lines.join('<br>'); t.hidden=false; t.classList.remove('out');
-  setTimeout(()=>t.classList.add('out'),7000); setTimeout(()=>{ t.hidden=true; },7600);
-}
 // Desktop mode: the window lets clicks through to the desktop while a fight is on, and takes the mouse only while the
 // menu or the sketchbook is showing. The fight pauses whenever the menu is open or another app has the keyboard.
 function deskSync(){
@@ -2402,7 +2387,6 @@ function syncUI(){
     playing=!drawing&&v.phase!=='over'; document.body.classList.toggle('playing',playing);
     $('desks').hidden=!(drawing||v.practice||deskLike()); $('tcs').hidden=drawing||v.phase==='over'||!local.some(Boolean);
     if(drawing||v.phase==='end'||v.phase==='over') releaseAll();      // nothing stays held from one round into the next
-    if(v.phase==='fight'&&local.some(Boolean)) showTips();
     if(v.phase==='count'&&!deskLike()) document.querySelector('.arenawrap').scrollIntoView({block:'start',behavior:'smooth'});
   }
   for(const d of desk) if(d&&d.sig!==deskSig(d)) updateDesk(d);
