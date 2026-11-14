@@ -2680,7 +2680,7 @@ function forgeCallout(e,d,said,now,every){
    passes it to the OS agent (os-agent/: a deep agent with a designer, an engineer and a tester) and sends its progress
    back a line at a time. What comes out is an update: match settings and world rules (MODS in the rules). In a room the
    server installs it for everyone and says so (event `os`); in a match played in this page it is installed here. */
-let osPatch=null, osBusy=false, osToast=null, osPlanEl=null, osPhase='';
+let osPatch=null, osBusy=false, osToast=null, osPlanEl=null, osPhase='', osLive=null;      // osLive: the update in force, for its look
 function osLine(html,cls){ const log=$('osLog'), d=document.createElement('div'); d.className='osl '+(cls||''); d.innerHTML=html; log.appendChild(d); while(log.children.length>140) log.firstChild.remove(); log.scrollTop=log.scrollHeight; return d; }
 function osShow(e){
   if(e.type==='plan'){ if(!osPlanEl) osPlanEl=osLine('','plan'); osPlanEl.innerHTML=e.todos.map(t=>'<span class="'+esc(t.status)+'">'+(t.status==='completed'?'[x] ':t.status==='in_progress'?'[&gt;] ':'[ ] ')+esc(t.text)+'</span>').join('\n'); $('osLog').scrollTop=1e6; }
@@ -2709,14 +2709,14 @@ async function osRun(text){
 $('osForm').onsubmit=e=>{ e.preventDefault(); osRun($('osIn').value); };
 $('osIn').addEventListener('keydown',e=>e.stopPropagation());      // typing to the machine is not playing
 // A room's update, told by the server to every device; and, each frame, an update for a match played in this page.
-function osHear(d){ osToast=d&&d.state==='installed'&&d.patch?{name:d.patch.name,notes:d.patch.notes||[],until:view&&view.phase==='fight'?performance.now()+5200:0}:null; }
+function osHear(d){ osLive=d&&d.state==='installed'&&d.patch?d.patch:null; osToast=osLive?{name:osLive.name,notes:osLive.notes||[],until:view&&view.phase==='fight'?performance.now()+4200:0}:null; }
 function osTick(now){
   if(sim&&osPatch&&sim.phase!=='over'&&sim._os!==osPatch){
     sim.setMods(osPatch.mods||{}); sim.clearWorld();
     for(const r of osPatch.rules||[]){ const p=ForgeScript.parse(r.code); if(p.ok&&!ForgeScript.check(p.ast,FORGE_API.world).length) sim.addWorldRule({name:r.name,blurb:r.blurb,cooldown:r.cooldown,run:ForgeScript.compile(p.ast),code:r.code}); }
-    sim._os=osPatch; osToast=osPatch.name?{name:osPatch.name,notes:osPatch.notes||[],until:sim.phase==='fight'?now+5200:0}:null;
+    sim._os=osPatch; osLive=osPatch.name?osPatch:null; osToast=osLive?{name:osPatch.name,notes:osPatch.notes||[],until:sim.phase==='fight'?now+4200:0}:null;
   }
-  const ph=view?view.phase:''; if(ph!==osPhase){ osPhase=ph; if(ph==='count'&&osToast) osToast.until=now+5200; }      // the round opens with what is installed
+  const ph=view?view.phase:''; if(ph!==osPhase){ osPhase=ph; if(ph==='count'&&osToast) osToast.until=now+4200; }      // the round opens with what is installed
 }
 // Whose drawing a projectile shows: a shot that a rule or a bubble sent back is still its thrower's item.
 const shotOwner=p=>p.o===0||p.o===1?p.o:p.side;
@@ -3479,7 +3479,7 @@ function retroBuild(){
   // the rules written for this match: FORGE.EXE, while the players draw and whenever the menu is up
   { const box=document.createElement('div'); box.id='forgeBox'; box.className='forge'; retroWindow('forge','FORGE.EXE',box,{right:'8px',top:'64px',width:'324px'}); rwin.forge.w.hidden=true; rwin.forge.want=false; }
   // on a big screen, what each player has made (with its stats) is a window too
-  retroWindow('os','INK-OS \u2014 talk to the machine',$('oswin'),{right:'8px',bottom:'40px',width:'372px'});
+  retroWindow('os','INK-OS \u2014 talk to the machine',$('oswin'),{right:'8px',bottom:'40px',top:'auto',left:'auto',height:'auto',width:'372px'});
   retroWindow('load','Loadouts \u2014 what each player has made',$('loadouts'),{left:'calc(50% - 60px)',top:'196px',transform:'translateX(-50%)',width:'min(760px,80vw)'},true);
   rwin.load.w.hidden=true;
   for(const w of document.querySelectorAll('#inkos .win.small')) makeDraggable(w,w.querySelector('.titlebar'));
@@ -4265,11 +4265,49 @@ function ultFront(v,now){
   // time starts again: a ring bursts from the fighter who took it
   if(ultEnd&&!CALM){ const el=(now-ultEnd.t0)/1000; if(el<0.55){ const u=ease(el/0.55); L.save(); L.strokeStyle=PFLASH[ultEnd.side]; L.globalAlpha=1-u; L.lineWidth=12*(1-u)+1; L.beginPath(); L.arc(ultEnd.x,GY-ultEnd.y,30+u*340,0,7); L.stroke(); L.restore(); } }
 }
+// The look of the installed update (see osforge.js: floor, weather, tint): drawn behind the fighters, over the stage.
+const OS_FLOOR={lava:['#ff5a1f','#ffd23f'],ice:['#9fd8ff','#ffffff'],slime:['#4fd15a','#c8ff7a'],void:['#3b1466','#b06cff'],grass:['#3d9a3d','#a8e06a']};
+function osLook(v,now){
+  const k=osLive&&osLive.look; if(!k||v.phase==='draw'&&RETRO) return;
+  const b=v.board, x0=b?b.x0:0, x1=b?b.x1:ARENA_W, fy=GY-(b?b.floor:0), top=b?GY-b.top:GY-400, w=x1-x0, h=fy-top, t=now/1000;
+  const rnd=(i,j)=>{ const q=Math.sin(i*127.1+j*311.7)*43758.5453; return q-Math.floor(q); };
+  L.save(); L.beginPath(); L.rect(x0,top,w,h+18); L.clip();
+  if(k.tint){ L.globalAlpha=0.13; L.fillStyle=k.tint; L.fillRect(x0,top,w,h+18); L.globalAlpha=1; }
+  const W=k.weather;
+  if(W&&W!=='none') for(let i=0;i<46;i++){
+    const a=rnd(i,1), c=rnd(i,2), d=rnd(i,3);
+    if(W==='embers'||W==='bubbles'){ const y=fy-((t*(40+80*c)+d*h)%h), x=x0+a*w+Math.sin(t*2+i)*10; L.globalAlpha=0.75*(1-(fy-y)/h); L.fillStyle=W==='embers'?(i%3?'#ff7a1f':'#ffd23f'):'#7fd7ff'; L.beginPath(); L.arc(x,y,W==='embers'?1.6+2*c:2+3*c,0,7); W==='embers'?L.fill():(L.strokeStyle='#7fd7ff',L.lineWidth=1.5,L.stroke()); }
+    else if(W==='rain'){ const y=top+((t*(520+300*c)+d*h)%h), x=x0+((a*w+t*60)%w); L.globalAlpha=0.45; L.strokeStyle='#4a78c8'; L.lineWidth=1.6; L.beginPath(); L.moveTo(x,y); L.lineTo(x-5,y+16); L.stroke(); }
+    else if(W==='snow'){ const y=top+((t*(26+40*c)+d*h)%h), x=x0+a*w+Math.sin(t+i)*14; L.globalAlpha=0.8; L.fillStyle='#fff'; L.strokeStyle='#9bb'; L.lineWidth=0.8; L.beginPath(); L.arc(x,y,1.6+2*c,0,7); L.fill(); L.stroke(); }
+    else if(W==='stars'){ const x=x0+a*w, y=top+c*h*0.8, tw=0.35+0.65*Math.abs(Math.sin(t*(1+d*2)+i)); L.globalAlpha=tw; L.fillStyle=i%4?'#fff7c2':'#cfe2ff'; const r=1.4+2.2*d; L.beginPath(); L.moveTo(x,y-r*2); L.lineTo(x+r*0.5,y-r*0.5); L.lineTo(x+r*2,y); L.lineTo(x+r*0.5,y+r*0.5); L.lineTo(x,y+r*2); L.lineTo(x-r*0.5,y+r*0.5); L.lineTo(x-r*2,y); L.lineTo(x-r*0.5,y-r*0.5); L.closePath(); L.fill(); L.strokeStyle='#8a8fb8'; L.lineWidth=0.6; L.stroke(); }
+    else if(W==='wind'){ const y=top+a*h, x=x0+((t*(300+260*c)+d*w)%(w+80))-40; L.globalAlpha=0.35; L.strokeStyle='#8aa'; L.lineWidth=1.6; L.beginPath(); L.moveTo(x,y); L.quadraticCurveTo(x+18,y-4,x+36+30*c,y); L.stroke(); }
+    else if(W==='sparks'&&i<14){ const ph=(t*1.3+d*7)%7; if(ph<0.22){ const x=x0+a*w; L.globalAlpha=1-ph/0.22; L.strokeStyle='#ffe14a'; L.lineWidth=3; L.beginPath(); let y=top; L.moveTo(x,y); for(let n=0;n<6;n++){ y+=h/6; L.lineTo(x+(rnd(i,n+9)-0.5)*46,y); } L.stroke(); } }
+  }
+  const F=OS_FLOOR[k.floor];
+  if(F){ L.globalAlpha=0.9; const g=L.createLinearGradient(0,fy-10,0,fy+16); g.addColorStop(0,F[1]); g.addColorStop(0.45,F[0]); g.addColorStop(1,F[0]); L.fillStyle=g;
+    L.beginPath(); L.moveTo(x0,fy+16); for(let x=x0;x<=x1;x+=12) L.lineTo(x,fy+2-(k.floor==='ice'?0:5+4*Math.sin(x*0.045+t*3)+2*Math.sin(x*0.11-t*5))); L.lineTo(x1,fy+16); L.closePath(); L.fill();
+    if(k.floor==='lava'||k.floor==='void'){ L.globalAlpha=0.22+0.1*Math.sin(t*4); const gl=L.createLinearGradient(0,fy-70,0,fy); gl.addColorStop(0,'rgba(0,0,0,0)'); gl.addColorStop(1,F[0]); L.fillStyle=gl; L.fillRect(x0,fy-70,w,70); }
+    if(k.floor==='ice'){ L.globalAlpha=0.8; L.strokeStyle='#fff'; L.lineWidth=2; for(let i=0;i<9;i++){ const x=x0+rnd(i,5)*w; L.beginPath(); L.moveTo(x,fy+4); L.lineTo(x+16,fy+11); L.stroke(); } } }
+  L.restore(); L.globalAlpha=1;
+}
+// The installed update's name stays on screen for the whole fight, and it arrives with a strip across the arena.
+function osChip(v,now){
+  if(!osLive||v.phase==='draw'||v.phase==='over') return;
+  const b=v.board, x0=b?b.x0:0, x1=b?b.x1:ARENA_W, top=b?GY-b.top:GY-400, cx=(x0+x1)/2;
+  L.save(); L.font='700 13px Karla,system-ui,sans-serif'; L.textAlign='left'; const label='UPDATE  '+osLive.name, tw=L.measureText(label).width;
+  L.globalAlpha=0.92; L.fillStyle='#0b2a12'; L.fillRect(x0+10,top+10,tw+34,24); L.fillStyle='#3f3'; L.beginPath(); L.arc(x0+24,top+22,4.5,0,7); L.fill(); L.fillText(label,x0+36,top+27);
+  if(osToast&&now<osToast.until&&!koView){ const left=(osToast.until-now)/4200, a=Math.min(1,left*6,(1-left)*8+0.2), y=top+(b?150:120);
+    L.globalAlpha=0.9*a; L.fillStyle='#07180b'; L.fillRect(x0,y-46,x1-x0,104); L.fillStyle='#3f3'; L.fillRect(x0,y-46,x1-x0,3); L.fillRect(x0,y+55,x1-x0,3);
+    L.globalAlpha=a; L.textAlign='center'; L.fillStyle='#8f8'; L.font='700 14px "Courier New",monospace'; L.fillText('INK-OS  ·  UPDATE INSTALLED',cx,y-22);
+    L.fillStyle='#fff'; L.font='700 40px Karla,system-ui,sans-serif'; L.fillText(osLive.name.toUpperCase(),cx,y+18); L.fillStyle='#bfb'; L.font='600 15px Karla,system-ui,sans-serif'; if(osToast.notes[0]) L.fillText(osToast.notes[0].slice(0,70),cx,y+42); }
+  L.restore();
+}
 function render(now){
   const v=koView||view, age=net&&!v.hs&&!koView&&(v.phase==='fight'||v.phase==='end')?Math.min(0.08,(now-viewAt)/1000):0, dt=Math.max(0,Math.min(0.05,(now-(lastRender||now))/1000)); lastRender=now;
   fitCanvas(); L.setTransform(1,0,0,1,0,0); L.clearRect(0,0,cv.width,cv.height); L.setTransform(VS,0,0,VS,OX*VS,OY);
   if(!deskLike()){ L.fillStyle='#fff'; L.fillRect(-OX,VTOP,VW,440-VTOP); }
   if(v.sheet) sheetBack(v,now); else if(v.deck) deckBack(v,now);
+  osLook(v,now);
   shake*=Math.exp(-dt*22); if(shake>0.1&&impactLive(now)){ /* the impact frame is held dead still; the jolt comes when it drops */ } else if(shake>0.1) L.translate(Math.sin(now*0.112)*shake,Math.cos(now*0.091)*shake*0.35); else shake=0;
   // ground and platforms: plain ink lines, no scenery
   L.strokeStyle='#111'; L.lineCap='round'; L.lineWidth=DESK?3:4; if(RETRO) L.globalAlpha=0; L.beginPath(); L.moveTo(-OX-10,GY+2); L.lineTo(ARENA_W+10+OX,GY+2); L.stroke(); L.globalAlpha=1;
@@ -4366,7 +4404,7 @@ function render(now){
   else if(v.phase==='fight'&&v.t<=10) banner(String(Math.ceil(v.t)),44,60,'#e2552d');
   else if(deskLike()&&v.phase==='fight'&&!v.practice&&!RETRO) banner(String(Math.ceil(v.t)),26,40,'#59658a');
   if(RETRO&&deskPaused) banner('Paused',44,150,'#fff');
-  if(osToast&&now<osToast.until&&!koView){ banner('UPDATE: '+osToast.name,30,RETRO?250:112,'#0a7d32'); if(osToast.notes[0]) banner(osToast.notes[0].slice(0,60),17,RETRO?222:140,'#0a7d32'); }
+  osChip(v,now);
   if(DESK&&deskPaused&&!deskMenu) banner('Paused. Press Ctrl+Alt+D to come back.',30,150,'#59658a');
   else if(v.phase==='end'&&!koView) banner(v.winner<0?'Draw round!':NAME[v.winner]+' takes the round!',56,180,v.winner<0?'#1c2541':PCOL[v.winner]);
 }

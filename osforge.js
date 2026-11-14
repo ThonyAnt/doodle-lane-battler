@@ -12,9 +12,11 @@ module.exports=function({D,ForgeScript}){
   const FS=ForgeScript, MODS=D.MODS, API=D.FORGE_API.world, FL=D.FORGE_LIMITS, HP=D.HP||160;
   const text=(v,max)=>String(v===undefined||v===null?'':v).replace(/[\x00-\x1f\x7f<>]+/g,' ').trim().slice(0,max);
   const EFFECT=/\b(push|burn|soak|stun|heal|hurt)\s*\(/;
+  // What an update looks like on screen: only the page draws it, the rules never see it.
+  const LOOK={floor:['none','lava','ice','slime','void','grass'],weather:['none','embers','rain','snow','stars','sparks','wind','bubbles']};
 
   function clean(raw){
-    const errors=[], p={name:'',notes:[],mods:{},rules:[]};
+    const errors=[], p={name:'',notes:[],mods:{},rules:[],look:{floor:'none',weather:'none',tint:''}};
     if(!raw||typeof raw!=='object'||Array.isArray(raw)) return {patch:null,errors:['the update must be a JSON object: {name, notes, mods, rules}']};
     p.name=text(raw.name,28); if(!p.name) errors.push('name is missing: give the update a short name');
     p.notes=(Array.isArray(raw.notes)?raw.notes:[]).map(n=>text(n,90)).filter(Boolean).slice(0,4);
@@ -26,6 +28,10 @@ module.exports=function({D,ForgeScript}){
       if(v<MODS[k][0]||v>MODS[k][1]) errors.push('mods.'+k+' is '+v+': it must be between '+MODS[k][0]+' and '+MODS[k][1]);
       else if(v!==MODS[k][2]) p.mods[k]=v;
     }
+    const look=raw.look&&typeof raw.look==='object'&&!Array.isArray(raw.look)?raw.look:{};
+    for(const k of ['floor','weather']){ const v=look[k]===undefined?'none':String(look[k]).toLowerCase(); if(LOOK[k].includes(v)) p.look[k]=v; else errors.push('look.'+k+' is "'+text(v,20)+'": it must be one of '+LOOK[k].join(', ')); }
+    if(look.tint!==undefined&&look.tint!==''){ if(/^#[0-9a-fA-F]{6}$/.test(String(look.tint))) p.look.tint=String(look.tint).toLowerCase(); else errors.push('look.tint must be a colour like #ff6600, or left out'); }
+    if(p.look.floor==='none'&&p.look.weather==='none'&&!p.look.tint&&!errors.length) errors.push('look is empty: every update needs a look a watcher notices at once (a floor, a weather or a tint)');
     const rules=Array.isArray(raw.rules)?raw.rules:[];
     if(rules.length>3) errors.push('there are '+rules.length+' rules: three at most');
     rules.slice(0,3).forEach((r,i)=>{
@@ -105,9 +111,14 @@ module.exports=function({D,ForgeScript}){
     const fields=o=>Object.keys(o).filter(k=>typeof o[k]==='string'&&!o[k].startsWith('fn')).join(' ');
     return ['# What an update can change','',
       'An update is one JSON object:','',
-      '```json','{"name":"Moon Gravity","notes":["Everyone floats: gravity is a third of normal.","Jumps carry further."],"mods":{"gravity":0.35,"jump":1.3},"rules":[]}','```','',
+      '```json','{"name":"Moon Gravity","notes":["Everyone floats: gravity is a third of normal.","Jumps carry further."],"mods":{"gravity":0.35,"jump":1.3},"rules":[],"look":{"floor":"none","weather":"stars","tint":"#1b1f4a"}}','```','',
       '- name: at most 28 characters. notes: one to three short patch notes written for players.',
       '- It must change something: at least one setting in mods, or at least one rule. Three rules at most.','',
+      '## look: what the update looks like (required)','','The arena is redrawn so that anyone watching sees the update at once. It changes nothing in the fight; it is the picture that goes with it.','',
+      '- floor: '+LOOK.floor.join(', ')+'. What the ground is made of.',
+      '- weather: '+LOOK.weather.join(', ')+'. What drifts through the air.',
+      '- tint: a colour like #ff6600 washed over the arena, or leave it out.',
+      'Pick the look that tells the story of the change: a lava floor with embers and an orange tint, the moon with stars and a dark blue tint, a storm with rain and sparks.','',
       '## mods: settings of the whole match','','Each is a multiplier; 1 is normal. Leave out what you do not change.','',
       ...Object.keys(MODS).map(k=>'- '+k+': '+MODS[k][0]+' to '+MODS[k][1]+'. '+what[k]+'.'),'',
       '## rules: world rules','',
@@ -138,5 +149,5 @@ module.exports=function({D,ForgeScript}){
       '## What an update cannot do','',
       'It cannot add new art, new weapons, new stages or new buttons, and it cannot treat Blue and Red differently. If a request needs one of those, build the closest thing these settings and rules can express and say so in the notes.'].join('\n');
   }
-  return {clean,install,playtest,manual,MODS};
+  return {clean,install,playtest,manual,MODS,LOOK};
 };

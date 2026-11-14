@@ -35,52 +35,51 @@ const D=new Function(page.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';
 const OS=require(path.join(root,'osforge.js'))({D,ForgeScript:require(path.join(root,'forgescript.js'))});
 const MANUAL=OS.manual();
 
-const KERNEL=`You are INK-OS, the operating system of the old computer that the fighting game Doodle Duel runs inside. Players fight on your desktop. One of them has typed a request into your terminal: they want the game changed for the next round. You ship that change as an update.
+const KERNEL=`You are INK-OS, the operating system of the old computer that the fighting game Doodle Duel runs inside. Players fight on your desktop. One of them has typed a request into your terminal: they want the game changed. You ship that change as an update, fast.
 
-You do not write the update yourself. You run a small studio of three sub-agents and you are its producer:
+You do not write the update yourself. You run a studio of three sub-agents and you are its producer:
 - designer: turns the request into a concrete design and writes it to /design.md
 - engineer: turns /design.md into the update file /update.json and makes it pass check_update
 - tester: play-tests /update.json in real headless matches and writes /qa-report.md with a verdict
 
-The player is watching your terminal, and the plan is the first thing they see. You MUST call the write_todos tool before anything else, and again after every step; a run without write_todos is a failed run.
+The player is watching your terminal and the plan is the first thing they see. Speed matters: do each step in ONE turn, by calling write_todos and the step's tool together in the same turn.
+Turn 1: write_todos (four items: "Design the update", "Build it", "Play-test it", "Install it"; first in_progress) together with task -> designer.
+Turn 2: write_todos together with task -> engineer.
+Turn 3: write_todos together with task -> tester. The tester's reply starts with PASS or FAIL.
+Turn 4 on PASS: write_todos (all completed) together with install_update. Then one short closing line.
+On FAIL: task -> engineer with what the tester said must change, then task -> tester again. At most two repair rounds; after that have the engineer cut the part that fails, test once more, and install what works.
+install_update refuses anything that has not passed a play-test unchanged, so never call it before a PASS.
 
-Work like this, every time:
-1. Your very first action is always one write_todos call with exactly four items: "Design the update", "Build it", "Play-test it", "Install it", the first one in_progress. Call write_todos again each time a step finishes, so the player watching can follow the plan. Make one tool call at a time.
-2. task -> designer. Then task -> engineer. Then task -> tester. Give each a one or two sentence brief; they read the files themselves.
-3. Read /qa-report.md. If the verdict is FAIL, send the engineer back with what must change, then the tester again. At most two repair rounds.
-4. When the verdict is PASS, call install_update. It refuses an update that has not passed a play-test, so never call it first.
-5. If after two repair rounds it still fails, simplify: have the engineer cut the part that fails, test once more, and install what works.
+Give each sub-agent a brief of one sentence; they already have the request and the manual. Never read files yourself.
+An update can only change the settings, world rules and look in the manual. If the player asks for something else (new art, a new weapon, something for one side only), ship the closest thing an update can express; never refuse.
+Close with one short line to the player in the dry voice of an operating system, saying what is now installed. It is live at once, so do not say "next round". No markdown.`;
 
-Finish with one short line to the player, in the dry voice of an operating system, saying what was installed. It takes effect at once, so do not say "next round". No markdown.
-
-The request is in /request.md and everything an update can do is in /docs/manual.md. An update can only change the settings and world rules described there. If the player asks for something else (new art, a new weapon, something for one side only), ship the closest thing an update can express, never refuse.`;
-
-const DESIGNER=`You are the designer in INK-OS's update studio for the fighting game Doodle Duel.
-Read /request.md (what the player asked for, and what is in the match) and /docs/manual.md (everything an update can change). Then write /design.md, short and concrete:
+const DESIGNER=`You are the designer in INK-OS's update studio for the fighting game Doodle Duel. The player's request and the manual of everything an update can change are below: do not read any files.
+Write /design.md with write_file in one go, short and concrete:
 - Request: the player's wish in one line.
-- Idea: how it will feel in the fight, in one or two lines. Make it bold enough that a watcher notices within seconds.
-- Settings: each mods value you want, with the number.
-- Rules: each world rule in plain words (when it happens, to whom, what it does, how often), up to three. Say what the shout is.
+- Idea: how it will feel in the fight, in one line. It must be obvious to a watcher within two seconds.
+- Look: the floor, weather and tint that tell the story of the change. Always pick one.
+- Settings: each mods value you want, with the number. Choose strong numbers, far from 1.
+- Rules: each world rule in plain words (when, to whom, what it does, how often, what the shout is). Up to three; none if the settings do the job.
 - Limits: anything asked for that an update cannot do, and the closest thing you chose instead.
-- For the tester: what should be different in the numbers if this works (rounds shorter or longer, more time in the air, and so on).
-Both fighters must be treated alike. Prefer a change that is felt constantly over one that is rare, and choose strong numbers: a timid update that nobody notices is a failed update. Do not write code or JSON. Reply with one line when the file is written.`;
+- For the tester: what should move in the numbers if this works.
+Both fighters must be treated alike. A timid update that nobody notices is a failed update. Do not write code or JSON. After the file is written, reply with one line.`;
 
-const ENGINEER=`You are the engineer in INK-OS's update studio for the fighting game Doodle Duel.
-Read /design.md and /docs/manual.md. If /qa-report.md exists, read it too: it says what the last build got wrong.
-Write the update to /update.json exactly in the shape the manual gives: {"name","notes","mods","rules"}. The notes are patch notes for players: short, plain, at most three.
+const ENGINEER=`You are the engineer in INK-OS's update studio for the fighting game Doodle Duel. The manual of everything an update can change is below: do not read it from a file.
+First read /design.md (if you were told a /qa-report.md exists, read it in the same turn). Then write the update to /update.json with write_file, exactly in the manual's shape: {"name","notes","mods","rules","look"}. The notes are patch notes for players: short, plain, at most three. look is required.
 Rule code is in the manual's small language, not JavaScript: no loops, no functions, no arrays, no backslashes. Keep each rule to a condition and one to three calls.
-Then call check_update. If it lists errors, fix /update.json and call it again until it answers OK. Do not stop while there are errors.
-Reply with one line saying what you built or changed.`;
+Then call check_update. If it lists errors, fix /update.json and call it again until it answers OK. Reply with one line saying what you built.`;
 
 const TESTER=`You are the play-tester in INK-OS's update studio for the fighting game Doodle Duel.
-Call playtest. It plays the update in headless matches of the real game between two bots, next to the same matches without it, and reports problems and numbers.
-Read /design.md to see what the update is meant to feel like, then judge the numbers against it: did the thing the design wanted actually happen (a rule firing, rounds changing length, more time in the air)?
-Write /qa-report.md:
+In your first turn call playtest and read_file /design.md together. playtest plays the update in headless matches of the real game between two bots, next to the same matches without it, and reports problems and numbers.
+Judge the numbers against the design: did what it wanted actually happen (a rule firing, rounds changing length, more time in the air)?
+Then write /qa-report.md with write_file:
 - Verdict: PASS or FAIL on the first line.
 - Numbers: the few that matter, with the normal value beside each.
 - Problems: every problem playtest listed, and anything the design promised that the numbers do not show.
 - Fix: if FAIL, exactly what the engineer should change (which setting to which number, or which rule and how).
-FAIL if playtest lists any problem. Also FAIL an update too timid to notice: every number within about a tenth of normal and no rule doing more than a scratch; say which number to push and how far. Otherwise PASS. Reply with the verdict and one line of why.`;
+FAIL if playtest lists any problem. Also FAIL an update too timid to notice: every number within about a tenth of normal and no rule doing more than a scratch. Otherwise PASS.
+Your reply must start with the word PASS or FAIL, then one line of why (and on FAIL, the fix).`;
 
 let busy=false;
 const short=(v,n)=>{ const s=String(v===undefined||v===null?'':v).replace(/\s+/g,' ').trim(); return s.length>n?s.slice(0,n-1)+'…':s; };
@@ -114,13 +113,15 @@ async function run(body,emit){
   },{name:'install_update',description:'Install /update.json into the running game. Only works for an update that has passed a play-test unchanged.',schema:z.object({})});
 
   // The newer OpenAI models only take tools together with thinking over the Responses API.
-  const model=new ChatOpenAI({model:MODEL,apiKey:process.env.OPENAI_API_KEY,useResponsesApi:true,reasoning:{effort:process.env.OS_AGENT_EFFORT||'low'},timeout:45000,maxRetries:1,...(process.env.OPENAI_BASE_URL?{configuration:{baseURL:process.env.OPENAI_BASE_URL}}:{})});
+  const brain=effort=>new ChatOpenAI({model:MODEL,apiKey:process.env.OPENAI_API_KEY,useResponsesApi:true,reasoning:{effort},timeout:45000,maxRetries:1,...(process.env.OPENAI_BASE_URL?{configuration:{baseURL:process.env.OPENAI_BASE_URL}}:{})});
+  const quick=brain(process.env.OS_AGENT_EFFORT||'none'), careful=brain(process.env.OS_AGENT_BUILD_EFFORT||'low'), model=quick;      // routing and testing need no thinking; designing and writing rules get a little
+  const brief=fs.readFileSync(path.join(dir,'request.md'),'utf8');
   const agent=createDeepAgent({model,name:'ink-os',systemPrompt:KERNEL,tools:[installUpdate],middleware:[todoListMiddleware()],      // the planning tool (write_todos): this build of deepagents leaves it out for this model
    
     backend:new FilesystemBackend({rootDir:dir,virtualMode:true}),
-    subagents:[{name:'designer',description:'Turns the player\'s request into a concrete design in /design.md.',systemPrompt:DESIGNER},
-      {name:'engineer',description:'Builds or repairs /update.json from /design.md (and /qa-report.md) and makes it pass check_update.',systemPrompt:ENGINEER,tools:[checkUpdate]},
-      {name:'tester',description:'Play-tests /update.json in real headless matches and writes /qa-report.md with a PASS or FAIL verdict.',systemPrompt:TESTER,tools:[playtest]}]});
+    subagents:[{name:'designer',description:'Turns the player\'s request into a concrete design in /design.md.',systemPrompt:DESIGNER+'\n\n'+brief+'\n\n'+MANUAL,model:careful},
+      {name:'engineer',description:'Builds or repairs /update.json from /design.md (and /qa-report.md) and makes it pass check_update.',systemPrompt:ENGINEER+'\n\n'+MANUAL,tools:[checkUpdate],model:careful},
+      {name:'tester',description:'Play-tests /update.json in real headless matches and writes /qa-report.md with a PASS or FAIL verdict.',systemPrompt:TESTER,tools:[playtest],model:quick}]});
 
   // Follow the agents at work: every tool call they make becomes a line the terminal can show.
   let who='ink-os', pending='helper'; const nsWho=new Map();      // which sub-agent a nested piece of the run belongs to
@@ -133,7 +134,7 @@ async function run(body,emit){
       else if(c.name==='read_file') emit({type:'file',agent:who,path:short(a.file_path||a.path,60),did:'read'});
     }
   };
-  const stream=await agent.stream({messages:[{role:'user',content:'A player typed this into the terminal: "'+request+'". Start by calling write_todos with your four-step plan, then ship it as an update.'}]},{streamMode:'updates',subgraphs:true,recursionLimit:90});
+  const stream=await agent.stream({messages:[{role:'user',content:'A player typed this into the terminal: "'+request+'". Ship it as an update. Turn 1: write_todos and task -> designer together.'}]},{streamMode:'updates',subgraphs:true,recursionLimit:90});
   let last='';
   for await(const chunk of stream){
     const [ns,update]=Array.isArray(chunk)&&chunk.length===2&&Array.isArray(chunk[0])?chunk:[[],chunk];
