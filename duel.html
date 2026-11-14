@@ -663,8 +663,13 @@ function localGuess(strokes){
 //   power: damage, and how hard it shoves (how long a shield lasts, how much a snack heals)
 //   range: reach, how far a shot flies, blast size, dash distance (how freely you move behind a shield, helpings of a snack)
 //   speed: how fast the move plays and how soon it is ready again
+// How ink turns into strength: (ink/full)^exp, up to 3. With a square root, doubling the ink is worth about 40% more, so
+// putting everything into one drawing no longer beats splitting it between two (it used to win about two rounds in three).
+// A 50-ink item is as strong as it was before.
+const INK_CURVE={exp:0.5,full:160};
+const inkPower=cost=>Math.max(0.2,Math.min(3,3*Math.pow(Math.max(0,cost)/INK_CURVE.full,INK_CURVE.exp)));
 function itemStats(kind,el,cost,stats){
-  const p=Math.max(0.2,Math.min(3,cost/30)), raw=el==='none'?1.15:1, s=stats||{power:5,range:5,speed:5};
+  const p=inkPower(cost), raw=el==='none'?1.15:1, s=stats||{power:5,range:5,speed:5};
   const pm=statMul(s.power,LEAN.power), rm=statMul(s.range,LEAN.range), sm=statMul(s.speed,LEAN.speed), push=0.82+0.036*s.power;
   switch(kind){
     case 'melee': return {p,rate:sm,push,size:44+22*p,reach:(44+22*p)*rm,dmg:(3.5+3.5*p)*raw*pm,wind:0.1+0.05*p,cd:(0.34+0.18*p)/sm,kb:240+80*p};
@@ -686,7 +691,7 @@ const MOVES={
   blade2:   {dur:0.36,hits:[0.13],cancel:0.26,next:'blade3',dmg:0.7,kb:180,lift:140,lunge:190},
   blade3:   {dur:0.64,hits:[0.30],dmg:1.5,kb:420,lift:280,lunge:260,lungeAt:0.2,reach:1.15,end:1},
   blade_run:{dur:0.42,hits:[0.14],dmg:1.05,kb:320,lift:120,carry:380,end:1},
-  blade_air:{dur:0.42,hits:[0.10,0.24],dmg:0.55,kb:200,lift:-160,tall:110,end:1},
+  blade_air:{dur:0.42,hits:[0.10,0.24],dmg:0.47,kb:200,lift:-160,tall:110,end:1},
   blade_up: {dur:0.46,hits:[0.16],dmg:0.95,kb:110,lift:560,hop:250,tall:110,end:1},
   bow_shot: {dur:0.50,shots:[0.30],cancel:0.42,next:'bow_quick',dmg:1.3,speed:760,grav:220},
   bow_quick:{dur:0.34,shots:[0.18],cancel:0.30,next:'bow_quick',dmg:0.75,speed:760,grav:220,stun:0.1},
@@ -706,7 +711,7 @@ const MOVES={
   hammer2:  {dur:0.56,hits:[0.24],cancel:0.42,next:'hammer3',dmg:1.0,kb:200,lift:420,lunge:140,lungeAt:0.18},
   hammer3:  {dur:0.86,hits:[0.44],dmg:2.0,kb:520,lift:340,lunge:240,lungeAt:0.3,reach:1.4,quake:1,end:1},
   hammer_run:{dur:0.52,hits:[0.20],dmg:1.3,kb:420,lift:260,carry:340,end:1},
-  hammer_air:{dur:0.50,hits:[0.26],dmg:1.4,kb:260,lift:-320,tall:120,dive:300,quake:1,end:1},
+  hammer_air:{dur:0.50,hits:[0.26],dmg:1.0,kb:260,lift:-320,tall:120,dive:300,quake:1,end:1},
   hammer_up:{dur:0.60,hits:[0.20,0.34,0.48],dmg:0.6,kb:260,lift:120,end:1},
   fist1:    {dur:0.22,hits:[0.07],cancel:0.15,next:'fist2',dmg:0.5,kb:110,lift:0,lunge:120},
   fist2:    {dur:0.24,hits:[0.08],cancel:0.17,next:'fist3',dmg:0.6,kb:130,lift:40,lunge:120},
@@ -730,7 +735,7 @@ const MOVES={
   dual3:    {dur:0.28,hits:[0.09],cancel:0.19,next:'dual4',dmg:0.5,kb:140,lift:120,lunge:160},
   dual4:    {dur:0.58,hits:[0.20,0.28],dmg:0.75,kb:300,lift:200,lunge:240,lungeAt:0.12,end:1},
   dual_run: {dur:0.40,hits:[0.12,0.20],dmg:0.55,kb:240,lift:90,carry:400,end:1},
-  dual_air: {dur:0.40,hits:[0.10,0.20],dmg:0.55,kb:200,lift:-160,tall:110,end:1},
+  dual_air: {dur:0.40,hits:[0.10,0.20],dmg:0.47,kb:200,lift:-160,tall:110,end:1},
   dual_up:  {dur:0.44,hits:[0.13,0.21],dmg:0.5,kb:100,lift:430,hop:260,tall:110,end:1},
   // A pair of pistols: the front gun opens, then the two hands take turns (rapid = back hand, rapid2 = front hand).
   // mz / mzs: where a shot leaves when it is not the style's usual muzzle (the back hand's gun sits lower and nearer).
@@ -784,9 +789,9 @@ const PAIRED=['dual','akimbo'];   // styles fought with a weapon in each hand
 // steady button presses added; each was adjusted until every style won about half its rounds. They even out the bot's play,
 // which is a guess at how people play, so expect to retune after watching real matches. The two paired styles (dual, akimbo)
 // were added later: their moves are scaled from blade and gun for the faster hit rate, and their damage set the same way.
-const STYLE={pick:{reach:1,dmg:1,kb:1},blade:{reach:1,dmg:0.97,kb:1},spear:{reach:1.4,dmg:0.58,kb:0.9},hammer:{reach:1.05,dmg:1.46,kb:1.3},fist:{reach:0.62,dmg:0.79,kb:0.9},
-  bow:{reach:1,dmg:1.3,kb:1},gun:{reach:1,dmg:1.55,kb:1},staff:{reach:1,dmg:1.03,kb:1},hurl:{reach:1,dmg:1.55,kb:1},
-  dual:{reach:0.8,dmg:0.71,kb:0.85},akimbo:{reach:1,dmg:1.4,kb:0.9}};
+const STYLE={pick:{reach:1,dmg:1,kb:1},blade:{reach:1,dmg:0.98,kb:1},spear:{reach:1.4,dmg:0.71,kb:0.9},hammer:{reach:1.05,dmg:0.94,kb:1.3},fist:{reach:0.62,dmg:0.98,kb:0.9},
+  bow:{reach:1,dmg:1.31,kb:1},gun:{reach:1,dmg:1.73,kb:1},staff:{reach:1,dmg:0.8,kb:1},hurl:{reach:1,dmg:1.6,kb:1},
+  dual:{reach:0.8,dmg:0.82,kb:0.85},akimbo:{reach:1,dmg:1.64,kb:0.9}};
 const MUZZLE={bow:[40,72],gun:[48,71],staff:[66,70],hurl:[46,68],akimbo:[48,72]};
 const styleOf=(kind,style)=>kind==='melee'?(MELEE_STYLES.includes(style)?style:'blade'):kind==='ranged'?(RANGED_STYLES.includes(style)?style:'gun'):'';
 const ALT=['blade1','blade2','bow_shot','bow_quick','gun_shot','gun_rapid','spear1','spear2','hammer1','hammer2','fist1','fist3','staff_shot','staff_quick','hurl_shot','hurl_quick'];   // moves with a second animation, name + '_b'
@@ -1539,7 +1544,7 @@ function createDuel(opts){
 // The opponent. The fighting is this game's bot. The drawing, hacking and countering are Alex's animator.bot, adapted from
 // his AI.decide(), AI.onHack() and Drawer: the same rules and odds, and a ghost cursor that really traces each glyph
 // stroke by stroke and submits it through S.stroke, exactly as a player's drawing is. skillOf() is his CPU skill, 0..1.
-const BOT={cdBack:1,jumpBack:0,antiAir:1,predict:1,backPlan:1,leap:0};   // switches for the bot's habits, so tools/balance.js can try them one at a time
+const BOT={cdBack:1,jumpBack:0,antiAir:1,predict:1,backPlan:1,leap:0,flee:0,swap:170};   // switches for the bot's habits, so tools/balance.js can try them one at a time
 function makeBot(side,skillOf){
   let think=0, react=null, hadHack=false, now=0, idle=0, seenAct=null, seenAt=0, rolled=false, plan='', planFor=null, flee=false, stuck=0;
   const i={l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0,u:0}, last={a:-9,b:-9,j:-9,u:-9}, seenShot=new Map();
@@ -1603,7 +1608,7 @@ function makeBot(side,skillOf){
       // ---- the snack, when it is safe or badly needed ----
       if(kh>=0&&f.cd[kh]<=0&&f.uses[kh]>0&&!f.act&&!pressed&&(f.hp<HP*0.2||(f.hp<HP*0.4&&dist>210))) pressed=tap(KEYS[kh]);
       // ---- attack ----
-      const shooter=kr>=0&&(km<0||!items[km]||dist>170||!ready(km));
+      const shooter=kr>=0&&(km<0||!items[km]||dist>BOT.swap||!ready(km));
       if(now>=idle&&!pressed&&!(threat&&plan==='back')){
         if(shooter){
           const it=items[kr], range=it.st.dist, ideal=Math.max(200,Math.min(520,range*0.7)), lined=Math.abs(dy)<42, key=KEYS[kr];
@@ -1612,7 +1617,7 @@ function makeBot(side,skillOf){
             if(lined&&dist<range*0.95){ if(d>0.35&&dist>ideal*0.85&&Math.abs(e.vx)<140&&Math.random()<0.12) down=1; pressed=tap(key); }
             else if(!f.ground&&dy<-30&&dist<range*0.8) pressed=tap(key);                                  // from the air, angled down
           }
-          if(dist<ideal-110&&foeMelee) flee=true; else if(dist>ideal-30||!foeMelee) flee=false;
+          if(BOT.flee&&dist<ideal-110&&foeMelee) flee=true; else if(dist>ideal-30||!foeMelee||!BOT.flee) flee=false;
           if(flee){ if(stuck>0.3){ mv=1; if(f.ground) tap('j'); } else mv=-1; }                             // cornered: go over the top
           else if(dist>ideal+60) mv=1; else if(!facing) mv=1;
           if(dy>70&&f.ground&&Math.random()<dt*2.5) tap('j');
@@ -1648,7 +1653,7 @@ function makeBot(side,skillOf){
     // a full bar goes on the ultimate about half the time, when there is a drawing to copy and room for it to fly
     const uIt=S.items[side][f.held]||S.items[side][1-f.held], U=ultOf(uIt), uMin=U.min===undefined?110:U.min;   // each ultimate has its own working distance
     if(e.act&&MOVES[e.act.m].ult&&U.kind!=='quake'&&e.act.u==='quake'&&e.act.t>0.3&&f.ground&&Math.random()<0.7) i.j++;   // jump the shock wave
-    if(f.od>=100&&uIt&&can&&!f.act&&!threat&&dist>=uMin&&dist<=(U.max||1e9)&&Math.abs(dy)<(U.kind==='quake'?40:160)&&Math.random()<0.3+0.6*d) i.u++;
+    if(f.od>=100&&uIt&&can&&(!f.act||MOVES[f.act.m].shots)&&!threat&&dist>=uMin&&dist<=(U.max||1e9)&&Math.abs(dy)<(U.kind==='quake'?40:160)&&Math.random()<0.3+0.6*d) i.u++;
     else if(f.od>=100&&!S.hack&&Math.random()<0.2+0.4*d){ const opts=[2,3]; if(S.cells.length&&!S.broken) opts.push(0); if(S.items[1-side][e.held]) opts.push(1,1); if(S.items[side][f.held]) opts.push(4,4); i.h=pick(opts); i.q++; }
     else if(!busy&&f.ink2>55&&dist>240&&Math.random()<0.14*d) dr.draw('lightning',f.x+dir*80,-(f.y+110),0.8,dir);
     else if(!busy&&f.ink2>45&&e.act&&dist<130&&Math.random()<0.25*d) dr.draw('wall',f.x+dir*42,-(f.y+46),0.9);

@@ -9,7 +9,7 @@
 const fs=require('fs'), path=require('path'), cp=require('child_process');
 const arg=k=>{ const a=process.argv.find(x=>x.startsWith('--'+k+'=')); return a?a.split('=')[1]:undefined; };
 const FILE=arg('file')||path.join(__dirname,'..','duel.html'), N=+(arg('n')||200), SKILL=+(arg('skill')||0.55);
-const load=src=>new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,makeBot,stockItem,STOCK,STYLE,MOVES,ULTS,INK,BOT:typeof BOT!=="undefined"?BOT:{}};')();
+const load=src=>new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,makeBot,stockItem,STOCK,STYLE,MOVES,ULTS,INK,BOT:typeof BOT!=="undefined"?BOT:{},INK_CURVE:typeof INK_CURVE!=="undefined"?INK_CURVE:{}};')();
 const D=load(fs.readFileSync(FILE,'utf8'));
 const OLD=arg('old')?load(cp.execSync('git show '+arg('old')+':duel.html',{cwd:path.join(__dirname,'..'),maxBuffer:1<<26}).toString()):null;
 const KEY={blade:'sword',spear:'spear',hammer:'hammer',fist:'gloves',dual:'twins',bow:'bow',gun:'gun',akimbo:'pistols',staff:'staff',hurl:'star'}, STYLES=Object.keys(KEY);
@@ -36,7 +36,7 @@ function person(kind){
 function round(a,b,flip,opts){
   const S=D.createDuel(opts&&opts.stage?{stage:opts.stage}:undefined), P=flip?[b,a]:[a,b];
   S.snapW=960;
-  P.forEach((p,s)=>p.items.forEach((it,k)=>it&&S.setItem(s,k,it,p.cost||45)));
+  P.forEach((p,s)=>p.items.forEach((it,k)=>it&&S.setItem(s,k,it,(p.costs&&p.costs[k])||p.cost||45)));
   S.setReady(0); S.setReady(1);
   let t=0, first=-1, dmgU=[0,0], casts=[0,0], hp=[100,100];
   while(S.wins[0]+S.wins[1]===0&&S.phase!=="over"&&t<110){
@@ -48,14 +48,22 @@ function round(a,b,flip,opts){
   return {w:w<0?-1:(flip?1-w:w), t, hp:un(hp), first:first<0?-1:(flip?1-first:first), dmgU:un(dmgU), casts:un(casts)};
 }
 function duel(a,b,n,opts){ let wa=0,wb=0,t=0; const rs=[]; for(let i=0;i<(n||N);i++){ const r=round(a,b,i%2,opts); if(r.w===0) wa++; else if(r.w===1) wb++; t+=r.t; rs.push(r); } return {a:Math.round(100*wa/(n||N)),b:Math.round(100*wb/(n||N)),secs:+(t/(n||N)).toFixed(1),rs}; }
-const botP=(items,skill,old)=>{ const bots=[bot(0,skill,old),bot(1,skill,old)]; return {items,play:(S,side,dt)=>bots[side](S,dt)}; };
+const botP=(items,skill,old,costs)=>{ const bots=[bot(0,skill,old),bot(1,skill,old)]; return {items,costs,play:(S,side,dt)=>bots[side](S,dt)}; };
 const personP=(items,kind)=>{ const ps=[person(kind),person(kind)]; return {items,play:(S,side,dt)=>ps[side](S,side,dt)}; };
 
+if(arg('ink')) Object.assign(D.INK_CURVE,JSON.parse(arg('ink')));     // e.g. --ink='{"exp":0.5}' to try a different ink curve
+if(arg('moves')){ const o=JSON.parse(arg('moves')); for(const m in o) Object.assign(D.MOVES[m],o[m]); }   // e.g. --moves='{"hammer_air":{"dmg":1}}'
+if(arg('style')){ const o=JSON.parse(arg('style')); for(const m in o) Object.assign(D.STYLE[m],o[m]); }
 if(arg('bot')) Object.assign(D.BOT,JSON.parse(arg('bot')));        // e.g. --bot='{"cdBack":0}' to switch one of the bot's habits off
 const cmd=process.argv[2]||'bot';
 if(cmd==='habits'){           // do simple habits beat each other? scripted people against each other, same weapon
   const out={}; for(const st of STYLES){ const m=spec(KEY[st]); out[st]={'jumper beats masher':duel(personP([m],'jumper'),personP([m],'masher')).a,'kiter beats masher':duel(personP([m],'kiter'),personP([m],'masher')).a,'kiter beats jumper':duel(personP([m],'kiter'),personP([m],'jumper')).a}; }
   console.log('Scripted people against each other with the same weapon: a habit that wins nearly always is a dominant way to play'); console.table(out);
+}
+if(cmd==='quick'){            // a fast look: melee against ranged, and a sword with a bow against a sword alone
+  let m=0,n=0; for(const a of ['blade','hammer','fist']) for(const b of ['bow','gun','staff','hurl']){ m+=duel(botP([spec(KEY[a])]),botP([spec(KEY[b])]),Math.round(N/3)).a; n++; }
+  const sb=duel(botP([spec('sword'),spec('bow')]),botP([spec('sword')])).a, sg=duel(botP([spec('sword'),spec('gun')]),botP([spec('sword')])).a;
+  console.log(JSON.stringify(D.BOT),'| melee beats ranged',Math.round(m/n)+'%','| sword+bow beats sword',sb+'%','| sword+gun beats sword',sg+'%');
 }
 if(cmd==='melee'){            // quick look at the melee styles only, against the three scripted people
   const out={}, tot={masher:0,jumper:0,kiter:0}, MS=['blade','spear','hammer','fist','dual'];
@@ -78,9 +86,26 @@ if(cmd==='styles'){
   console.log('Share of rounds won by each style, bot against bot, equal stats, trait and ink ('+N+' rounds per pairing, skill '+SKILL+')');
   console.log(STYLES.map(s=>s+' '+Math.round(100*win[s]/games[s])+'%').join('   ')); console.table(table);
 }
-if(cmd==='items'){
-  const out={}; for(const k of ['bomb','shield','wings','snack','bow','hammer']){ const r=duel(botP([spec('sword'),spec(k)]),botP([spec('sword')])); out['sword + '+k]={'wins vs sword alone':r.a,secs:r.secs}; }
-  console.log('Is a second item worth having? (same ink on the sword both sides)'); console.table(out);
+if(cmd==='items'){            // the same 100 ink either way: all of it on one sword, or split between the sword and a second item
+  const out={}; for(const k of ['bomb','shield','wings','snack','bow','gun','hammer','spear']){ const r=duel(botP([spec('sword'),spec(k)],undefined,false,[50,50]),botP([spec('sword')],undefined,false,[100])); out['sword 50 + '+k+' 50']={'wins vs a 100-ink sword':r.a,secs:r.secs}; }
+  console.log(JSON.stringify(D.INK_CURVE),Object.keys(out).map(k=>k.replace('sword 50 + ','').replace(' 50','')+' '+out[k]['wins vs a 100-ink sword']).join('  '));
+}
+if(cmd==='moves'){            // which moves do the damage: per use, over bot-against-bot rounds of every style
+  const use={}, dmg={};
+  for(const a of STYLES) for(const b of STYLES){ const P=[botP([spec(KEY[a])]),botP([spec(KEY[b])])];
+    for(let n=0;n<Math.max(4,Math.round(N/20));n++){ const S=D.createDuel(); S.setItem(0,0,P[0].items[0],45); S.setItem(1,0,P[1].items[0],45); S.setReady(0); S.setReady(1); let t=0, last=[null,null];
+      while(S.wins[0]+S.wins[1]===0&&t<110){ t+=1/30; P[0].play(S,0,1/30); P[1].play(S,1,1/30); S.step(1/30);
+        for(const s of [0,1]){ const x=S.f[s].act; if(x&&x!==last[s]) use[x.m]=(use[x.m]||0)+1; last[s]=x; }
+        for(const e of S.events.splice(0)) if(e.e==='hit'&&!e.ult){ const at=S.f[1-e.side], m=at.act?at.act.m:null; if(m) dmg[m]=(dmg[m]||0)+e.n; } } } }
+  const rows=Object.keys(use).filter(m=>use[m]>30&&D.MOVES[m]&&!D.MOVES[m].ult).map(m=>({move:m,uses:use[m],'damage per use':+((dmg[m]||0)/use[m]).toFixed(1),'seconds':D.MOVES[m].dur})).sort((x,y)=>y['damage per use']-x['damage per use']);
+  console.log('Damage per use of each move (bot against bot, all styles). A move far above its neighbours is the one people will spam.'); console.table(rows.slice(0,16)); console.table(rows.slice(-8));
+}
+if(cmd==='tune'){             // nudge each style's damage until the round-robin evens out; prints the numbers to put in STYLE
+  for(let it=0;it<10;it++){ const win={}, games={}; for(const s of STYLES){ win[s]=0; games[s]=0; }
+    for(let i=0;i<STYLES.length;i++) for(let j=i+1;j<STYLES.length;j++){ const a=STYLES[i], b=STYLES[j], r=duel(botP([spec(KEY[a])]),botP([spec(KEY[b])])); win[a]+=r.a; win[b]+=r.b; games[a]+=100; games[b]+=100; }
+    console.log(it, STYLES.map(s=>s+' '+Math.round(100*win[s]/games[s])).join('  '));
+    for(const s of STYLES){ const w=Math.max(0.05,win[s]/games[s]); D.STYLE[s].dmg=Math.max(0.4,Math.min(2.4,D.STYLE[s].dmg*Math.pow(0.5/w,it<5?0.3:0.14))); } }
+  console.log(JSON.stringify(Object.fromEntries(STYLES.map(s=>[s,+D.STYLE[s].dmg.toFixed(2)]))));
 }
 if(cmd==='ults'){
   const out={}; for(const st of STYLES){ let cast=0,dmg=0,w=0; const r=duel(botP([spec(KEY[st])]),botP([spec('sword')])); for(const x of r.rs){ cast+=x.casts[0]; dmg+=x.dmgU[0]; } out[st+' ('+((D.ULTS[st]||D.ULTS.blade).name)+')']={casts:cast,'damage per cast':cast?+(dmg/cast).toFixed(1):0,'of 30':cast?Math.round(100*dmg/cast/30)+'%':'-'}; }
