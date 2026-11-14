@@ -1001,6 +1001,8 @@ function createDuel(opts){
       - what a rule heals and harms is capped per round (hpBudget), and so is how long it stuns;
       - anything thrown is a fault, the run is abandoned, and three faults in a match switch the rule off;
       - a run "fires" if it called at least one effect: only then does the cooldown start and a `rule` event go out.
+        An effect that did nothing only because the round's budget is spent does not count, and neither does a
+        call-out or a spark made in the same run, unless that run also did something else.
      The sim never throws because of a rule. S.rules[i].id is always i+1. */
   S.rules=[]; S.hold=0;
   let ruleT=0, nearT=0, pushes=null;       // ruleT: seconds of fighting this round, as rules see it; pushes: see hurt()
@@ -1062,37 +1064,40 @@ function createDuel(opts){
     if(!A||!B||(RULE_KINDS[on]&&!RULE_KINDS[on].includes(A.kind))) return 0;
     for(const r of S.rules){
       if(r.off||r.on!==on||r.cd>1e-6||r.a[0]!==me.side||r.a[1]!==x.ka||r.b[0]!==foe.side||r.b[1]!==x.kb) continue;
-      const mv=fview(me), fv=fview(foe), dealt=[0,0], healed=[0,0]; let fired=false, said='', sparks=0;
+      const mv=fview(me), fv=fview(foe), dealt=[0,0], healed=[0,0], sparks=[]; let fired=false, shown=false, spent=false, said='';
       const bad=msg=>{ throw new Error(msg); };
       const num=v=>typeof v==='number'&&Number.isFinite(v)?v:bad('not a finite number');
       const who=w=>w===mv?me:w===fv?foe:bad('not me or foe');
       const room=()=>Math.max(0,FL.hpBudget-r.hp);        // hp this rule may still heal or harm this round
+      const out=v=>v>0&&room()<=1e-9&&(spent=true);       // asked for something, and only the spent budget says no
       // Each effect checks its arguments first (a bad one throws, and nothing has happened), then counts as fired.
+      // Not one that the spent budget stopped: a rule that can no longer heal must not go on calling out that it does.
+      // say and spark are only shown: they make a run a firing unless the budget stopped something in the same run.
       const host={me:mv,foe:fv,mine:iview(A),theirs:iview(B),dist:Math.hypot(foe.x-me.x,foe.y-me.y),time:ruleT,mem:r.mem,Math:FORGE_MATH,
         chance:p=>Math.random()<num(p),
         push:(w,vx,vy)=>{ const t=who(w); vx=within(num(vx),-FL.pushX,FL.pushX); vy=within(num(vy),-FL.pushY,FL.pushY); fired=true;
           const go=()=>{ if(casting(t)||t.hp<=0) return; t.vx=vx; if(vy>0){ if(t.y<RULE_LIFT){ t.vy=vy; t.ground=false; } } else if(vy<0&&!t.ground) t.vy=vy; };      // no lifting someone who is already high: rules cannot juggle a fighter out of the arena
           if(pushes) pushes.push(go); else go(); },
-        burn:(w,v)=>{ const t=who(w); v=within(num(v),0,FL.burn); fired=true; if(t.hp<=0) return; if(!(t.burn>0)){ t.burn=0; t.burnDps=RULE_BURN; }
+        burn:(w,v)=>{ const t=who(w); v=within(num(v),0,FL.burn); if(out(v)) return; fired=true; if(t.hp<=0) return; if(!(t.burn>0)){ t.burn=0; t.burnDps=RULE_BURN; }
           const add=Math.min(Math.max(0,v-t.burn),room()/Math.max(0.1,t.burnDps)); if(add>0){ t.burn+=add; r.hp+=add*t.burnDps; } },      // the fire's damage comes out of the budget
         soak:(w,v)=>{ const t=who(w); v=within(num(v),0,FL.soak); fired=true; if(t.hp>0) t.slow=Math.max(t.slow,v); },
-        stun:(w,v)=>{ const t=who(w); v=within(num(v),0,FL.stun); fired=true; if(t.hp<=0||casting(t)) return;
+        stun:(w,v)=>{ const t=who(w); v=within(num(v),0,FL.stun); if(v>0&&FL.stunBudget-r.stun<=1e-9){ spent=true; return; } fired=true; if(t.hp<=0||casting(t)) return;
           const add=Math.min(Math.max(0,v-t.stun),FL.stunBudget-r.stun); if(add>0){ r.stun+=add; t.stun+=add; t.act=null; t.dash=0; } },      // only the time it adds is counted
-        heal:(w,v)=>{ const t=who(w); v=Math.min(within(num(v),0,FL.heal),room())*(t.burn>0?0.5:1); fired=true; if(t.hp<=0) return; v=Math.min(v,HP-t.hp); if(v<=0) return; t.hp+=v; r.hp+=v; healed[t.side]+=v; },
-        hurt:(w,v)=>{ const t=who(w); v=Math.min(within(num(v),0,FL.hurt),room()); fired=true; if(v<=0||t.hp<=0) return; t.hp-=v; r.hp+=v; dealt[t.side]+=v; },
-        say:text=>{ if(typeof text!=='string') bad('not text'); fired=true; said=text.replace(/[\x00-\x1f\x7f]/g,' ').slice(0,FL.say).replace(/[\ud800-\udbff]$/,''); },
-        spark:(sx,sy)=>{ sx=within(num(sx),0,W); sy=within(num(sy),0,700); fired=true; if(sparks++<4) fx('spark',{x:rr(sx),yd:rr(-sy),col:PEN_COL[A.el]||'#fc0'}); }};
+        heal:(w,v)=>{ const t=who(w); v=within(num(v),0,FL.heal); if(out(v)) return; v=Math.min(v,room())*(t.burn>0?0.5:1); fired=true; if(t.hp<=0) return; v=Math.min(v,HP-t.hp); if(v<=0) return; t.hp+=v; r.hp+=v; healed[t.side]+=v; },
+        hurt:(w,v)=>{ const t=who(w); v=within(num(v),0,FL.hurt); if(out(v)) return; v=Math.min(v,room()); fired=true; if(v<=0||t.hp<=0) return; t.hp-=v; r.hp+=v; dealt[t.side]+=v; },
+        say:text=>{ if(typeof text!=='string') bad('not text'); shown=true; said=text.replace(/[\x00-\x1f\x7f]/g,' ').slice(0,FL.say).replace(/[\ud800-\udbff]$/,''); },
+        spark:(sx,sy)=>{ sx=within(num(sx),0,W); sy=within(num(sy),0,700); shown=true; if(sparks.length<4) sparks.push({x:rr(sx),yd:rr(-sy),col:PEN_COL[A.el]||'#fc0'}); }};
       if(x.hit) host.hit={damage:x.hit.dmg*x.hit.k,element:x.hit.el,scale:v=>{ v=within(num(v),FL.hitScale[0],FL.hitScale[1]); fired=true; x.hit.k=within(x.hit.k*v,FL.hitScale[0],FL.hitScale[1]); }};
       if(x.shot){
         const p=x.shot, st=x.st;
         const speedBy=k=>{ const to=within(st.sp*k,FL.slow[0],FL.reflect[1]), m=to/st.sp; st.sp=to; p.vx*=m; p.vy*=m; };
         host.shot={x:p.x,y:p.y,vx:p.vx,vy:p.vy,speed:Math.hypot(p.vx,p.vy),damage:p.dmg,element:p.el,bomb:p.k==='bomb',
           // What the bubble shield does to a shot (it turns round and changes sides), at the same speed times v, with a
-          // fresh life and a moment in which it cannot hit, so that it gets clear of the swing first.
+          // fresh life. It can hit at once: its thrower may be standing right there.
           reflect:v=>{ v=within(num(v),FL.reflect[0],FL.reflect[1]); fired=true; if(p.ttl<=0) return;
             if(!st.flip){ st.flip=true; const v0=Math.hypot(p.vx,p.vy); p.os=p.side; p.side=me.side; p.vx=-p.vx; p.vy*=-0.5;
               const v1=Math.hypot(p.vx,p.vy); if(v1>0){ p.vx*=v0/v1; p.vy*=v0/v1; }
-              p.ttl=p.life||3; p.safe=0.15; fx('spark',{x:rr(p.x),yd:rr(-p.y),col:PEN_COL[p.el]||'#fc0'}); }
+              p.ttl=p.life||3; p.safe=0; fx('spark',{x:rr(p.x),yd:rr(-p.y),col:PEN_COL[p.el]||'#fc0'}); }
             speedBy(v); },
           destroy:()=>{ fired=true; if(p.ttl<=0) return; p.ttl=0; S.events.push({e:'puff',x:Math.round(p.x),yd:Math.round(-p.y),col:'#999',n:5}); },
           slow:v=>{ v=within(num(v),FL.slow[0],FL.slow[1]); fired=true; speedBy(v); },
@@ -1106,7 +1111,9 @@ function createDuel(opts){
         if(dealt[g.side]>=0.5) S.events.push({e:'hit',x:Math.round(g.x),y:Math.round(g.y+52),n:Math.round(dealt[g.side]),el:'none',side:g.side,hap:'thud',dir:'R'});
         if(healed[g.side]>=0.5) S.events.push({e:'heal',x:Math.round(g.x),y:Math.round(g.y+96),n:Math.round(healed[g.side]),side:g.side});
       }
+      if(shown&&!spent) fired=true;
       if(!fired) continue;
+      for(const k of sparks) fx('spark',k);
       r.cd=r.cooldown; r.fired++;
       const ev={e:'rule',id:r.id,side:me.side,x:Math.round(me.x),y:Math.round(me.y+96)};
       if(said&&ruleT-r.said>=FL.sayEvery-1e-6){ ev.say=said; r.said=ruleT; }      // the call-out is rationed; the rule still fired
