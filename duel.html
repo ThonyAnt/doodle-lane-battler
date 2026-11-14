@@ -956,6 +956,9 @@ const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet s
 // While recording, a command is carried out with its arguments as they went into the log (copied through JSON), never
 // with the caller's own objects, so the match and its replay are handed exactly the same thing.
 // Every method of a match that changes it from outside must be in COMMANDS, or replays of it will go wrong.
+// A recording holds about LOG_ROOM characters of commands (some forty long matches' worth). When it is full it stops:
+// the match goes on, the log is marked full, and it replays up to the tick it stopped at.
+const LOG_ROOM=2e6;
 const LOG_V=1, COMMANDS=['setItem','tweak','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats'];
 const INPUT_KEYS=['l','r','d','j','a','b','m','q','h','u'], viaJSON=v=>JSON.parse(JSON.stringify(v)), round1=v=>Math.round(v*10)/10;
 const packInput=i=>{ const o={}; for(const k of INPUT_KEYS){ const v=i?i[k]:undefined; o[k]=k==='l'||k==='r'||k==='d'?(v?1:0):v===undefined?null:v; } return viaJSON(o); };   // held buttons as 0 or 1, press counts as given, a missing one as null
@@ -1661,22 +1664,23 @@ function createDuel(opts){
   // A new method that changes the match from outside must be added to this list.
   // With record:true each command is also written to the log on its way in (see the notes above replayDuel). Only what
   // comes from outside is logged: a command that another command sets off (a hack started by a button press) is not.
-  const REC=opts&&opts.record?[]:null, lastIn=[{},{}], KEPT={}; let depth=0;
+  const REC=opts&&opts.record?[]:null, lastIn=[{},{}], KEPT={}; let depth=0, room=LOG_ROOM, fullAt=-1;
+  const note=(name,args)=>{ const s=JSON.stringify(args); room-=s.length+name.length+14; if(room<0){ fullAt=S.tickN; return null; } REC.push([S.tickN,name,JSON.parse(s)]); return JSON.parse(s); };   // into the log, and back out as the match is to be given it
   for(const k of ['practice','width','plats','stage']) if(opts&&opts[k]!==undefined) KEPT[k]=opts[k];
   // An input is logged only if it changed which buttons are held or any press count: nothing else of it can matter.
   function recordInput(fn,side,i){
     const now=packInput(i), inp=S.inp[side], c=S.cnt[side], look=()=>inp&&c?[inp.l,inp.r,inp.d,c.j,c.a,c.b,c.m,c.q,c.u]:[], was=look();
     try{ return fn(side,unpackInput(now)); }
-    finally{ const is=look(); if(is.some((v,k)=>v!==was[k])){ const d={}; for(const k of INPUT_KEYS) if(now[k]!==lastIn[side][k]) d[k]=now[k]; REC.push([S.tickN,'setInput',[side,d]]); lastIn[side]=now; } }
+    finally{ const is=look(); if(is.some((v,k)=>v!==was[k])){ const d={}; for(const k of INPUT_KEYS) if(now[k]!==lastIn[side][k]) d[k]=now[k]; note('setInput',[side,d]); lastIn[side]=now; } }
   }
   const own=(fn,name)=>function(...a){
     const keep=RNG; RNG=S.rand; depth++;
     try{
-      if(REC&&name&&depth===1){
+      if(REC&&fullAt<0&&name&&depth===1){
         if(name==='setInput') return recordInput(fn,a[0],a[1]);
         while(a.length&&a[a.length-1]===undefined) a.pop();
-        const args=name==='stroke'?packStroke(a):viaJSON(a); REC.push([S.tickN,name,args]);
-        a=viaJSON(args); if(name==='stroke') a=unpackStroke(a);
+        const kept=note(name,name==='stroke'?packStroke(a):a);
+        if(kept) a=name==='stroke'?unpackStroke(kept):kept;
       }
       return fn.apply(null,a);
     }finally{ depth--; RNG=keep; }
@@ -1685,7 +1689,8 @@ function createDuel(opts){
   S.step=own(S.step);
   S.ticks=own(n=>{ for(let i=0;i<n;i++){ tick(STEP); S.tickN++; } });      // exactly n ticks, whatever the clock says: how a replay steps
   // The recording so far (null if this match is not recorded). opts is what the match was made with, ticks how long it has run.
-  S.log=()=>REC?{v:LOG_V,seed:S.seed,opts:KEPT,cmds:REC.slice(),ticks:S.tickN}:null;
+  S.log=()=>REC?Object.assign({v:LOG_V,seed:S.seed,opts:KEPT,cmds:REC.slice(),ticks:fullAt<0?S.tickN:fullAt},fullAt<0?null:{full:true}):null;
+  S.plats=()=>PL;       // the ledges as they are now (to look at, not to change): a replay's viewer draws them from here
   return S;
 }
 // A simple opponent: thinks a few times a second and presses the same buttons a player would.
@@ -1853,6 +1858,47 @@ function botLoadout(seed){
 }
 /*DUEL-END*/
 
+/*PAGE-PURE-START*/
+// The page's replay code that needs no screen. tools/test-replay.js loads what is between these two marks (after the
+// rules above) and runs it, so keep it free of the DOM and of everything defined further down.
+/* ---- the replay viewer (duel?replay=CODE) ---- */
+// The stamp of the rules in a page script's text, worked out the way the server does it for /duel/replay.
+function rulesOf(scriptText){ const a=String(scriptText).replace(/\r\n/g,'\n').split('/*DUEL-'+'START*/')[1]; return a===undefined?'':fnv1a(a.split('/*DUEL-'+'END*/')[0]); }
+// Why a fetched replay cannot be played here ('' if it can). A recording made under other rules would play out as a
+// different match, so it is refused rather than shown wrong.
+function replayProblem(res,rules){
+  if(!res||!res.log||!Array.isArray(res.log.cmds)) return (res&&res.error)||'There is no replay for that room.';
+  if(res.log.v!==LOG_V||!rules||res.rules!==rules) return 'This replay is from a different version of the game.';
+  return '';
+}
+// The match as it stood after `tick` ticks (past the end: the whole recording). Going forward carries on from where the
+// last call left off; going back plays the match again from its first tick, since a match cannot be run backwards.
+// The match returned is a different object exactly when it was started again.
+let replayNow=null;
+function replayAt(log,tick){
+  if(!replayNow||replayNow.log!==log||replayNow.S.tickN>tick) replayNow={log,S:replayDuel(log,{untilTick:0})};
+  return replayNow.S.seek(tick>=replayNow.S.total?Infinity:tick);
+}
+// The viewer's clock: tick is where the picture is (it may be a fraction of a tick), speed is 0.25, 1 or 4.
+const replayClock=total=>({tick:0,total,speed:1,playing:true});
+function replayAdvance(c,secs){ if(c.playing){ c.tick=Math.min(c.total,c.tick+secs*120*c.speed); if(c.tick>=c.total) c.playing=false; } return Math.floor(c.tick); }
+const replayTime=ticks=>{ const s=Math.floor(ticks/120); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); };
+// After a jump the page is given only what it needs to draw the world as it now stands: the shapes and loose strokes
+// since the stage was last cleared. The hits, sounds and banners of the part that was skipped are not played.
+function replayWorld(evs){ let from=0; for(let i=evs.length-1;i>=0;i--) if(evs[i].e==='clear'){ from=i; break; } return evs.slice(from).filter(e=>e.e==='clear'||e.e==='obj'||e.e==='stroke'||e.e==='read'); }
+// Which drawing each hand should show: the one noted for its item's version (byVer: version -> {strokes}). have is the
+// versions showing now, [[a,b],[a,b]], null for no picture. Returns the hands that must change: [{side,slot,ver,art,item}].
+function replayArt(items,have,byVer){ const out=[]; for(const side of [0,1]) for(const slot of [0,1]){ const item=items[side][slot], art=item?byVer.get(item.ver)||null:null, ver=art?item.ver:null; if(ver!==have[side][slot]) out.push({side,slot,ver,art,item}); } return out; }
+// How a recorded stage fits the viewer's canvas. w: the arena's width; top: the height of the art board's top edge (0 if
+// there is none); cw: the canvas width and maxCh the most height it may take, in CSS pixels. Returns the canvas height
+// ch, the scale sc (CSS pixels per game unit), the view's width vw and left margin ox in game units, and vtop: where the
+// view's top edge is in drawing coordinates (0 for the usual 440-unit picture, negative when the stage is taller).
+function replayFit(w,top,cw,maxCh){
+  const full=Math.max(392,(top||0)+40)+48, ch=Math.max(1,Math.min(Math.round(maxCh),Math.round(cw*full/w))), sc=Math.min(cw/w,ch/full);
+  return {ch,sc,vw:cw/sc,ox:(cw/sc-w)/2,vtop:440-ch/sc};
+}
+/*PAGE-PURE-END*/
+
 /* ================= page ================= */
 const $=id=>document.getElementById(id);
 const PEN={none:'#1c2541',fire:'#e2552d',water:'#2a7fd4',plant:'#2f9e56'}, PCOL=['#1d3fbf','#b0121f'], NAME=['Blue','Red'];
@@ -1868,7 +1914,10 @@ const DESK=new URLSearchParams(location.search).has('desk'), DESK_SCALE=1.15, ho
 const STAGE=new URLSearchParams(location.search).get('stage')==='sheet'?'sheet':'';
 // /moves is the move tester: this page in practice mode with a panel of buttons, one for every move and ultimate.
 const LAB=location.pathname==='/moves';
-const RETRO=!DESK&&!LAB&&!new URLSearchParams(location.search).has('plain')&&innerWidth>=900&&!matchMedia('(pointer:coarse)').matches, TASK_H=32;
+// duel?replay=CODE watches a room's match again (see setReplay). It always uses the plain layout, whatever the stage was.
+const REPLAY=DESK||LAB?'':String(new URLSearchParams(location.search).get('replay')||'').toUpperCase();
+const RULES_HERE=rulesOf(document.currentScript?document.currentScript.textContent:'');      // the stamp of the rules this page is running
+const RETRO=!DESK&&!LAB&&!REPLAY&&!new URLSearchParams(location.search).has('plain')&&innerWidth>=900&&!matchMedia('(pointer:coarse)').matches, TASK_H=32;
 const deskLike=()=>DESK||RETRO, floorGap=()=>RETRO?TASK_H:0;
 let ARENA_W=960, ARENA_PLATS=PLATS, deskStage=true, deskEdges=null, deskSent='', deskMenu=false, deskPaused=false, deskLive=null, OY=0;
 if(deskLike()){ document.documentElement.classList.add('deskmode'); document.body.classList.add('deskmode'); }
@@ -1903,6 +1952,7 @@ function deskTerrain(){
 // During a fight the arena fills the window's width. If that would make it taller than the screen allows, the height is
 // capped and the view simply shows more floor either side of the arena (OX), so nothing is stretched and the rules do not change.
 let VS=1, OX=0, VW=960, playing=false, bigScreen=false, padView=false;
+let rep=null, repQuiet=false, VTOP=0;      // rep: the replay being watched (see playReplay); VTOP: the top edge of the picture, 0 except for a tall replayed stage
 function fitCanvas(){
   if(deskLike()){
     // One game unit is a fixed number of screen pixels, the floor is the bottom edge of the window (the top of the taskbar),
@@ -1914,6 +1964,12 @@ function fitCanvas(){
     if(sheetEmb()){ const q=sheetBox(); VS=q.k*r; VW=innerWidth/q.k; OX=q.left/q.k; OY=q.bottom*r-(GY+2)*VS; return; }
     const sc=deskSc();
     VS=sc*r; VW=innerWidth/sc; OX=Math.max(0,(VW-ARENA_W)/2); OY=h-(GY+6)*VS-floorGap()*r; return;
+  }
+  if(rep){      // a replay shows the whole stage it was recorded on, however wide or tall, scaled to fit
+    const r=Math.min(3,window.devicePixelRatio||1), cw=cv.clientWidth||960, q=replayFit((view&&view.w)||960,view&&view.board?view.board.top:0,cw,Math.max(240,window.innerHeight*0.68));
+    if(cv.style.height!==q.ch+'px') cv.style.height=q.ch+'px';
+    const w=Math.max(1,Math.round(cw*r)), h=Math.max(1,Math.round(q.ch*r)); if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
+    VS=q.sc*r; VW=q.vw; OX=q.ox; VTOP=q.vtop; OY=cv.height-440*VS; return;
   }
   const r=Math.min(3,window.devicePixelRatio||1), cw=cv.clientWidth||960, full=cw*440/960;
   const ch=Math.round(playing?Math.max(240,Math.min(full,window.innerHeight*(bigScreen?0.86:0.64))):full);
@@ -2232,6 +2288,81 @@ $('stageBtn').textContent=STAGE?'Stage: spreadsheet':'Stage: desktop'; $('stageB
 $('stageBtn').onclick=()=>{ const q=new URLSearchParams(location.search); if(STAGE) q.delete('stage'); else q.set('stage','sheet'); location.href=location.pathname+(q.toString()?'?'+q:''); };
 $('restart').onclick=()=>{ if(net) post({type:'rematch'}); else setMode(mode); };
 
+/* ---------- replay viewer (duel?replay=CODE) ---------- */
+// A room's match, simulated again in this page from its log (replayDuel) and drawn like a live one: every snapshot goes
+// through accept(), so the picture, the sounds and the health bars are the game's own. The logic that needs no screen
+// (replayAt, the clock, what to show after a jump, which drawing goes in which hand, how the stage fits) is in the
+// PAGE-PURE section near the top and is tested by tools/test-replay.js.
+function replayBuild(){
+  if($('rep')) return;
+  document.body.classList.add('replay'); document.title='Doodle Duel: replay';
+  const css=document.createElement('style'); css.textContent=`
+    body.replay #desks,body.replay .rules,body.replay #loadouts,body.replay header .seg,body.replay #restart,body.replay #stageBtn,body.replay #reader,body.replay #deskHint,body.replay #tcs,body.replay #overlay{display:none}
+    #rep{background:var(--card);border:2px solid var(--ink);border-radius:14px;padding:10px 14px;margin:10px 12px}
+    #rep .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center} #rep button{padding:5px 12px;font-size:14px} #rep button[aria-pressed=true]{background:var(--hi)}
+    #rep input[type=range]{flex:1;min-width:160px} #repTime{font-variant-numeric:tabular-nums;min-width:96px;text-align:right}
+    #rep p{margin:8px 0 0;color:var(--muted);font-size:13px}`; document.head.appendChild(css);
+  const el=document.createElement('section'); el.id='rep'; el.setAttribute('aria-label','Replay');
+  el.innerHTML=`<div class="row"><button id="repPlay" disabled>Play</button>
+    <span id="repSpeeds">${[0.25,1,4].map(s=>`<button data-sp="${s}" aria-pressed="${s===1}">${s}\u00d7</button>`).join(' ')}</span>
+    <input type="range" id="repBar" min="0" max="0" step="1" value="0" aria-label="Where in the match" disabled><span id="repTime">0:00 / 0:00</span></div>
+    <p id="repMsg" role="status"></p><p><a href="/duel">Back to the game</a></p>`;
+  document.querySelector('.arenawrap').after(el);
+  $('repPlay').onclick=()=>{ if(!rep) return; const c=rep.clock; if(!c.playing&&c.tick>=c.total) c.tick=0; c.playing=!c.playing; };      // at the end, Play starts it again
+  $('repSpeeds').onclick=e=>{ const b=e.target.closest('button'); if(b&&rep) rep.clock.speed=+b.dataset.sp; };
+  // The scrub bar. While it is held the clock waits; the picture follows it (going back plays the match again from the start).
+  const bar=$('repBar'); bar.oninput=()=>{ if(rep) rep.clock.tick=+bar.value; };
+  bar.onpointerdown=()=>{ if(rep) rep.drag=true; }; bar.onpointerup=bar.onpointercancel=bar.onchange=()=>{ if(rep) rep.drag=false; };
+}
+// Fetch a room's recording and play it. Anything that stops it is said in words under the bar.
+function setReplay(code){
+  deskMenu=false; mode='replay'; for(const b of ['Bot','2p','Online','Practice']) $('mode'+b).setAttribute('aria-pressed',false);
+  if(net){ net.es.close(); net=null; } setScreen(false); setPad(); sim=null; bot=null; rep=null; resetLocal(); lastPhase=''; overlayKey=''; deskStage=false; wobj.clear(); wPending[0]=[]; wPending[1]=[];
+  local=[false,false]; ARENA_W=960; ARENA_PLATS=PLATS; view=createDuel().snapshot(); buildDesks(); buildControls(); $('overlay').hidden=true;
+  replayBuild(); const say=t=>{ $('repMsg').textContent=t; };
+  if(!/^[A-Z]{4}$/.test(code)){ say('A replay link ends in a room\u2019s four letters, like duel?replay=ABCD.'); return; }
+  say('Fetching the replay of room '+code+'\u2026');
+  fetch('/duel/replay?room='+code).then(r=>r.json().catch(()=>null)).then(res=>{
+    if(mode!=='replay') return;
+    const why=replayProblem(res,RULES_HERE); if(why) say(why); else playReplay(res.log,res,code);
+  }).catch(()=>say('Could not fetch the replay: the server did not answer.'));
+}
+// Play a log. extra (optional) is the rest of what /duel/replay sent: art, the drawings by item version; hash, the
+// state the match was in when the log was taken; previous, set when a newer match is being set up in the room.
+function playReplay(log,extra,code){
+  replayBuild();
+  const byVer=new Map(); for(const a of (extra&&extra.art)||[]) if(a&&Array.isArray(a.strokes)) byVer.set(a.ver,a);
+  try{
+    // Play it through once, unseen: that says whether it is a whole match, and whether it comes out here as it did on the server.
+    const end=replayDuel(log), whole=end.phase==='over', drift=!!(extra&&extra.hash)&&end.hash()!==extra.hash;
+    rep={log,byVer,clock:replayClock(Math.max(0,end.total)),S:null,shown:-1,drag:false,
+      note:(code?'Room '+code+': ':'')+(extra&&extra.previous?'the room\u2019s last match (a new one is being set up).':whole?'the whole match.':log.full?'the match as far as it was recorded (the recording ran out of room).':'the match so far. It was still going on when this was fetched.')
+        +(drift?' Warning: played back in this browser it does not end the way it did on the server, so what you see may not be what happened.':'')};
+    $('repBar').max=rep.clock.total; $('repBar').disabled=$('repPlay').disabled=false; $('repMsg').textContent=rep.note;
+    replayShow(0);
+  }catch(e){ rep=null; $('repMsg').textContent='This replay could not be played ('+((e&&e.message)||e)+').'; }
+}
+// Put the match as it stood after `want` ticks on the screen.
+function replayShow(want){
+  const jump=rep.shown<0||want<rep.shown||want-rep.shown>120, S=replayAt(rep.log,want), v=S.snapshot();      // back, or more than a second on: a jump, not play
+  for(const e of v.ev) if(e.e==='forge') rep.byVer.set(e.ver,{strokes:e.strokes});      // a weapon drawn mid-fight brings its own picture
+  if(S!==rep.S){ rep.S=S; wobj.clear(); wPending[0]=[]; wPending[1]=[]; }      // the match was started again: nothing drawn is left over
+  if(jump){ v.ev=replayWorld(v.ev); fx=[]; ultFx=null; ultEnd=null; ultPops=[]; ultDmg[0]=ultDmg[1]=null; shake=0; FXI.S.parts=[]; FXI.S.floats=[]; resetAnim(); }
+  repQuiet=jump; try{ accept(v); }finally{ repQuiet=false; }
+  ARENA_W=v.w||960; if(!v.sheet) ARENA_PLATS=S.plats();
+  for(const c of replayArt(v.items,art.map(a=>a.map(x=>x?x.ver:null)),rep.byVer)) setArt(c.side,c.slot,c.art?c.art.strokes:null,c.ver,c.item&&c.item.kind,c.item&&c.item.style);
+  rep.shown=want;
+}
+// Once a frame: move the clock on, show where it has got to, and keep the bar in step.
+function replayTick(dt){
+  const c=rep.clock, want=rep.drag?Math.min(c.total,Math.max(0,Math.floor(c.tick))):replayAdvance(c,dt);
+  if(want!==rep.shown) replayShow(want);
+  const bar=$('repBar'), time=replayTime(want)+' / '+replayTime(c.total), label=c.playing?'Pause':c.tick>=c.total?'Watch again':'Play';
+  if(!rep.drag&&+bar.value!==want) bar.value=want;
+  if($('repTime').textContent!==time) $('repTime').textContent=time; if($('repPlay').textContent!==label) $('repPlay').textContent=label;
+  for(const b of $('repSpeeds').children){ const on=String(+b.dataset.sp===c.speed); if(b.getAttribute('aria-pressed')!==on) b.setAttribute('aria-pressed',on); }
+}
+
 function post(body){ if(!net) return; fetch('/duel/act',{method:'POST',headers:{'Content-Type':'application/json'},keepalive:true,body:JSON.stringify(Object.assign({room:net.code,id:cid},body))}).catch(()=>{}); }
 // Big screen: this device shows the fight and the join code while two other devices play.
 // The room it is showing is remembered for this tab, so a reload comes back as the screen and not as a player.
@@ -2306,7 +2437,7 @@ function worldEvent(e){
 // so the same hit is not heard twice. Everything here checks window.SFX, so the page works without the file.
 const sfxPan=x=>Math.max(-0.7,Math.min(0.7,((x||0)/(ARENA_W||960)*2-1)*0.7));
 function sfxHear(p,v){
-  const X=window.SFX; if(!X||X.muted||(padView&&net&&net.screen)) return;
+  const X=window.SFX; if(!X||X.muted||repQuiet||(padView&&net&&net.screen)) return;
   for(const e of v.ev){ const pan=sfxPan(e.x);
     switch(e.e){
       case 'hit': X.play(e.ult&&e.fin?'boom':'hit',{pan,w:e.w!==undefined?e.w:Math.min(1,e.n/18),el:e.el}); break;
@@ -2609,7 +2740,8 @@ function syncUI(){
       const sm=b.querySelector('small'); if(sm.textContent!==label) sm.textContent=label; } });
   // overlay
   const o=$('overlay'); let key='';
-  if(mode==='online'&&!net) key='menu';
+  if(mode==='replay') key='';
+  else if(mode==='online'&&!net) key='menu';
   else if(net&&net.gone) key='gone';
   else if(net&&(net.side>=0||net.watch)&&!net.present.every(Boolean)) key='wait'+net.code+net.side+net.present+net.bot;
   else if(net&&net.side<0&&v.phase==='draw') key='';
@@ -3162,7 +3294,7 @@ function ultFront(v,now){
 function render(now){
   const v=view, age=net&&!v.hs?Math.min(0.08,(now-viewAt)/1000):0, dt=Math.max(0,Math.min(0.05,(now-(lastRender||now))/1000)); lastRender=now;
   fitCanvas(); L.setTransform(1,0,0,1,0,0); L.clearRect(0,0,cv.width,cv.height); L.setTransform(VS,0,0,VS,OX*VS,OY);
-  if(!deskLike()){ L.fillStyle='#fff'; L.fillRect(-OX,0,VW,440); }
+  if(!deskLike()){ L.fillStyle='#fff'; L.fillRect(-OX,VTOP,VW,440-VTOP); }
   if(v.sheet) sheetBack(v,now);
   shake*=Math.exp(-dt*22); if(shake>0.1&&impactLive(now)){ /* the impact frame is held dead still; the jolt comes when it drops */ } else if(shake>0.1) L.translate(Math.sin(now*0.112)*shake,Math.cos(now*0.091)*shake*0.35); else shake=0;
   // ground and platforms: plain ink lines, no scenery
@@ -3259,6 +3391,7 @@ function frame(now){
   deskSync();
   const ts=LAB?lab.speed:RETRO?FXI.P.speed:1;                                          // his Time scale slider (local matches)
   if(sim&&!deskPaused){ if(bot){ bot(sim,dt*ts); if(sim.phase==='draw'&&!sim.ready[1]) sim.setReady(1); } sim.step(dt*ts); if(LAB) labTick(dt*ts); accept(sim.snapshot()); }
+  if(rep) replayTick(dt);
   FXI.step(dt);
   if(RETRO){ fpsT+=dt; fpsN++; if(fpsT>0.5){ document.querySelector('#st-fps').textContent=Math.round(fpsN/fpsT)+' fps'; fpsT=0; fpsN=0; } }
   if(view){ syncUI(); render(now); if(padView&&net&&net.side>=0){ const tc=document.querySelector('.tcs'); if(tc) document.body.style.setProperty('--pad',(tc.getBoundingClientRect().height+12)+'px'); $('strip').hidden=$('stripbar').hidden=false; drawStrip(view); } }
@@ -3323,7 +3456,8 @@ function labBuild(){
   $('labLoop').onchange=e=>{ lab.loop=e.target.checked; };
   sim.step(0.05); pickEl('none'); pickStyle('blade');
 }
-setMode(LAB?'practice':'online');      // the move tester is practice; otherwise every match starts from the room menu
+if(REPLAY) setReplay(REPLAY);      // duel?replay=CODE: watch that room's match again
+else setMode(LAB?'practice':'online');      // the move tester is practice; otherwise every match starts from the room menu
 if(LAB) labBuild();
 requestAnimationFrame(frame);
 </script>

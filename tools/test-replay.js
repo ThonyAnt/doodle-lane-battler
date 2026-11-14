@@ -1,8 +1,10 @@
 // Determinism and replay tests: a match repeats exactly from its seed, and (further down) from its log of commands.
 // Run: node tools/test-replay.js
-const fs=require('fs'), path=require('path');
+const fs=require('fs'), path=require('path'), http=require('http'), cp=require('child_process'), vm=require('vm');
 const src=fs.readFileSync(path.join(__dirname,'..','duel.html'),'utf8').replace(/\r\n/g,'\n');
 const D=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,makeBot,stockItem,INK,replayDuel};')();
+// The page's own replay code that needs no screen: the part of duel.html between the PAGE-PURE marks, loaded after the rules.
+const pure=names=>new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';'+((src.split('/*PAGE-PURE-START*/')[1]||'').split('/*PAGE-PURE-END*/')[0])+';return {'+names.map(n=>n+':typeof '+n+'==="undefined"?undefined:'+n).join(',')+'};')();
 let bad=0; const ok=(name,cond,info)=>{ if(!cond) bad++; console.log((cond?'ok   ':'FAIL ')+name+(info!==undefined?'  '+JSON.stringify(info):'')); };
 // A test that throws (a function that is not written yet, say) fails by name and the rest still run.
 const test=(name,fn)=>{ try{ const r=fn(); if(Array.isArray(r)) ok(name,r[0],r[1]); else ok(name,r); }catch(e){ ok(name,false,String(e&&e.message||e)); } };
@@ -58,10 +60,11 @@ const BOARD={x0:200,x1:1000,floor:60,top:560};
 function recorded(seed,until,opts){
   const S=D.createDuel(Object.assign({seed,record:true},opts));
   S.setLayout({w:1400,board:BOARD,plats:[]});
-  KIT.forEach((keys,s)=>keys.forEach((key,k)=>S.setItem(s,k,D.stockItem(key,k?'fire':'none').spec,45)));
+  S._art=[]; const show=(s,k,strokes,it)=>S._art.push({side:s,slot:k,strokes,ver:it.ver,kind:it.kind,style:it.style});      // the drawings by item version, as a room notes them
+  KIT.forEach((keys,s)=>keys.forEach((key,k)=>{ const made=D.stockItem(key,k?'fire':'none'); show(s,k,made.strokes,S.setItem(s,k,made.spec,45)); }));
   S._bots=[D.makeBot(0,()=>0.55,seed+1),D.makeBot(1,()=>0.55,seed+2)];
   for(let i=0;i<30;i++){ S._bots[0](S,1/60); S._bots[1](S,1/60); S.step(1/60); tally(S); }
-  S.tweak(0,0,{trait:'guard',tune:1});
+  show(0,0,S._art[0].strokes,S.tweak(0,0,{trait:'guard',tune:1}));
   S.stroke(1,[{x:300.123,y:-200.456},{x:420.5,y:-203.25}],'#b0121f');
   while(S.phase!=='over'&&S.tickN<(until||60000)) stepOnce(S);
   return S;
@@ -92,4 +95,151 @@ test('what the caller does to its own data afterwards cannot change a recorded m
   a.setPlats(plats); a.stroke(0,pts,'#111111'); plats[0].y=400; plats.push({id:'w9',x0:0,x1:900,y:90}); pts[1].x=900; for(let i=0;i<600;i++) stepOnce(a);
   return D.replayDuel(JSON.parse(JSON.stringify(a.log()))).hash()===a.hash(); });
 
+// A pretend browser: just enough of one for the page's own script to start and run frames with nothing on the screen.
+// Elements are stand-ins that accept anything; the ones the page looks up by id exist if the page's HTML (or HTML the
+// script wrote) has that id. search: the address's query string. respond(url): what fetch answers with (JSON).
+// Returns get(expression): read the page's own variables; byId; script: the page script's text; frames(n, each).
+function fakePage(search,respond){
+  const root=path.join(__dirname,'..'), script=/<script>\n([\s\S]*?)<\/script>/.exec(src)[1];
+  const known=new Set(), ids=new Map(), noteIds=s=>{ for(const m of String(s).matchAll(/\bid="([^"${}]+)"/g)) known.add(m[1]); };
+  noteIds(src.slice(0,src.indexOf('<script')));
+  const el=preset=>{ const store=Object.assign({},preset), p=new Proxy(function(){},{
+    get(t,k){ if(k===Symbol.toPrimitive) return ()=>0; if(k===Symbol.iterator) return function*(){}; if(k==='then'||typeof k==='symbol') return undefined;
+      if(!(k in store)) store[k]=k==='children'||k==='childNodes'?[]:k==='querySelectorAll'?(()=>{ const two=[el({hidden:false}),el({hidden:false})]; return ()=>two; })():el(); return store[k]; },
+    set(t,k,v){ store[k]=v; if(k==='id'){ known.add(v); ids.set(v,p); } if(k==='innerHTML') noteIds(v); return true; },
+    apply(){ return el(); }, construct(){ return el(); } }); return p; };
+  const byId=id=>known.has(id)?(ids.get(id)||(ids.set(id,el(id==='arena'?{clientWidth:960,clientHeight:440,width:960,height:440}:{hidden:false})),ids.get(id))):null;
+  const frames=[]; let now=1000;
+  const keep=()=>{ const m=new Map(); return {getItem:k=>m.has(k)?m.get(k):null,setItem:(k,v)=>{ m.set(k,String(v)); },removeItem:k=>{ m.delete(k); }}; };
+  const ctx={console,URLSearchParams,URL,setTimeout:()=>0,clearTimeout(){},setInterval:()=>0,clearInterval(){},
+    document:el({getElementById:byId,createElement:()=>el({hidden:false}),currentScript:{textContent:script},title:'',hidden:false}),
+    location:{search,pathname:'/duel',hash:'',protocol:'http:',hostname:'localhost',origin:'http://localhost',href:'http://localhost/duel'+search},
+    history:{replaceState(){},pushState(){}}, navigator:{userAgent:'node',maxTouchPoints:0}, performance:{now:()=>now},
+    requestAnimationFrame:f=>{ frames.push(f); return frames.length; }, cancelAnimationFrame(){},
+    fetch:url=>Promise.resolve().then(()=>respond(String(url))).then(body=>body===undefined?Promise.reject(new Error('no answer')):{ok:!(body&&body.error),status:body&&body.error?404:200,json:()=>Promise.resolve(body)}),
+    EventSource:function(){ return el(); }, ResizeObserver:function(){ return {observe(){},disconnect(){}}; }, MutationObserver:function(){ return {observe(){},disconnect(){}}; },
+    matchMedia:()=>({matches:false,addEventListener(){},addListener(){}}), innerWidth:1200, innerHeight:800, devicePixelRatio:1,
+    sessionStorage:keep(), localStorage:keep(), addEventListener(){}, removeEventListener(){}, alert(){}, getComputedStyle:()=>el(), Image:function(){ return el(); }, Audio:function(){ return el(); }};
+  ctx.window=ctx; ctx.self=ctx; ctx.globalThis=ctx; vm.createContext(ctx);
+  const run=(code,name)=>vm.runInContext(code,ctx,{filename:name});
+  for(const f of ['anim/core','anim/locomotion','anim/blade','anim/bow','anim/gun','anim/spear','anim/hammer','anim/fist','anim/staff','anim/hurl','anim/dual','anim/akimbo','anim/ultimate','inkshop'])
+    run(fs.readFileSync(path.join(root,f+'.js'),'utf8'),f+'.js');
+  run(script,'duel.html script');
+  return {get:expr=>run(expr,'probe'), byId, script,
+    // n frames, 1/60 s apart, letting promises (a fetch) settle in between; each(now) may return false to stop early
+    async frames(n,each){ for(let i=0;i<n;i++){ await new Promise(r=>setImmediate(r)); now+=1000/60; for(const f of frames.splice(0)) f(now); if(each&&each(now)===false) break; } }};
+}
+
+(async()=>{
+/* ---------- 4. rooms record; replays are served and viewed ---------- */
+// Against a real server (a child `node server.js` on port 3193, with no API key): a bot room is played through its
+// first round by posting inputs like a controller, then its replay is fetched and simulated again here.
+const PORT=3193, URL0='http://127.0.0.1:'+PORT, sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const get=async p=>{ const r=await fetch(URL0+p); let body=null; try{ body=await r.json(); }catch(e){} return {status:r.status,body}; };
+const post=async(p,o)=>{ const r=await fetch(URL0+p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o||{})}); let body=null; try{ body=await r.json(); }catch(e){} return {status:r.status,body}; };
+const atest=async(name,fn)=>{ try{ const r=await fn(); if(Array.isArray(r)) ok(name,r[0],r[1]); else ok(name,r); }catch(e){ ok(name,false,String(e&&e.message||e)); } };
+// A player's event stream: keeps the newest state the server sent.
+function listen(code,id){ const me={state:null,hello:null,items:[],req:null};
+  me.req=http.get(URL0+'/duel/events?room='+code+'&id='+id,res=>{ res.setEncoding('utf8'); let buf='';
+    res.on('data',chunk=>{ buf+=chunk; for(let i;(i=buf.indexOf('\n\n'))>=0;){ const msg=buf.slice(0,i); buf=buf.slice(i+2); const ev=(/^event: (.*)$/m.exec(msg)||[])[1], data=(/^data: (.*)$/m.exec(msg)||[])[1]; if(!ev||!data) continue;
+      const d=JSON.parse(data); if(ev==='state') me.state=d; else if(ev==='hello') me.hello=d; else if(ev==='item') me.items.push(d); } }); });
+  me.req.on('error',()=>{}); return me; }
+let server=null; const stop=()=>{ if(server){ try{ server.kill('SIGKILL'); }catch(e){} server=null; } }; process.on('exit',stop);
+try{
+  let busy=false; try{ await fetch(URL0+'/info'); busy=true; }catch(e){}
+  if(busy) throw new Error('port '+PORT+' is already in use: stop whatever is listening there and run again');
+  const env=Object.assign({},process.env,{PORT:String(PORT)}); delete env.OPENAI_API_KEY;
+  server=cp.spawn(process.execPath,['server.js'],{cwd:path.join(__dirname,'..'),env,stdio:'ignore'});
+  let up=false; for(let i=0;i<60&&!up;i++){ await sleep(100); try{ up=(await fetch(URL0+'/info')).ok; }catch(e){} }
+  if(!up) throw new Error('the test server did not start');
+  const code=(await post('/duel/room?bot=1&skill=1')).body.code, id='replay-test-'+process.pid, me=listen(code,id), act=o=>post('/duel/act',Object.assign({room:code,id},o));
+  for(let i=0;i<50&&!me.hello;i++) await sleep(50);
+  await act({type:'stock',slot:0,key:'sword',el:'none'}); await act({type:'tweak',slot:0,tune:1}); await act({type:'ready'});
+  // run at the bot and mash the attack button until someone has won a round (a round is 90 s at most)
+  let seq=0, a=0, j=0; const t0=Date.now();
+  while(Date.now()-t0<130000&&!(me.state&&me.state.wins[0]+me.state.wins[1]>=1)){ const f=me.state&&me.state.f, right=!f||f[1].x>=f[0].x; a++; if(a%9===0) j++;
+    await act({type:'input',seq:++seq,l:!right,r:right,d:false,j,a,b:0,m:0,q:0,u:0,h:3}); await sleep(90); }
+  await act({type:'input',seq:++seq,l:false,r:false,d:false,j,a,b:0,m:0,q:0,u:0,h:3}); await sleep(300);
+  const res=await get('/duel/replay?room='+code), liveState=me.state; let replayed=null;
+  await atest('the room serves its replay',()=>[res.status===200&&res.body.log.v===1&&res.body.log.cmds.length>10,{status:res.status,cmds:res.body&&res.body.log&&res.body.log.cmds.length,secs:Math.round((Date.now()-t0)/1000)}]);
+  await atest('replaying it reproduces the round result',()=>{ replayed=D.replayDuel(res.body.log); return [liveState.wins[0]+liveState.wins[1]===1&&replayed.wins.join()===liveState.wins.join(),[replayed.wins,liveState.wins]]; });
+  await atest('and ends in exactly the state the server was in',()=>[/^[0-9a-f]{8}$/.test(res.body.hash)&&replayed.hash()===res.body.hash&&replayed.tickN===res.body.log.ticks,[replayed.hash(),res.body.hash]]);
+  // Blue's sword, the same sword after its change, and the bot's two items; a weapon forged in the fight brings its picture in its own event.
+  await atest('the replay comes with the drawings, by item version',()=>{ const art=res.body.art, vers=art.map(x=>x.ver), its=[].concat(...replayed.items).filter(Boolean), forged=replayed.events.filter(e=>e.e==='forge').map(e=>e.ver);
+    return [art.length===4&&new Set(vers).size===4&&art.every(x=>Array.isArray(x.strokes)&&x.strokes.length&&(x.side===0||x.side===1)&&(x.slot===0||x.slot===1))&&its.length>=1&&its.every(it=>vers.includes(it.ver)||forged.includes(it.ver)),{vers,forged,items:its.map(it=>it.ver)}]; });
+  await atest('the rules stamp on a replay is the one the page works out for itself',async()=>{ const html=await (await fetch(URL0+'/duel?replay='+code)).text(), script=/<script>\n([\s\S]*?)<\/script>/.exec(html)[1], P=pure(['rulesOf','replayProblem']);
+    return [/^[0-9a-f]{8}$/.test(res.body.rules)&&P.rulesOf(script)===res.body.rules&&P.replayProblem(res.body,P.rulesOf(script))==='',[res.body.rules,P.rulesOf(script)]]; });
+  await atest('an unknown room is a 404',async()=>(await get('/duel/replay?room=ZZZZ')).status===404);
+  await act({type:'rematch'}); await sleep(150);
+  const afterRematch=(await get('/duel/replay?room='+code)).body;
+  await atest('a rematch starts a new log and keeps the last one',()=>[afterRematch.log.cmds.length<res.body.log.cmds.length||afterRematch.previous===true,{previous:afterRematch.previous,cmds:afterRematch.log.cmds.length}]);
+  await atest('the kept one is the whole of the last match',()=>afterRematch.previous===true&&afterRematch.log.ticks>=res.body.log.ticks&&afterRematch.log.seed===res.body.log.seed&&D.replayDuel(afterRematch.log).hash()===afterRematch.hash);
+  await act({type:'stock',slot:0,key:'gun',el:'fire'}); await act({type:'ready'});
+  for(let i=0;i<60&&!(me.state&&me.state.phase!=='draw'&&me.state.wins[0]+me.state.wins[1]===0);i++) await sleep(50);
+  await sleep(120); const fresh=(await get('/duel/replay?room='+code)).body;
+  await atest('once the new match is under way the replay is the new one',()=>[!fresh.previous&&fresh.log.seed!==res.body.log.seed&&fresh.log.cmds.length<res.body.log.cmds.length&&D.replayDuel(fresh.log).hash()===fresh.hash,{previous:fresh.previous,cmds:fresh.log.cmds.length}]);
+  me.req.destroy();
+}catch(e){ ok('the room tests ran',false,String(e&&e.message||e)); }
+finally{ stop(); }
+// The shelf of kept replays, with a clock we set by hand: 30 minutes each, 50 at most, the oldest dropped first.
+test('kept replays last 30 minutes and there are never more than 50',()=>{ const mk=require('../duel-server.js').replayShelf; if(!mk) return [false,'no replayShelf']; const sh=mk(), MIN=60e3;
+  for(let i=0;i<60;i++) sh.put('R'+i,{n:i},i*1000);
+  const sizeOk=sh.size()===50&&sh.get('R9',60000)===null&&sh.get('R10',60000).n===10&&sh.get('R59',60000).n===59;
+  sh.put('R10',{n:'again'},20*MIN);                                    // the same room again: its newer match replaces the older one
+  const fresh=sh.get('R10',49*MIN).n==='again', gone=sh.get('R11',30*MIN+11001)===null, still=sh.get('R59',30*MIN+11001).n===59;
+  sh.sweep(31*MIN); return [sizeOk&&fresh&&gone&&still&&sh.size()===1&&sh.get('R10',51*MIN)===null,{size:sh.size(),sizeOk,fresh,gone,still}]; });
+// A room records whatever its players send, so a recording must not be able to grow without end.
+test('a recording stops when it is full, says so, and still replays up to there',()=>{ const a=recorded(61,2400), big=Array.from({length:600},(_,i)=>({x:300+i*0.71,y:-300-(i%7)*1.3})); let n=0;
+  while(!a.log().full&&n<2000){ a.stroke(n%2,big,'#111111'); stepOnce(a); n++; }
+  const log=a.log(), size=JSON.stringify(log).length, cut=D.replayDuel(JSON.parse(JSON.stringify(log))), mark=a.hash(); for(let i=0;i<120;i++){ a.stroke(0,big,'#111111'); stepOnce(a); }
+  const later=a.log(); return [log.full===true&&n>50&&n<2000&&size<2.2e6&&log.ticks<=a.tickN&&cut.tickN===log.ticks&&later.ticks===log.ticks&&later.cmds.length===log.cmds.length&&a.hash()!==mark&&a.tickN>log.ticks,{strokes:n,size,ticks:log.ticks}]; });
+// The viewer itself, in the pretend browser: nothing is drawn, but every line of it runs, on a real recorded match.
+{ const a=recorded(11), R=pure(['rulesOf']), answer=()=>({log:JSON.parse(JSON.stringify(a.log())),art:a._art,hash:a.hash(),rules:null});
+  await atest('the page plays a fetched replay to its end, with the same result and state as the match',async()=>{
+    const page=fakePage('?replay=ABCD',url=>url.startsWith('/duel/replay?room=ABCD')?Object.assign(answer(),{rules:R.rulesOf(page.script)}):{reader:'local guess'});
+    await page.frames(3); const said=page.byId('repMsg').textContent, total=page.get('rep&&rep.clock.total'); if(total!==a.tickN) return [false,{said,total}];
+    page.get('rep.clock.speed=4'); await page.frames(4000,()=>page.get('rep.clock.playing'));
+    const got={said,phase:page.get('view.phase'),wins:page.get('view.wins.join()'),hash:page.get('rep.S.hash()'),w:page.get('ARENA_W'),time:page.byId('repTime').textContent,button:page.byId('repPlay').textContent,
+      art:page.get('JSON.stringify(art.map(a=>a.map(x=>x&&x.ver)))'),mode:page.get('mode'),retro:page.get('RETRO')};
+    return [/whole match/.test(said)&&!/Warning/.test(said)&&got.phase==='over'&&got.wins===a.wins.join()&&got.hash===a.hash()&&got.w===1400&&got.button==='Watch again'&&got.time.split(' / ')[0]===got.time.split(' / ')[1]
+      &&got.art===JSON.stringify(a.items.map(x=>x.map(it=>it&&it.ver)))&&got.mode==='replay'&&got.retro===false,got]; });
+  await atest('scrubbing back, slow motion, pause and dragging the bar put the picture where they should',async()=>{
+    const page=fakePage('?replay=ABCD',url=>url.startsWith('/duel/replay')?Object.assign(answer(),{rules:R.rulesOf(page.script)}):{reader:'local guess'}), bar=()=>page.byId('repBar'), at=[];
+    await page.frames(3); page.get('rep.clock.speed=4'); await page.frames(400);                    // well into the fight
+    bar().value=1200; bar().onpointerdown(); bar().oninput(); await page.frames(2); const held=page.get('rep.shown'), dragging=page.get('rep.drag'); bar().onchange();      // drag back and let go
+    const back=page.get('rep.S.tickN')===1200&&page.get('rep.S.hash()')===hashAtTick(11,1200)&&page.get('wobj.size')===page.get('view.objs.length');
+    page.get('rep.clock.speed=0.25'); await page.frames(60); at.push(page.get('rep.shown'));                // a second of quarter speed: 30 ticks
+    page.byId('repPlay').onclick(); await page.frames(30); at.push(page.get('rep.shown'));                  // paused: it stays
+    page.byId('repPlay').onclick(); page.get('rep.clock.speed=1'); await page.frames(60); at.push(page.get('rep.shown'));      // playing again: a second is 120 ticks
+    return [held===1200&&dragging===true&&back&&at.join()==='1230,1230,1350'&&page.get('rep.S.hash()')===hashAtTick(11,1350),{held,dragging,back,at}]; });
+  await atest('the page refuses a replay made under other rules, in words',async()=>{
+    const page=fakePage('?replay=ABCD',url=>url.startsWith('/duel/replay')?Object.assign(answer(),{rules:'0badf00d'}):{reader:'local guess'}); await page.frames(3);
+    return [page.get('rep')===null&&page.byId('repMsg').textContent==='This replay is from a different version of the game.',page.byId('repMsg').textContent]; });
+  await atest('the page says so when a room has no replay, or the replay did not come out as it did on the server',async()=>{
+    const none=fakePage('?replay=QQQQ',url=>url.startsWith('/duel/replay')?{error:'There is no replay for that room.'}:{reader:'local guess'}); await none.frames(3);
+    const off=fakePage('?replay=ABCD',url=>url.startsWith('/duel/replay')?Object.assign(answer(),{rules:R.rulesOf(off.script),hash:'00000000'}):{reader:'local guess'}); await off.frames(3);
+    return [none.get('rep')===null&&none.byId('repMsg').textContent==='There is no replay for that room.'&&/Warning/.test(off.byId('repMsg').textContent)&&off.get('rep')!==null,[none.byId('repMsg').textContent,off.byId('repMsg').textContent]]; });
+}
+{ const P=pure(['replayProblem','replayAt','replayClock','replayAdvance','replayTime','replayWorld','replayArt','replayFit','replayDuel']);
+  // The viewer's own logic, run here without a screen.
+  test('the viewer plays on from where it is, and starts the match again to go back',()=>{ const a=recorded(11), log=a.log();
+    const s1=P.replayAt(log,1200), h1=s1.hash(), s2=P.replayAt(log,1320), h2=s2.hash(), t2=s2.tickN, s3=P.replayAt(log,600), h3=s3.hash(), t3=s3.tickN, end=P.replayAt(log,log.ticks+999);
+    return [s1===s2&&t2===1320&&s3!==s2&&t3===600&&h1===hashAtTick(11,1200)&&h2===hashAtTick(11,1320)&&h3===hashAtTick(11,600)&&end===s3&&end.hash()===a.hash()&&end.tickN===a.tickN,[t2,t3,end.tickN]]; });
+  test('the viewer clock runs at a quarter, one and four times speed, pauses, and stops at the end',()=>{ const c=P.replayClock(1000), at=[];
+    at.push(P.replayAdvance(c,0.5)); c.speed=0.25; at.push(P.replayAdvance(c,1)); c.speed=4; at.push(P.replayAdvance(c,1)); c.playing=false; at.push(P.replayAdvance(c,1)); c.playing=true; at.push(P.replayAdvance(c,5));
+    return [at.join()==='60,90,570,570,1000'&&c.playing===false&&P.replayTime(0)==='0:00'&&P.replayTime(120*75+60)==='1:15',at]; });
+  test('after a jump the page is given the world as it stands, not the fight it skipped',()=>{ const o=id=>({e:'obj',o:{id}}), evs=[o(1),{e:'hit'},{e:'clear'},o(2),{e:'stroke',side:0},{e:'hit'},{e:'ko'},{e:'read',side:0},{e:'forge',ver:9},o(3),{e:'log'}];
+    const out=P.replayWorld(evs).map(e=>e.e+(e.o?e.o.id:'')); return [out.join()==='clear,obj2,stroke,read,obj3'&&P.replayWorld([o(1),{e:'hit'},o(2)]).length===2&&P.replayWorld([]).length===0,out]; });
+  test('each hand shows the drawing noted for its item version',()=>{ const A={strokes:[1]}, B={strokes:[2]}, byVer=new Map([[3,A],[7,B]]), items=[[{ver:3,kind:'melee'},null],[{ver:8,kind:'bomb'},{ver:7,kind:'heal'}]];
+    const ch=P.replayArt(items,[[null,5],[2,7]],byVer), key=ch.map(c=>c.side+''+c.slot+':'+c.ver+':'+(c.art?c.art.strokes[0]:'-')).join(' ');
+    return [key==='00:3:1 01:null:- 10:null:-'&&P.replayArt(items,[[3,null],[null,7]],byVer).length===0,key]; });
+  test('a recorded stage of any size fits the viewer',()=>{ const GY=392, fits=(w,top,cw,maxCh)=>{ const q=P.replayFit(w,top,cw,maxCh), X=x=>(x+q.ox)*q.sc, Y=h=>(GY-h-q.vtop)*q.sc;
+      return q.ch<=maxCh+1&&X(0)>=-0.5&&X(w)<=cw+0.5&&Y(Math.max(392,top+40))>=-0.5&&Y(-48)<=q.ch+0.5&&Math.abs(Y(-48)-q.ch)<1.5&&Math.abs(q.vw*q.sc-cw)<1; };
+    const plain=P.replayFit(960,0,960,2000);
+    return [fits(960,0,960,600)&&fits(1400,560,1000,500)&&fits(3000,700,800,700)&&fits(960,0,400,200)&&plain.ch===440&&plain.sc===1&&plain.ox===0&&plain.vtop===0,plain]; });
+  test('the viewer refuses a replay from other rules or another log version, and says so',()=>{ if(!P.replayProblem) return [false,'no replayProblem']; const log={v:1,seed:1,opts:{},cmds:[],ticks:0}, said='This replay is from a different version of the game.';
+    return [P.replayProblem({log,rules:'aaaaaaaa'},'aaaaaaaa')===''&&P.replayProblem({log,rules:'aaaaaaaa'},'bbbbbbbb')===said&&P.replayProblem({log:Object.assign({},log,{v:2}),rules:'aaaaaaaa'},'aaaaaaaa')===said&&P.replayProblem({},'aaaaaaaa')!==''&&P.replayProblem(null,'aaaaaaaa')!=='',P.replayProblem({log,rules:'x'},'y')]; });
+}
+
 console.log(bad?bad+' failed':'all replay tests pass'); process.exit(bad?1:0);
+})();

@@ -7,9 +7,11 @@ const PROMPT="You are the referee of a stick-figure fighting game. The attached 
 module.exports=function({readBody,KEY,MODEL,BASE}){
   // How closely the reader looks at a drawing: "high" sees thin lines better and costs a little more time; "low" is quicker.
   const DETAIL=['low','high','auto'].includes(process.env.OPENAI_DETAIL)?process.env.OPENAI_DETAIL:'high';
-  const page=path.join(__dirname,'duel.html'), src=fs.readFileSync(page,'utf8');
-  const D=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+
-    ';return {createDuel,replayDuel,validItem,localGuess,nameFor,inkCost,stockItem,makeBot,botLoadout,INK_MAX,PAD_W,PAD_H};')();
+  const page=path.join(__dirname,'duel.html'), src=fs.readFileSync(page,'utf8'), block=src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0];
+  const D=new Function(block+';return {createDuel,replayDuel,fnv1a,validItem,localGuess,nameFor,inkCost,stockItem,makeBot,botLoadout,INK_MAX,PAD_W,PAD_H};')();
+  // A stamp of the rules this server is running: a replay only plays back right under the very same rules, and the page
+  // works out the same stamp from its own copy to check (rulesOf in duel.html).
+  const RULES=D.fnv1a(block.replace(/\r\n/g,'\n'));
 
   /* ---------- reading a drawing ---------- */
   async function askOpenAI(png,strokes){
@@ -39,10 +41,18 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
 
   /* ---------- rooms ---------- */
   const rooms=new Map(), LETTERS='ABCDEFGHJKLMNPQRSTUVWXYZ';
+  // Replays. Every room records its match (createDuel({record:true})) and notes each drawing it shows, by item version, so
+  // a replay can show the same pictures. When a match is replaced by a rematch, or its room closes, the recording goes on
+  // a shelf (see replayShelf at the end of this file). GET /duel/replay?room=CODE answers with the room's current match,
+  // or with the shelved one while the room has no match under way.
+  const shelf=replayShelf(), started=S=>S.round>1||S.phase!=='draw';       // started: the match has got as far as a countdown
+  const recording=room=>{ const log=room.sim.log(); return {log,art:room.shown,hash:log.full?'':room.sim.hash()}; };      // a full log stops short of where the match is, so it has no end state to check against
+  const shelve=room=>{ if(started(room.sim)) shelf.put(room.code,recording(room),Date.now()); };
+  const noteArt=(room,side,slot)=>{ room.shown.push(Object.assign({side,slot},room.art[side][slot])); if(room.shown.length>400) room.shown.shift(); };
   // bot: Red is played by the game's bot on the server, so one person with a controller can play. skill is its 0 to 1 setting.
   function newRoom(stage,bot,skill){
     let code; do{ code=Array.from({length:4},()=>LETTERS[Math.floor(Math.random()*LETTERS.length)]).join(''); }while(rooms.has(code));
-    const now=Date.now(), room={code,stage:stage==='sheet'?'sheet':'',sim:D.createDuel(stage==='sheet'?{stage:'sheet'}:undefined),art:[[null,null],[null,null]],players:new Map(),watchers:new Set(),clients:new Set(),last:now,sent:0,seen:now,dirty:true,bot:null,skill:Number.isFinite(skill)?Math.max(0,Math.min(1,skill)):0.55};
+    const now=Date.now(), room={code,stage:stage==='sheet'?'sheet':'',sim:D.createDuel(stage==='sheet'?{stage:'sheet',record:true}:{record:true}),art:[[null,null],[null,null]],shown:[],players:new Map(),watchers:new Set(),clients:new Set(),last:now,sent:0,seen:now,dirty:true,bot:null,skill:Number.isFinite(skill)?Math.max(0,Math.min(1,skill)):0.55};
     if(bot){ room.players.set('(bot)',1); room.bot=D.makeBot(1,()=>room.skill); armBot(room); }
     rooms.set(code,room); return room;
   }
@@ -52,7 +62,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   // Give the bot its two ready-made items for this match and tell every device what they look like.
   function armBot(room){
     D.botLoadout().forEach((b,k)=>{ const it=room.sim.setItem(1,k,b.spec,b.cost); if(!it) return;
-      room.art[1][k]={strokes:b.strokes,ver:it.ver,kind:it.kind,style:it.style}; for(const c of room.clients) sse(c.res,'item',{side:1,slot:k,strokes:b.strokes,ver:it.ver,kind:it.kind,style:it.style}); });
+      room.art[1][k]={strokes:b.strokes,ver:it.ver,kind:it.kind,style:it.style}; noteArt(room,1,k); for(const c of room.clients) sse(c.res,'item',{side:1,slot:k,strokes:b.strokes,ver:it.ver,kind:it.kind,style:it.style}); });
     room.dirty=true;
   }
   // Who is here: the two seats, and whether a big screen is showing the match (players' devices then act as sketchbook and controller only).
@@ -68,10 +78,10 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       if(both){ if(room.bot){ room.bot(S,dt); if(S.phase==='draw'&&!S.ready[1]) S.setReady(1); } S.step(dt); }
       const live=both&&(S.phase==='count'||S.phase==='fight'||S.phase==='end');
       if(room.clients.size&&((live&&now-room.sent>=15)||room.dirty||now-room.sent>=250)){ broadcast(room,'state',S.snapshot()); room.sent=now; room.dirty=false; }
-      if(room.clients.size) room.seen=now; else if(now-room.seen>10*60e3) rooms.delete(room.code);
+      if(room.clients.size) room.seen=now; else if(now-room.seen>10*60e3){ shelve(room); rooms.delete(room.code); }
     }
   },8);
-  setInterval(()=>{ for(const room of rooms.values()) for(const c of room.clients) c.res.write(': ping\n\n'); },15000);
+  setInterval(()=>{ for(const room of rooms.values()) for(const c of room.clients) c.res.write(': ping\n\n'); shelf.sweep(Date.now()); },15000);
 
   function cleanPlats(a){
     if(!Array.isArray(a)||a.length>32) return null;
@@ -107,7 +117,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
     if(room.sim!==S) return [409,{error:'The match was restarted.'}];
     const it=S.setItem(side,slot,spec,D.inkCost(strokes));
     if(!it) return [409,{error:'Too late: the round has started.'}];
-    room.art[side][slot]={strokes,ver:it.ver,kind:it.kind,style:it.style}; room.dirty=true;
+    room.art[side][slot]={strokes,ver:it.ver,kind:it.kind,style:it.style}; noteArt(room,side,slot); room.dirty=true;
     broadcast(room,'item',{side,slot,strokes,ver:it.ver,kind:it.kind,style:it.style});
     return [200,{name:it.name,kind:it.kind,style:it.style,element:it.el,source}];
   }
@@ -131,6 +141,15 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       if(!KEY){ send(500,{error:'OPENAI_API_KEY is not set on the server'}); return true; }
       const out=await readDrawing(await readBody(req,2e6),null);
       out?send(200,Object.assign({source:out.source},out.spec)):send(502,{error:'OpenAI could not read the drawing'}); return true;
+    }
+    // The recording of a room's match, for duel?replay=CODE: {log, art, hash, rules} and previous:true when it is the match
+    // before the one now being set up. log is what replayDuel takes, art the drawings by item version, hash the state the
+    // match was in when this was sent (a replay that ends anywhere else has gone wrong), rules the stamp of these rules.
+    if(req.method==='GET'&&p==='/duel/replay'){
+      const code=String(url.searchParams.get('room')||'').toUpperCase(), room=rooms.get(code), old=shelf.get(code,Date.now());
+      const out=room&&(started(room.sim)||!old)?recording(room):old?Object.assign({},old,room?{previous:true}:null):null;
+      if(!out||!out.log) send(404,{error:'There is no replay for that room.'}); else send(200,Object.assign({rules:RULES},out));
+      return true;
     }
     if(req.method==='POST'&&p==='/duel/room'){
       if(rooms.size>=500) send(503,{error:'Too many rooms are open right now.'}); else send(200,{code:newRoom(url.searchParams.get('stage'),url.searchParams.get('bot')==='1',parseFloat(url.searchParams.get('skill'))).code});      // ?stage=sheet: the spreadsheet stage
@@ -202,7 +221,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
         if(S.phase!=='draw'){ send(409,{error:'Too late: the round has started.'}); return true; }
         const other=S.items[side][1-slot], it=S.setItem(side,slot,made.spec,Math.min(45,D.INK_MAX-(other?other.cost:0)));
         if(!it){ send(409,{error:'Not enough ink left for that.'}); return true; }
-        room.art[side][slot]={strokes:made.strokes,ver:it.ver,kind:it.kind,style:it.style}; room.dirty=true;
+        room.art[side][slot]={strokes:made.strokes,ver:it.ver,kind:it.kind,style:it.style}; noteArt(room,side,slot); room.dirty=true;
         broadcast(room,'item',{side,slot,strokes:made.strokes,ver:it.ver,kind:it.kind,style:it.style});
         send(200,{name:it.name,kind:it.kind,style:it.style,element:it.el}); return true;
       }
@@ -214,16 +233,30 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
         if(Number.isFinite(body.tune)) ch.tune=body.tune;
         const it=a&&S.tweak(side,slot,ch);
         if(!it){ send(409,{error:'That cannot be changed now.'}); return true; }
-        Object.assign(a,{ver:it.ver,kind:it.kind,style:it.style}); room.dirty=true;
+        Object.assign(a,{ver:it.ver,kind:it.kind,style:it.style}); noteArt(room,side,slot); room.dirty=true;
         broadcast(room,'item',{side,slot,strokes:a.strokes,ver:it.ver,kind:it.kind,style:it.style});
         send(200,{}); return true;
       }
       if(body.type==='ready'){ S.setReady(side); room.dirty=true; send(200,{}); return true; }
       if(body.type==='rematch'){
-        room.sim=D.createDuel(room.stage?{stage:room.stage}:undefined); if(room.layout) room.sim.setLayout(room.layout); else if(room.plats) room.sim.setPlats(room.plats); room.art=[[null,null],[null,null]]; room.dirty=true; broadcast(room,'reset',{}); if(room.bot){ room.bot=D.makeBot(1,()=>room.skill); armBot(room); } send(200,{}); return true;
+        shelve(room); room.shown=[];       // the match that is ending stays watchable (see the replay route)
+        room.sim=D.createDuel(room.stage?{stage:room.stage,record:true}:{record:true}); if(room.layout) room.sim.setLayout(room.layout); else if(room.plats) room.sim.setPlats(room.plats); room.art=[[null,null],[null,null]]; room.dirty=true; broadcast(room,'reset',{}); if(room.bot){ room.bot=D.makeBot(1,()=>room.skill); armBot(room); } send(200,{}); return true;
       }
       send(400,{error:'Unknown action.'}); return true;
     }
     send(404,{error:'not found'}); return true;
   };
 };
+
+// Where finished recordings wait: one per room code, each for 30 minutes, 50 at most (the oldest goes first).
+// The clock is passed in, so the limits can be tested without waiting.
+function replayShelf(max=50,ms=30*60e3){
+  const kept=new Map();      // code -> {at, rec}, oldest first
+  return {
+    put(code,rec,now){ kept.delete(code); kept.set(code,{at:now,rec}); while(kept.size>max) kept.delete(kept.keys().next().value); },
+    get(code,now){ const k=kept.get(code); if(!k) return null; if(now-k.at>ms){ kept.delete(code); return null; } return k.rec; },
+    sweep(now){ for(const [code,k] of kept) if(now-k.at>ms) kept.delete(code); },
+    size:()=>kept.size
+  };
+}
+module.exports.replayShelf=replayShelf;
