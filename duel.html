@@ -55,6 +55,15 @@ body.playing .arenawrap{border-left:0;border-right:0;border-radius:0;box-shadow:
 .share{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:center;text-align:left}
 .qr{width:150px;height:150px;flex:none;background:#fff;border:2px solid var(--ink);border-radius:8px;padding:4px}
 .qr svg{width:100%;height:100%;display:block}
+/* Big screen: this device only shows the fight, so the join code is large and the instructions are hidden. */
+body.screen .rules{display:none}
+body.screen .overlay .box{max-width:760px;padding:20px 26px}
+body.screen .overlay h2{font-size:38px}
+body.screen .overlay p,body.screen .share{font-size:19px}
+body.screen .qr{width:min(300px,24vw,38vh);height:min(300px,24vw,38vh)}
+.seats{display:flex;gap:10px;justify-content:center;margin:0 0 12px}
+.seats span{border:2px solid var(--ink);border-radius:999px;padding:2px 12px;font-weight:700;background:#fff}
+.seats span.in{color:#fff}
 .code{letter-spacing:.12em;background:var(--hi);padding:0 8px;border-radius:6px}
 .link{font-weight:700;overflow-wrap:anywhere;user-select:all;-webkit-user-select:all;margin:4px 0}
 input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;padding:6px 10px;width:6.5em;text-transform:uppercase;color:var(--ink);background:#fff}
@@ -500,10 +509,10 @@ const GY=392, cv=$('arena'), L=cv.getContext('2d');
 // Match the canvas backing store to the screen's real pixels so lines stay sharp on high-density displays.
 // During a fight the arena fills the window's width. If that would make it taller than the screen allows, the height is
 // capped and the view simply shows more floor either side of the arena (OX), so nothing is stretched and the rules do not change.
-let VS=1, OX=0, VW=960, playing=false;
+let VS=1, OX=0, VW=960, playing=false, bigScreen=false;
 function fitCanvas(){
   const r=Math.min(3,window.devicePixelRatio||1), cw=cv.clientWidth||960, full=cw*440/960;
-  const ch=Math.round(playing?Math.max(240,Math.min(full,window.innerHeight*0.64)):full);
+  const ch=Math.round(playing?Math.max(240,Math.min(full,window.innerHeight*(bigScreen?0.86:0.64))):full);
   if(cv.style.height!==ch+'px') cv.style.height=ch+'px';
   const w=Math.max(480,Math.round(cw*r)), h=Math.max(220,Math.round(ch*r));
   if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
@@ -690,8 +699,8 @@ function resetLocal(){
 }
 function setMode(m){
   mode=m; for(const b of ['Bot','2p','Online','Practice']) $('mode'+b).setAttribute('aria-pressed',m===b.toLowerCase());
-  if(net){ net.es.close(); net=null; } sim=null; bot=null; resetLocal(); lastPhase=''; overlayKey='';
-  if(m==='online'){ local=[false,false]; view=createDuel().snapshot(); buildDesks(); buildControls(); const code=(location.hash||'').slice(1).toUpperCase(); if(/^[A-Z]{4}$/.test(code)) joinRoom(code); return; }
+  if(net){ net.es.close(); net=null; } setScreen(false); sim=null; bot=null; resetLocal(); lastPhase=''; overlayKey='';
+  if(m==='online'){ local=[false,false]; view=createDuel().snapshot(); buildDesks(); buildControls(); const code=(location.hash||'').slice(1).toUpperCase(); if(/^[A-Z]{4}$/.test(code)) joinRoom(code,watched()===code); return; }
   if(location.hash) history.replaceState(null,'',location.pathname);
   local=m==='2p'?[true,true]:[true,false]; sim=createDuel({practice:m==='practice'});
   if(m==='bot'){ bot=makeBot(1); botLoadout().forEach((b,k)=>{ const it=sim.setItem(1,k,b.spec,b.cost); setArt(1,k,b.strokes,it.ver,it.kind,it.style); }); }
@@ -701,13 +710,19 @@ $('modeBot').onclick=()=>setMode('bot'); $('mode2p').onclick=()=>setMode('2p'); 
 $('restart').onclick=()=>{ if(net) post({type:'rematch'}); else setMode(mode); };
 
 function post(body){ if(!net) return; fetch('/duel/act',{method:'POST',headers:{'Content-Type':'application/json'},keepalive:true,body:JSON.stringify(Object.assign({room:net.code,id:cid},body))}).catch(()=>{}); }
-async function createRoom(){
-  try{ const r=await fetch('/duel/room',{method:'POST'}); const o=await r.json(); if(!r.ok) throw new Error(o.error); joinRoom(o.code); }
+// Big screen: this device shows the fight and the join code while two other devices play.
+// The room it is showing is remembered for this tab, so a reload comes back as the screen and not as a player.
+const watched=()=>{ try{ return sessionStorage.getItem('dd-watch')||''; }catch(e){ return ''; } };
+function setScreen(on){ bigScreen=on; document.body.classList.toggle('screen',on); fitCanvas(); }
+async function createRoom(watch){
+  try{ const r=await fetch('/duel/room',{method:'POST'}); const o=await r.json(); if(!r.ok) throw new Error(o.error); joinRoom(o.code,watch===true); }
   catch(e){ alert('Could not create a room: '+(e.message||'the server did not answer')); }
 }
-function joinRoom(code){
+function joinRoom(code,watch){
   if(net) net.es.close();
-  const es=new EventSource('/duel/events?room='+code+'&id='+cid); net={code,es,side:-1,present:[false,false],seq:Date.now(),gone:false};
+  watch=!!watch; try{ if(watch) sessionStorage.setItem('dd-watch',code); else sessionStorage.removeItem('dd-watch'); }catch(e){}
+  const es=new EventSource('/duel/events?room='+code+'&id='+cid+(watch?'&watch=1':'')); net={code,es,side:-1,watch,present:[false,false],seq:Date.now(),gone:false};
+  setScreen(watch);
   history.replaceState(null,'','#'+code); resetLocal();
   const on=(name,fn)=>es.addEventListener(name,e=>{ if(net&&net.es===es) fn(JSON.parse(e.data)); });
   on('hello',d=>{ net.side=d.side; local=[d.side===0,d.side===1]; buildDesks(); buildControls(); lastPhase=''; });
@@ -753,21 +768,27 @@ function syncUI(){
   const o=$('overlay'); let key='';
   if(mode==='online'&&!net) key='menu';
   else if(net&&net.gone) key='gone';
-  else if(net&&net.side>=0&&!net.present.every(Boolean)) key='wait'+net.code+net.side;
+  else if(net&&(net.side>=0||net.watch)&&!net.present.every(Boolean)) key='wait'+net.code+net.side+net.present;
   else if(net&&net.side<0&&v.phase==='draw') key='';
   else if(v.phase==='over') key='over'+v.champ;
   if(key===overlayKey) return; overlayKey=key; o.hidden=!key; if(!key) return;
   if(key==='menu'){
     o.innerHTML=`<div class="box"><h2>Play on two devices</h2><p>One player creates a room; the other scans the code or types it in.</p>
-      <div class="actions" style="justify-content:center"><button class="primary" id="mkRoom">Create a room</button><span>or</span><input id="joinCode" maxlength="4" placeholder="CODE" aria-label="Room code"><button id="joinBtn">Join</button></div></div>`;
-    $('mkRoom').onclick=createRoom; const go=()=>{ const c=$('joinCode').value.trim().toUpperCase(); if(/^[A-Z]{4}$/.test(c)) joinRoom(c); };
+      <div class="actions" style="justify-content:center"><button class="primary" id="mkRoom">Create a room</button><span>or</span><input id="joinCode" maxlength="4" placeholder="CODE" aria-label="Room code"><button id="joinBtn">Join</button></div>
+      <p style="margin:12px 0 6px">Or make this the big screen: it only shows the fight, and two tablets or phones scan its code to draw and play.</p>
+      <button id="mkScreen">Use this as the big screen</button></div>`;
+    $('mkRoom').onclick=()=>createRoom(); $('mkScreen').onclick=()=>createRoom(true); const go=()=>{ const c=$('joinCode').value.trim().toUpperCase(); if(/^[A-Z]{4}$/.test(c)) joinRoom(c); };
     $('joinBtn').onclick=go; $('joinCode').onkeydown=e=>{ if(e.key==='Enter') go(); };
   }else if(key==='gone'){
     o.innerHTML=`<div class="box"><h2>That room has closed</h2><p>Rooms close after a while with nobody in them.</p><button class="primary" id="mkRoom">Create a new room</button></div>`;
-    $('mkRoom').onclick=()=>{ net=null; history.replaceState(null,'',location.pathname); createRoom(); };
+    $('mkRoom').onclick=()=>{ const w=net.watch; net=null; history.replaceState(null,'',location.pathname); createRoom(w); };
   }else if(key.startsWith('wait')){
     const isLocal=/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname), base=isLocal&&serverInfo.lanUrl?serverInfo.lanUrl:location.origin, url=base+'/duel#'+net.code;
-    o.innerHTML=`<div class="box"><h2>Room <span class="code">${net.code}</span> · you are ${NAME[net.side]}</h2><p>Waiting for the other player. The match pauses while someone is away.</p>
+    const head=net.watch?`<h2>Scan to play · room <span class="code">${net.code}</span></h2>
+      <div class="seats">${[0,1].map(s=>`<span class="${net.present[s]?'in':''}" style="${net.present[s]?'background:'+PCOL[s]:''}">${NAME[s]}: ${net.present[s]?'joined ✓':'waiting…'}</span>`).join('')}</div>
+      <p>The first two devices to scan are Blue and Red. This screen shows the fight.</p>`
+      :`<h2>Room <span class="code">${net.code}</span> · you are ${NAME[net.side]}</h2><p>Waiting for the other player. The match pauses while someone is away.</p>`;
+    o.innerHTML=`<div class="box">${head}
       <div class="share"><div class="qr" id="roomQr"></div><div><div>Scan, or open</div><div class="link">${esc(url)}</div><div>or choose Online there and type the code.</div></div></div></div>`;
     if(typeof qrcode==='function'){ try{ const q=qrcode(0,'M'); q.addData(url); q.make(); $('roomQr').innerHTML=q.createSvgTag({cellSize:4,margin:2,scalable:true}); }catch(e){} }
   }else{
