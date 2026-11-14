@@ -453,13 +453,17 @@ Window titlebars = platforms
     <span class="who" id="who" hidden></span>
     <div class="controls">
       <span class="badge" id="reader">Drawings read by: local guess</span>
-      <div class="seg" role="group" aria-label="Opponent">
+      <div class="seg" role="group" aria-label="Match">
+        <button id="playBot" aria-pressed="false" title="One player with a phone or tablet against the bot">Player vs Bot</button>
+        <button id="playPvp" aria-pressed="false" title="Two players, each with a phone or tablet">Player vs Player</button>
+      </div>
+      <div class="seg legacy" role="group" aria-label="Opponent" hidden>
         <button id="modeBot" aria-pressed="true">vs Bot</button>
         <button id="mode2p" aria-pressed="false">2 players</button>
         <button id="modeOnline" aria-pressed="false">Online</button>
         <button id="modePractice" aria-pressed="false">Practice</button>
       </div>
-      <div class="seg" role="group" aria-label="Where the drawing happens">
+      <div class="seg legacy" role="group" aria-label="Where the drawing happens" hidden>
         <button id="drawHere" aria-pressed="true" title="Draw and play on this device">Draw here</button>
         <button id="drawTablets" aria-pressed="false" title="This device becomes the big screen; two tablets or phones draw and play">Draw on tablets</button>
       </div>
@@ -491,13 +495,13 @@ Window titlebars = platforms
   <ul class="rules">
     <li><b>Draw two things</b> before each round: a sword, a bow, a bomb, a shield, wings, a snack. You share 100 ink between them, and more ink means a stronger item.</li>
     <li><b>Fight live:</b> move, double jump, and use your two drawings. An empty slot is a punch. First to 2 rounds wins.</li>
-    <li><b>How to trigger each move</b> (A and B are your two drawings: <b>J</b> and <b>K</b> on a keyboard; with two players on one keyboard the second player uses <b>,</b> and <b>.</b>):
+    <li><b>How to trigger each move</b> (A and B on your controller are your two drawings):
       <br>· <b>Combo:</b> stand still and tap the button again and again. Swords, spears and hammers chain 3 moves, fists chain 4.
       <br>· <b>Running attack:</b> hold a direction until you are sprinting, then press.
       <br>· <b>Air attack:</b> jump, then press.
-      <br>· <b>Special:</b> hold down (S, ↓ or ▼) and press. Melee weapons launch the enemy upward (the hammer spins); bows, guns, staffs and throwing stars fire a slow charged shot.
+      <br>· <b>Special:</b> hold ▼ and press. Melee weapons launch the enemy upward (the hammer spins); bows, guns, staffs and throwing stars fire a slow charged shot.
       <br>· <b>Rapid fire:</b> with a ranged item, keep tapping after the first shot.
-      <br>Each combo move and shot has two animations picked at random. <b>Practice</b> mode has no clock and a dummy that never dies, and lets you swap items at any time.</li>
+      <br>Each combo move and shot has two animations picked at random.</li>
     <li><b>Fighting styles:</b> a sword, a spear, a hammer or gloves each fight differently, and so do a bow, a gun, a magic staff or something you throw. Tap for a combo; attack while running, in the air, or holding down for other moves.</li>
     <li><span class="chip fire">fire</span> burns after the hit · <span class="chip water">water</span> slows and shoves · <span class="chip plant">plant</span> heals you for part of the damage · plain ink hits 15% harder.</li>
     <li>Shields only block from the front. Your own bombs hurt you too. Snacks heal 3 times per round.</li>
@@ -1762,6 +1766,7 @@ function setMode(m){
   view=sim.snapshot(); buildDesks(); buildControls();
 }
 $('modeBot').onclick=()=>setMode('bot'); $('mode2p').onclick=()=>setMode('2p'); $('modeOnline').onclick=()=>setMode('online'); $('modePractice').onclick=()=>setMode('practice');
+$('playBot').onclick=()=>startMatch(true); $('playPvp').onclick=()=>startMatch(false);
 $('stageBtn').textContent=STAGE?'Stage: spreadsheet':'Stage: desktop'; $('stageBtn').setAttribute('aria-pressed',!!STAGE);
 $('stageBtn').onclick=()=>{ const q=new URLSearchParams(location.search); if(STAGE) q.delete('stage'); else q.set('stage','sheet'); location.href=location.pathname+(q.toString()?'?'+q:''); };
 $('restart').onclick=()=>{ if(net) post({type:'rematch'}); else setMode(mode); };
@@ -1781,20 +1786,28 @@ function setPad(){
   padView=on; document.body.classList.toggle('handheld',on); lastPhase=''; overlayKey='';
   const w=$('who'); w.hidden=!on; if(on){ w.textContent='You are '+NAME[net.side]; w.style.background=PCOL[net.side]; }
 }
+// The game has two ways to play, both with this device as the screen and phones or tablets as the controllers:
+// one player against the bot, or two players against each other.
+let wantBot=false;
+function startMatch(bot){
+  wantBot=!!bot; if(mode!=='online') setMode('online'); else if(net){ net.es.close(); net=null; resetLocal(); lastPhase=''; overlayKey=''; }
+  history.replaceState(null,'',location.pathname+location.search); createRoom(true);
+}
 async function createRoom(watch){
-  try{ const r=await fetch('/duel/room'+(STAGE?'?stage='+STAGE:''),{method:'POST'}); const o=await r.json(); if(!r.ok) throw new Error(o.error); joinRoom(o.code,watch===true); }
+  const q=new URLSearchParams(); if(STAGE) q.set('stage',STAGE); if(wantBot){ q.set('bot','1'); const sk=document.querySelector('#s-diff'); if(sk) q.set('skill',sk.value); }
+  try{ const r=await fetch('/duel/room'+(q.toString()?'?'+q:''),{method:'POST'}); const o=await r.json(); if(!r.ok) throw new Error(o.error); joinRoom(o.code,watch===true); }
   catch(e){ alert('Could not create a room: '+(e.message||'the server did not answer')); }
 }
 function joinRoom(code,watch){
   if(net) net.es.close();
   watch=!!watch; try{ if(watch) sessionStorage.setItem('dd-watch',code); else sessionStorage.removeItem('dd-watch'); }catch(e){}
-  const es=new EventSource('/duel/events?room='+code+'&id='+cid+(watch?'&watch=1':'')); net={code,es,side:-1,watch,screen:false,present:[false,false],seq:Date.now(),gone:false};
+  const es=new EventSource('/duel/events?room='+code+'&id='+cid+(watch?'&watch=1':'')); net={code,es,side:-1,watch,bot:false,screen:false,present:[false,false],seq:Date.now(),gone:false};
   setScreen(watch); setPad();
   history.replaceState(null,'','#'+code); resetLocal();
   const on=(name,fn)=>es.addEventListener(name,e=>{ if(net&&net.es===es) fn(JSON.parse(e.data)); });
-  on('hello',d=>{ net.side=d.side; local=[d.side===0,d.side===1]; buildDesks(); buildControls(); lastPhase=''; setPad(); });
+  on('hello',d=>{ net.side=d.side; net.bot=!!d.bot; local=[d.side===0,d.side===1]; buildDesks(); buildControls(); lastPhase=''; setPad(); });
   // Once a big screen has been seen the player view stays, so the screen reloading does not flip the layout mid-fight.
-  on('players',d=>{ net.present=d.present; net.screen=net.screen||!!d.screen; setPad(); });
+  on('players',d=>{ net.present=d.present; net.bot=!!d.bot; net.screen=net.screen||!!d.screen; setPad(); });
   on('state',accept);
   on('item',d=>{ setArt(d.side,d.slot,d.strokes,d.ver,d.kind,d.style); if(desk[d.side]) updateDesk(desk[d.side]); });
   on('reset',()=>{ for(const s of [0,1]) art[s]=[null,null]; fx=[]; for(const d of desk) if(d){ d.strokes=[]; d.k=0; } });
@@ -1922,12 +1935,12 @@ function retroBuild(){
   FXI.setHooks({stamp:stampGlyph,net:()=>setMode('online')});
   const tip=()=>FXI.toast('A D run \u00b7 W jump (double) \u00b7 S down \u00b7 J and K use your two drawings \u00b7 L mine \u00b7 Q run hack, 1-5 pick \u00b7 mouse draws with the B / R / O tools; Fight tool (F): click attacks');
   FXI.setMenus({
-    file:()=>[['New match','',()=>$('restart').click()],'-',['vs Bot','',()=>setMode('bot'),0,mode==='bot'],['2 players','',()=>setMode('2p'),0,mode==='2p'],['Practice','',()=>setMode('practice'),0,mode==='practice']],
+    file:()=>[['New match','',()=>$('restart').click()],'-',['Player vs Bot','',()=>startMatch(true),0,!!(net&&net.bot)],['Player vs Player','',()=>startMatch(false),0,!!(net&&!net.bot)]],
     edit:()=>[['Undo','Ctrl+Z',null,1]],
     view:()=>[['Game setup window','',()=>{ deskMenu=true; }],['Plain layout','',()=>{ location.search='?plain=1'; }]],
     insert:()=>['sword','spear','hammer','axe','mace','bow','-','platform','crate','wall','shield','arrow'].map(n=>n==='-'?'-':['Stamp: '+n,'',()=>stampGlyph(n)]),
     hack:()=>INK.HACKS.map((h,i)=>[h.name,'Q \u00b7 '+(i+1),()=>{ FXI.hackSel=i; const sd=mySide1(); if(sd>=0){ press(sd,'q',true); } },!(view&&mySide1()>=0&&view.f[mySide1()].od>=100)]),
-    net:()=>[['Draw here','',()=>$('drawHere').click(),0,!bigScreen],['Draw on tablets (big screen)','',()=>$('drawTablets').click(),0,bigScreen],'-',['Online rooms\u2026','',()=>setMode('online')]],
+    net:()=>[['New room: Player vs Bot','',()=>startMatch(true)],['New room: Player vs Player','',()=>startMatch(false)]],
     help:()=>[['Controls','F1',tip],['Glyph grammar','',()=>FXI.toast('Simple = terrain (\u2015 platform, | wall, \u25a1 crate, \u25cb pot/shield/trap). Compound = weapons. \u2192 dash/fling/wind/link \u00b7 \u2715 erase/disarm \u00b7 \u2298 null any hack \u00b7 \u03df lightning')],
       ['About InkShop','',()=>FXI.toast('InkShop 2.0 \u2014 interface, glyph recogniser, hacks and effects from Alex\'s prototype, running on the Doodle Duel engine.')]]});
   FXI.buildUI();
@@ -1952,7 +1965,7 @@ function retroBuild(){
   for(const w of document.querySelectorAll('#inkos .win.small')) makeDraggable(w,w.querySelector('.titlebar'));
   // his NetLink and notes windows, with this game's real rooms and controls
   document.querySelector('#net-go').onmousedown=e=>{ e.stopPropagation(); setMode('online'); };
-  document.querySelector('#nm-host').onchange=()=>{ setMode('online'); createRoom(); }; document.querySelector('#nm-join').onchange=()=>setMode('online');
+  document.querySelector('#nm-host').onchange=()=>startMatch(false); document.querySelector('#nm-join').onchange=()=>setMode('online');
   document.querySelector('#noteswin .body').textContent='CONTROLS\nA/D run   W jump   S down\nJ, K  your two drawings\nL     mine (S+L digs down)\nQ run hack \u00b7 1-5 pick hack\nMouse: draw (B R O tools)\nFight tool (F): click=attack\nMine the frame or run\n  BREAKOUT.exe to get out:\n  window titlebars = platforms';
   const tick=()=>{ document.querySelector('#ink-clock').textContent=new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}); }; tick(); setInterval(tick,20000);
   // drawing on the art board with his tools
@@ -1991,7 +2004,8 @@ function retroBoard(){
 // Each frame: his panels show this match; a few times a second the layout and window edges are measured.
 function retroSync(menu){
   const v=view, Q=s=>document.querySelector(s), side=mySide1();
-  $('cpuSkill').hidden=mode!=='bot';
+  $('cpuSkill').hidden=!!(net&&!net.bot);
+  $('playBot').setAttribute('aria-pressed',!!(net&&net.bot)); $('playPvp').setAttribute('aria-pressed',!!(net&&!net.bot));
   rwin.game.want=menu; rwin.sketch.want=menu&&side>=0; rwin.net.want=!$('overlay').hidden; rwin.load.want=!$('loadouts').hidden;
   for(const id in rwin){ const o=rwin[id], show=o.want&&!o.min; if(o.w.hidden===show){ o.w.hidden=!show; if(show) o.w.style.zIndex=++rTop; } o.task.hidden=!o.want; o.task.classList.toggle('on',show&&+o.w.style.zIndex===rTop); if(!o.want) o.min=false; }
   rwin.net.w.querySelector('.rname').textContent=net?'NetLink \u2014 room '+net.code:'NetLink \u2014 join';
@@ -2000,7 +2014,7 @@ function retroSync(menu){
     Q('#'+p+'hp').style.width=(v.phase==='draw'?100:f.hp)+'%'; Q('#'+p+'ink').style.width=(f.ink2===undefined?100:f.ink2)+'%'; Q('#'+p+'od').style.width=(f.od||0)+'%'; Q('#'+p+'odb').classList.toggle('ready',f.od>=100);
     Q('#'+p+'w').textContent=it?'Weapon: '+it.name+' \u00b7 '+(it.style||it.kind)+' \u00b7 counter: '+(STYLE_COUNTER[it.style]||'wall'):'Weapon: fists \u00b7 counter: wall';
     Q('#'+p+'st').textContent=[f.oc?'OVERCLOCK':'',f.sc<0.85?'SHRUNK':'',f.bub?'SHIELD':'',f.stun?'STUN':'',f.trap?'TRAP':'',f.hp<=0?'K.O.':''].filter(Boolean).join(' '); });
-  const who=s=>NAME[s]+(local[s]&&!(local[0]&&local[1])?' \u00b7 You':mode==='bot'&&s===1?' \u00b7 animator.bot':'');
+  const who=s=>NAME[s]+(local[s]&&!(local[0]&&local[1])?' \u00b7 You':net&&net.bot&&s===1?' \u00b7 animator.bot':'');
   const names=document.querySelectorAll('#inkos .pcard .nm span:first-child'); if(names[0].textContent!==who(0)) names[0].textContent=who(0); if(names[1].textContent!==who(1)) names[1].textContent=who(1);
   Q('#score').textContent=NAME[0]+' '+v.wins[0]+' : '+v.wins[1]+' '+NAME[1]+(v.phase==='fight'&&!v.practice?'  \u00b7  '+Math.ceil(v.t)+'s':v.phase==='draw'?'  \u00b7  draw '+Math.max(0,Math.ceil(v.t)):'');
   Q('#playhead').style.left=(Math.floor(FXI.S.time*12)%200*9)+'px';
@@ -2034,8 +2048,9 @@ function syncUI(){
     if(v.phase==='count'&&!deskLike()) document.querySelector('.arenawrap').scrollIntoView({block:'start',behavior:'smooth'});
   }
   for(const d of desk) if(d&&d.sig!==deskSig(d)) updateDesk(d);
+  $('playBot').setAttribute('aria-pressed',!!(net&&net.bot)); $('playPvp').setAttribute('aria-pressed',!!(net&&!net.bot));
   // The big screen shows what each player has made, with its stats, while they draw.
-  const lo=$('loadouts'), showLo=bigScreen&&(v.phase==='draw'||v.phase==='count')&&v.items.some(a=>a.some(Boolean)), ls=showLo?JSON.stringify(v.items):'';
+  const lo=$('loadouts'), showLo=bigScreen&&(v.phase==='draw'||v.phase==='count')&&v.items.some(a=>a.some(Boolean))&&!!(net&&net.present.every(Boolean)), ls=showLo?JSON.stringify(v.items):'';
   if(ls!==loSig){ loSig=ls; lo.hidden=!showLo;
     if(showLo) lo.innerHTML=[0,1].map(s=>`<div class="lo" style="border-color:${PCOL[s]}"><h3>${NAME[s]}</h3>${v.items[s].map((it,k)=>{
       if(!it) return `<div class="loitem empty">${'AB'[k]}: nothing yet</div>`; const a=art[s][k];
@@ -2049,16 +2064,16 @@ function syncUI(){
   const o=$('overlay'); let key='';
   if(mode==='online'&&!net) key='menu';
   else if(net&&net.gone) key='gone';
-  else if(net&&(net.side>=0||net.watch)&&!net.present.every(Boolean)) key='wait'+net.code+net.side+net.present;
+  else if(net&&(net.side>=0||net.watch)&&!net.present.every(Boolean)) key='wait'+net.code+net.side+net.present+net.bot;
   else if(net&&net.side<0&&v.phase==='draw') key='';
   else if(v.phase==='over') key='over'+v.champ;
   if(key===overlayKey) return; overlayKey=key; o.hidden=!key; if(!key) return;
   if(key==='menu'){
-    o.innerHTML=`<div class="box"><h2>Play on two devices</h2><p>One player creates a room; the other scans the code or types it in.</p>
-      <div class="actions" style="justify-content:center"><button class="primary" id="mkRoom">Create a room</button><span>or</span><input id="joinCode" maxlength="4" placeholder="CODE" aria-label="Room code"><button id="joinBtn">Join</button></div>
-      <p style="margin:12px 0 6px">Or make this the big screen: it only shows the fight, and two tablets or phones scan its code to draw and play.</p>
-      <button id="mkScreen">Use this as the big screen</button></div>`;
-    $('mkRoom').onclick=()=>createRoom(); $('mkScreen').onclick=()=>createRoom(true); const go=()=>{ const c=$('joinCode').value.trim().toUpperCase(); if(/^[A-Z]{4}$/.test(c)) joinRoom(c); };
+    o.innerHTML=`<div class="box"><h2>Doodle Duel</h2><p>This screen shows the fight. Each player scans its code and uses a phone or tablet as sketchbook and controller.</p>
+      <div class="actions" style="justify-content:center"><button class="primary" id="mkBot">Player vs Bot</button><button class="primary" id="mkPvp">Player vs Player</button></div>
+      <p style="margin:14px 0 6px">Joining a room that is already open?</p>
+      <div class="actions" style="justify-content:center"><input id="joinCode" maxlength="4" placeholder="CODE" aria-label="Room code"><button id="joinBtn">Join</button></div></div>`;
+    $('mkBot').onclick=()=>startMatch(true); $('mkPvp').onclick=()=>startMatch(false); const go=()=>{ const c=$('joinCode').value.trim().toUpperCase(); if(/^[A-Z]{4}$/.test(c)) joinRoom(c); };
     $('joinBtn').onclick=go; $('joinCode').onkeydown=e=>{ if(e.key==='Enter') go(); };
   }else if(key==='gone'){
     o.innerHTML=`<div class="box"><h2>That room has closed</h2><p>Rooms close after a while with nobody in them.</p><button class="primary" id="mkRoom">Create a new room</button></div>`;
@@ -2067,11 +2082,11 @@ function syncUI(){
     const isLocal=/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname), base=isLocal&&serverInfo.lanUrl?serverInfo.lanUrl:location.origin, url=base+'/duel#'+net.code;
     if(padView){ o.innerHTML=`<div class="box"><h2>Waiting for ${NAME[1-net.side]} to scan the big screen</h2><p style="margin:0">You can start drawing now.</p></div>`; return; }
     const head=net.watch?`<h2>Scan to play · room <span class="code">${net.code}</span></h2>
-      <div class="seats">${[0,1].map(s=>`<span class="${net.present[s]?'in':''}" style="${net.present[s]?'background:'+PCOL[s]:''}">${NAME[s]}: ${net.present[s]?'joined ✓':'waiting…'}</span>`).join('')}</div>
-      <p>The first two devices to scan are Blue and Red. This screen shows the fight.</p>`
+      <div class="seats">${[0,1].map(s=>`<span class="${net.present[s]?'in':''}" style="${net.present[s]?'background:'+PCOL[s]:''}">${NAME[s]}: ${net.bot&&s===1?'the bot ✓':net.present[s]?'joined ✓':'waiting…'}</span>`).join('')}</div>
+      <p>${net.bot?'Scan with a phone or tablet to play Blue against the bot.':'The first two devices to scan are Blue and Red.'} This screen shows the fight.</p>`
       :`<h2>Room <span class="code">${net.code}</span> · you are ${NAME[net.side]}</h2><p>Waiting for the other player. The match pauses while someone is away.</p>`;
     o.innerHTML=`<div class="box">${head}
-      <div class="share"><div class="qr" id="roomQr"></div><div><div>Scan, or open</div><div class="link">${esc(url)}</div><div>or choose Online there and type the code.</div></div></div></div>`;
+      <div class="share"><div class="qr" id="roomQr"></div><div><div>Scan, or open</div><div class="link">${esc(url)}</div><div>or open the game there and type the code.</div></div></div></div>`;
     if(typeof qrcode==='function'){ try{ const q=qrcode(0,'M'); q.addData(url); q.make(); $('roomQr').innerHTML=q.createSvgTag({cellSize:4,margin:2,scalable:true}); }catch(e){} }
   }else{
     const mine=local[v.champ]&&!(local[0]&&local[1]);
@@ -2462,7 +2477,7 @@ function frame(now){
 }
 if(canRead) fetch('/info').then(r=>r.json()).then(o=>{ serverInfo=o; $('reader').textContent='Drawings read by: '+o.reader; canRead=/OpenAI/.test(o.reader); overlayKey=overlayKey.startsWith('wait')?'':overlayKey; }).catch(()=>{ canRead=false; });
 if(RETRO) retroBuild();
-setMode(/^#[A-Za-z]{4}$/.test(location.hash)?'online':'bot');
+setMode('online');      // every match is a room: a screen, and phones or tablets as controllers
 requestAnimationFrame(frame);
 </script>
 </body>
