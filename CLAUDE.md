@@ -53,6 +53,13 @@ Hackathon MVP. A one-lane battler where every unit is something the player draws
 - The arena canvas and item sprites are rendered at the display's pixel density.
 - Bot-vs-bot simulation gives a median round of about 22 s; melee wins most often between bots. Not tested on real tablets.
 
+## Trained CPU
+
+- `makeNetBot(side, theta, skillOf)`, `botFeatures`, `netForward` and `NET_SHAPE=[28,24,16,8]` live in the DUEL block after `makeBot`; the weights are passed in. The 28 inputs are listed above `botSee`. It looks every 0.1 s, acts on each look `0.12 + 0.2*(1-skill)` s later, and is held to 6 presses a second per attack button, 3 jumps, 1 ultimate, 1 hack.
+- `bot/es.js` (evolution strategy, mirrored sampling, rank shaping), `bot/arena.js` (headless rounds, league, fitness: win, half the health margin, minus 0.2 for a timeout, minus 0.015 per press a second), `bot/train.js` + `bot/worker.js` (parallel, resumable), `bot/eval.js` (the shipping bar: 55% against the classic bot at 0.55, 60% against each scripted player, over fresh rounds).
+- `bot-weights.json` is the champion (generation 1740 of a 24-minute run): 64 / 94 / 94 / 99% against classic 0.55 / masher / jumper / kiter over 400 rounds each. Its win rate against the classic bot levelled off near 62% from generation 1,000 on; more training with these inputs and this network did not help.
+- Not tested: a person playing against it. It never jumps and presses both attack buttons most of the time.
+
 ## Online play
 
 - `POST /room` creates a room with a 4-letter code. `GET /events?room=CODE&id=CLIENT` is a Server-Sent Events stream (`hello`, `players`, `state`, `pending`, `spawn`, `cancel`, `reset`, `gone`). `POST /act` takes `start`, `reset` and `send` (strokes plus a PNG of the pad).
