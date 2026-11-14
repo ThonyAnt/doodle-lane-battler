@@ -283,9 +283,11 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
 .tc button.on{background:var(--hi);transform:translateY(2px)}
 .tc button.full{background:var(--hi);box-shadow:0 0 0 3px var(--ink) inset}
 .tc button .cdfill{position:absolute;left:0;right:0;bottom:0;height:calc(var(--cd,0)*100%);background:rgba(28,37,65,.28);pointer-events:none}
-.tc .keys{font-size:12px;color:var(--muted);text-align:center;flex:1;min-width:90px}
+.tc .keys{visibility:hidden;font-size:0;flex:1;min-width:20px}
+.fnote{display:none}
+.read .alts button{margin:0 2px;padding:3px 9px;font:inherit;font-weight:700}
 .tc[data-side="0"]{border-color:var(--p1)} .tc[data-side="1"]{border-color:var(--p2)}
-.rules{margin:0;padding:10px 14px;list-style:none;display:grid;gap:4px;font-size:14px;background:var(--card);border:2px solid var(--ink);border-radius:14px}
+.rules{display:none!important;margin:0;padding:10px 14px;list-style:none;gap:4px;font-size:14px;background:var(--card);border:2px solid var(--ink);border-radius:14px}
 .chip{display:inline-block;border-radius:6px;padding:0 6px;color:#fff;font-weight:600;font-size:13px}
 .fire{background:var(--fire)} .water{background:var(--water)} .plant{background:var(--plant)}
 /* Retro desktop: the right column (hack list, glyph sheet) is hidden, so the stage takes the whole window; hacks and glyphs
@@ -1222,6 +1224,7 @@ function createDuel(opts){
     const it=S.items[side][k]; if(!it||!ch||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
     const spec={name:it.name,kind:it.kind,style:it.style,element:it.el,power:it.raw.power,range:it.raw.range,speed:it.raw.speed,traits:it.traits,trait:it.trait,tune:it.tune};
     if(ch.kind!==undefined){ if(!KINDS.includes(ch.kind)) return null; spec.kind=ch.kind; spec.style=String(ch.style||''); }
+    if(typeof ch.name==='string'){ const nm=ch.name.replace(/[<>&"']/g,'').trim().slice(0,22); if(nm) spec.name=nm; }
     if(ch.trait!==undefined) spec.trait=String(ch.trait);
     if(ch.tune!==undefined) spec.tune=ch.tune;
     return S.setItem(side,k,spec,it.cost);
@@ -1783,8 +1786,16 @@ function createDuel(opts){
     return {t:r1(h.t),msg:h.msg,said:r1(h.said),all:h.all,cur:[rr(h.cur.x),rr(h.cur.y)],drag:h.move?h.move.id:'',cell:h.aim&&!h.hunt?[Math.floor(h.aim.x/SHEET_COL),Math.floor(h.aim.y/SHEET_ROW)]:null,plats:SP.map(p=>({id:p.id,x0:rr(p.x0),x1:rr(p.x1),y:p.y,wx:rr(p.wx),lb:p.lb})),
       rain:h.rain.map(r=>[rr(r.x),rr(r.y)]),hunt:h.hunt&&{x:rr(h.hunt.x),y:rr(h.hunt.y),st:h.hunt.st,side:h.hunt.side}};
   }
+  // After a knockout nothing is decided any more, but the picture must not freeze: fighters finish falling and come to
+  // rest (no buttons, no shots, no damage). settle is that, for the pause after a round and the first seconds of the end.
+  function settle(dt){
+    SOL=solids(); S.pr.length=0; const keep=S.inp;
+    S.inp=keep.map(i=>Object.assign({},i,{l:0,r:0,d:0}));
+    for(const f of S.f){ f.buf[0]=f.buf[1]=0; f.jq=0; f.mbuf=0; if(f.act&&!f.ground) f.act=null; control(f,dt); }
+    S.inp=keep;
+  }
   function tick(dt){
-    if(S.phase==='over') return;
+    if(S.phase==='over'){ S.overT=(S.overT||0)+dt; if(S.overT<4) settle(dt); return; }
     if(S.practice){
       S.phase='fight'; S.t=ROUND_TIME-5;
       for(const f of S.f){ f.hp=Math.max(1,f.hp); f.rest=f.hurt>0||f.burn>0?0:(f.rest||0)+dt; if(f.rest>1.5){ f.hp=HP; f.uses=usesFor(f.side); } }
@@ -1794,6 +1805,7 @@ function createDuel(opts){
     if(S.phase==='draw'){ if((S.ready[0]&&S.ready[1])||S.t<=0){ S.phase='count'; S.t=3; S.stop=0; S.ult=-1; S.f=[fresh(0),fresh(1)]; for(const f of S.f) f.uses=usesFor(f.side); S.pr=[]; resetWorld(); resetRules(); } return; }
     if(S.phase==='count'){ if(S.t<=0){ if(S.hold>0){ S.hold=Math.max(0,S.hold-dt); S.t=0; return; } S.phase='fight'; S.t=ROUND_TIME; S.events.push({e:'go'}); } return; }      // S.hold: see setHold
     if(S.phase==='end'){
+      settle(dt);
       if(S.t>0) return;
       if(S.winner>=0&&S.wins[S.winner]>=WINS){ S.phase='over'; S.champ=S.winner; }
       else{ S.round++; S.phase='draw'; S.t=25; S.ready=[false,false]; S.f=[fresh(0),fresh(1)]; S.pr=[]; resetWorld(); }
@@ -1822,7 +1834,7 @@ function createDuel(opts){
     if(!S.practice&&(d0||d1||S.t<=0)){
       S.winner=d0&&d1?-1:d0?1:d1?0:Math.abs(a.hp-b.hp)<0.5?-1:a.hp>b.hp?0:1;
       if(S.winner>=0) S.wins[S.winner]++;
-      S.phase='end'; S.t=3.2; S.events.push({e:'ko',side:S.winner});
+      S.phase='end'; S.t=4.4; S.events.push({e:'ko',side:S.winner});
     }
   }
   S.step=dt=>{ acc+=Math.min(0.25,dt); while(acc>=STEP){ acc-=STEP; tick(STEP); S.tickN++; } };
@@ -2187,13 +2199,13 @@ function replayFit(w,top,cw,maxCh){
 // snapshots; nothing is simulated again. After the knockout the live picture stays for KO_WAIT, then for KO_SHOW the last
 // KO_BACK before the knockout is drawn (so at a third of the speed), then the live picture comes back. That is 3.4 s, about
 // the 3.2 s the rules wait before the next round's drawing begins.
-const KO_WAIT=400, KO_SHOW=3000, KO_BACK=1000, KO_KEEP=5000;      // milliseconds
+const KO_WAIT=250, KO_SHOW=3300, KO_BACK=900, KO_AFTER=350, KO_KEEP=6000;      // milliseconds
 // ring: [{ms, snap}], oldest first (ms: when each snapshot arrived). koMs: when the knockout arrived. sinceKoMs: how long
 // ago that was. Returns the snapshot to draw, or null for the live picture.
 function koReplayFrame(ring,koMs,sinceKoMs){
   if(!ring||!ring.length||!(sinceKoMs>=KO_WAIT)||sinceKoMs>KO_WAIT+KO_SHOW) return null;
-  const want=koMs-KO_BACK+(sinceKoMs-KO_WAIT)*KO_BACK/KO_SHOW; let best=null, gap=Infinity;
-  for(const r of ring){ if(r.ms>koMs) break; const d=Math.abs(r.ms-want); if(d<=gap){ gap=d; best=r; } }      // nothing from after the knockout
+  const want=koMs-KO_BACK+(sinceKoMs-KO_WAIT)*(KO_BACK+KO_AFTER)/KO_SHOW; let best=null, gap=Infinity;
+  for(const r of ring){ if(r.ms>koMs+KO_AFTER) break; const d=Math.abs(r.ms-want); if(d<=gap){ gap=d; best=r; } }      // nothing from after the knockout
   return best?best.snap:null;
 }
 // Called with every snapshot: k is {ring, koMs} (koMs -1 when there is no knockout to show). winsToEnd: rounds that win a match.
@@ -2570,9 +2582,9 @@ function buildDesks(){
         <div class="pens">${Object.keys(PEN).map((e,i)=>`<button class="pen" data-el="${e}" style="background:${PEN[e]}" aria-pressed="${i===0}" aria-label="${e==='none'?'Plain':e} ink" title="${e==='none'?'Plain':e} ink"></button>`).join('')}</div></div>
       <div class="inkrow"><span>Ink</span><div class="inkbar"><div class="have"></div><div class="cost"></div></div><span class="inkn"></span></div>
       <div class="actions"><button class="undo">Undo</button><button class="clear">Clear</button><button class="primary make">Make it!</button><button class="ready">I'm ready</button></div>
-      <div class="read">Draw a weapon or ability, then press Make it.</div>
+      <div class="read"></div>
       <div class="card" hidden></div>
-      <div class="stock"><span>Or take a ready-made one (it uses the ink colour you have picked):</span>${Object.keys(STOCK).map(k=>`<button data-stock="${k}">${STOCK[k].label}</button>`).join('')}</div>`;
+      <div class="stock"><span>Ready-made:</span>${Object.keys(STOCK).map(k=>`<button data-stock="${k}">${STOCK[k].label}</button>`).join('')}</div>`;
     box.appendChild(el);
     const d=desk[side]={el,side,k:0,pen:'none',strokes:[],busy:false,cur:null,pad:el.querySelector('.pad')}; d.g=d.pad.getContext('2d');
     el.querySelectorAll('.slot').forEach(b=>b.onclick=()=>{ d.k=+b.dataset.k; updateDesk(d); });
@@ -2624,12 +2636,12 @@ function updateDesk(d){
   // With nothing being drawn, the pad shows what is already in the selected slot.
   const held=!d.strokes.length&&art[d.side][d.k]&&view&&view.items[d.side][d.k]?art[d.side][d.k]:null;
   drawStrokes(g,held?held.strokes:d.strokes,5);
-  if(held){ g.fillStyle='#59658a'; g.font='600 13px Karla,system-ui,sans-serif'; g.textAlign='left'; g.fillText('In slot '+'AB'[d.k]+' now. Draw here to replace it.',10,PAD_H-10); }
+  
   const items=view?view.items[d.side]:[null,null], cost=d.strokes.length?inkCost(d.strokes):0, have=budget(d), ready=!!(view&&view.ready[d.side]);
   d.el.querySelectorAll('.slot').forEach(b=>{ const k=+b.dataset.k, it=items[k];
     b.setAttribute('aria-pressed',k===d.k);
     const fl=it?forgeLine(forge,d.side,k):'';      // the match rules this item is part of
-    b.innerHTML=`${'AB'[k]}: `+(it?`<b>${esc(it.name)}</b><small>${it.kind}${it.el!=='none'?' · '+it.el:''} · ${it.cost} ink</small>`+(fl?`<small class="frules">Rules: ${fesc(fl)}</small>`:''):'<b>empty</b><small>a punch</small>'); });
+    b.innerHTML=`${'AB'[k]}: `+(it?`<b>${esc(it.name)}</b><small>${it.kind}${it.el!=='none'?' · '+it.el:''} · ${it.cost} ink</small>`:'<b>empty</b><small>a punch</small>'); });
   d.el.querySelector('.have').style.width=have+'%'; d.el.querySelector('.cost').style.width=Math.min(have,cost)+'%';
   d.el.querySelector('.inkn').textContent=Math.round(Math.min(have,cost))+' / '+have;
   d.el.querySelector('.make').disabled=!d.strokes.length||d.busy||ready;
@@ -2650,10 +2662,10 @@ const FIXES=[['melee','blade','Sword'],['melee','spear','Spear or whip'],['melee
 function cardHTML(it,locked,showStock){
   const off=locked?'disabled':'', weapon=it.kind==='melee'||it.kind==='ranged';
   return `<div class="stats">${statBars(it)}</div>
-    <div class="traits">${it.trs.map(t=>`<button class="trait" data-trait="${t}" aria-pressed="${t===it.tr}" ${off}><b>${TRAITS[t].label}</b><small>${TRAITS[t].text}</small></button>`).join('')}</div>
-    <div class="tune"><button data-tune="-1" ${locked||it.tn<=-2?'disabled':''}>◀ ${weapon?'Lighter, faster':'Ready sooner'}</button><button data-tune="1" ${locked||it.tn>=2?'disabled':''}>${weapon?'Heavier, stronger':'Stronger effect'} ▶</button></div>
-    <details class="fix"><summary>Not right? Change what it is</summary><div>${FIXES.map(([k,s,l])=>`<button data-kind="${k}" data-style="${s}" aria-pressed="${it.kind===k&&(it.style||'')===s}" ${off}>${l}</button>`).join('')}</div></details>
-    <button class="more">${showStock?'Hide ready-made items':'Swap for a ready-made item'}</button>`;
+    <div class="traits">${it.trs.map(t=>`<button class="trait" data-trait="${t}" aria-pressed="${t===it.tr}" ${off}><b>${TRAITS[t].label}</b></button>`).join('')}</div>
+    <div class="tune"><button data-tune="-1" ${locked||it.tn<=-2?'disabled':''}>◀ ${weapon?'Faster':'Sooner'}</button><button data-tune="1" ${locked||it.tn>=2?'disabled':''}>Stronger ▶</button></div>
+    <details class="fix"><summary>Change</summary><div>${FIXES.map(([k,s,l])=>`<button data-kind="${k}" data-style="${s}" aria-pressed="${it.kind===k&&(it.style||'')===s}" ${off}>${l}</button>`).join('')}</div></details>
+    <button class="more">${showStock?'Hide ready-made':'Ready-made'}</button>`;
 }
 async function tweak(d,ch){
   if(d.busy||!view) return; const k=d.k, read=d.el.querySelector('.read');
@@ -2672,19 +2684,23 @@ async function makeItem(d){
   const strokes=d.strokes, k=d.k, png=d.pad.toDataURL('image/png').split(',')[1], read=d.el.querySelector('.read');
   d.busy=true; updateDesk(d); read.textContent='Reading your drawing…';
   try{
-    let spec, source;
+    let spec, source, alts=[];
     if(net){
       const r=await fetch('/duel/act',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room:net.code,id:cid,type:'item',slot:k,strokes,png})});
       const o=await r.json(); if(!r.ok) throw new Error(o.error||'The server could not take that drawing.');
-      spec=o; source=o.source;
+      spec=o; source=o.source; alts=Array.isArray(o.alts)?o.alts:[];
     }else{
       spec=null;
-      if(canRead) try{ const r=await fetch('/duel/read',{method:'POST',body:await (await fetch('data:image/png;base64,'+png)).blob()}); if(r.ok){ spec=validItem(await r.json()); source='OpenAI'; } }catch(e){}
+      if(canRead) try{ const r=await fetch('/duel/read',{method:'POST',body:await (await fetch('data:image/png;base64,'+png)).blob()}); if(r.ok){ const o=await r.json(); spec=validItem(o); alts=Array.isArray(o.alts)?o.alts:[]; source='OpenAI'; } }catch(e){}
       if(!spec){ spec=localGuess(strokes); source='local guess'; }
       const it=sim.setItem(d.side,k,spec,inkCost(strokes)); if(!it) throw new Error('Too late: the round has started.');
       setArt(d.side,k,strokes,it.ver,it.kind,it.style); accept(sim.snapshot()); if(window.SFX) SFX.play('made'); spec={name:it.name,kind:it.kind,element:it.el};
     }
-    read.innerHTML=`<b>${esc(spec.name)}</b>: ${spec.kind}${spec.element!=='none'?', '+spec.element:''} (read by ${esc(source)}). ${HINT[spec.kind]}`;
+    read.innerHTML=`<b>${esc(spec.name)}</b>: ${spec.kind}${spec.element!=='none'?', '+spec.element:''}`;
+    // The reader's other two readings, as one-tap corrections.
+    if(alts.length){ const box=document.createElement('span'); box.className='alts'; box.append(' Or: ');
+      for(const a of alts.slice(0,2)){ const b=document.createElement('button'); b.textContent=String(a.name||'').slice(0,22); b.onclick=async()=>{ box.remove(); await tweak(d,{kind:a.kind,style:a.style||'',name:String(a.name||'')}); const it=view&&view.items[d.side][k]; if(it) read.firstChild.textContent=it.name; }; box.append(b,' '); }
+      read.append(box); }
     d.strokes=[]; if(!(view&&view.items[d.side][1-k])) read.innerHTML+=' Slot '+'AB'[1-k]+' is still empty.';
   }catch(e){ read.textContent=e.message; }
   d.busy=false; updateDesk(d);
@@ -2702,7 +2718,7 @@ async function takeStock(d,key){
       const it=sim.setItem(d.side,k,made.spec,cost); if(!it) throw new Error('Not enough ink left for that.');
       setArt(d.side,k,made.strokes,it.ver,it.kind,it.style); accept(sim.snapshot()); if(window.SFX) SFX.play('made'); spec={name:it.name,kind:it.kind,style:it.style,element:it.el};
     }
-    read.innerHTML=`<b>${esc(spec.name)}</b>: ${spec.kind}${spec.style?' ('+spec.style+')':''}${spec.element!=='none'?', '+spec.element:''}. ${HINT[spec.kind]}`; d.showStock=false;
+    read.innerHTML=`<b>${esc(spec.name)}</b>: ${spec.kind}${spec.style?' ('+spec.style+')':''}${spec.element!=='none'?', '+spec.element:''}`; d.showStock=false;
     d.strokes=[]; if(!(view&&view.items[d.side][1-k])) read.innerHTML+=' Slot '+'AB'[1-k]+' is still empty.';
   }catch(e){ d.busy=false; read.textContent=e.message; }
   updateDesk(d);
@@ -3842,7 +3858,7 @@ function ultFront(v,now){
   if(ultEnd&&!CALM){ const el=(now-ultEnd.t0)/1000; if(el<0.55){ const u=ease(el/0.55); L.save(); L.strokeStyle=PFLASH[ultEnd.side]; L.globalAlpha=1-u; L.lineWidth=12*(1-u)+1; L.beginPath(); L.arc(ultEnd.x,GY-ultEnd.y,30+u*340,0,7); L.stroke(); L.restore(); } }
 }
 function render(now){
-  const v=koView||view, age=net&&!v.hs&&!koView?Math.min(0.08,(now-viewAt)/1000):0, dt=Math.max(0,Math.min(0.05,(now-(lastRender||now))/1000)); lastRender=now;
+  const v=koView||view, age=net&&!v.hs&&!koView&&(v.phase==='fight'||v.phase==='end')?Math.min(0.08,(now-viewAt)/1000):0, dt=Math.max(0,Math.min(0.05,(now-(lastRender||now))/1000)); lastRender=now;
   fitCanvas(); L.setTransform(1,0,0,1,0,0); L.clearRect(0,0,cv.width,cv.height); L.setTransform(VS,0,0,VS,OX*VS,OY);
   if(!deskLike()){ L.fillStyle='#fff'; L.fillRect(-OX,VTOP,VW,440-VTOP); }
   if(v.sheet) sheetBack(v,now);

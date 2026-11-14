@@ -2,6 +2,10 @@
 
 Hackathon MVP. A one-lane battler where every unit is something the player draws. Ink is the price of a drawing and sets the unit's strength; a vision model only decides what kind of unit it is. See README.md for how to run it and the rules.
 
+## Working rules
+
+- Do not run the test suites (`tools/test-*.js`, `tools/check-anim.js`, `tools/balance.js`, `tools/net-bench.js`) unless the owner asks. After a change, say that they were not run and offer to run them.
+
 ## Layout
 
 - `index.html`: the whole client. The block between `/*SIM-START*/` and `/*SIM-END*/` is the pure match logic (stats, combat, bot, drawing fallback guess). Keep it free of DOM access.
