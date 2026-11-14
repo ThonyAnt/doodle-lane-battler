@@ -105,7 +105,7 @@ Rules to keep:
 - The cache key (`keyOf`) is the cleaned name, kind, style, element, trait and the three stats of each item: a tuned or recoloured item is a different key. Only results with a model-written rule are kept on disk, and they are verified again when first used.
 - In test fixtures give items a fixed trait (`traits:['swift'],trait:'swift'`): by name a Sword gets Lucky and a Ball gets Boomerang. A practice sim heals both fighters once `f.rest` passes 1.5 s. A landed swing starts a hit-stop during which nothing moves.
 
-Not tested with the real model: every test uses the stand-in. Unknown until someone runs `node tools/forge-live.js` with the key: whether the model writes valid ForgeScript from this prompt, how long it takes, whether the rules are funny, and whether `max_tokens: 700` and `response_format: json_object` suit the model chosen. The `FORGE.EXE` window, the call-outs and the "Forging rules..." banner were written without a browser; their logic is tested in Node, their look is not.
+Tried with two real models (a small and a mid-sized one, given only the prompt for eight item sets: all 48 rules passed every check; fixtures in `tools/fixtures/forge-models/`, test `tools/test-forge-models.js`), but not with the OpenAI model the server asks by default. Unknown until someone runs `node tools/forge-live.js` with the key: whether the model writes valid ForgeScript from this prompt, how long it takes, whether the rules are funny, and whether `max_tokens: 700` and `response_format: json_object` suit the model chosen. The `FORGE.EXE` window, the call-outs and the "Forging rules..." banner were written without a browser; their logic is tested in Node, their look is not.
 
 ## Trained CPU
 

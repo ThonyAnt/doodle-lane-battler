@@ -78,7 +78,7 @@ The big screen shows the result in a `FORGE.EXE` window: each rule's name, what 
 
 What a rule can do is small, and the match clamps it whatever the code asks for (`FORGE_API` and `FORGE_LIMITS` in `duel.html`): four events (`swat`, `guard`, `strike`, `near`), effects such as `shot.reflect`, `hit.scale`, `push`, `burn` and `heal`, and at most 24 health healed or hurt per rule per round.
 
-Not yet tried with the real model: every test runs against the stand-in.
+Tried with real models, but not yet with the one the game uses: two language models (a small and a mid-sized one) were each given the exact prompt for eight sets of items and answered from the prompt alone. All 48 rules they wrote passed every check, and their replies are kept in `tools/fixtures/forge-models/` (`node tools/test-forge-models.js`). The OpenAI model the server asks by default has not been tried: `node tools/forge-live.js` does that with your key.
 
 ## Trained CPU (optional)
 
