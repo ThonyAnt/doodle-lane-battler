@@ -7,7 +7,7 @@ const PROMPT="You are the referee of a stick-figure fighting game. The attached 
 module.exports=function({readBody,KEY,MODEL,BASE}){
   const page=path.join(__dirname,'duel.html'), src=fs.readFileSync(page,'utf8');
   const D=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+
-    ';return {createDuel,validItem,localGuess,nameFor,inkCost,PAD_W,PAD_H};')();
+    ';return {createDuel,validItem,localGuess,nameFor,inkCost,stockItem,INK_MAX,PAD_W,PAD_H};')();
 
   /* ---------- reading a drawing ---------- */
   async function askOpenAI(png){
@@ -143,6 +143,17 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
         send(200,{}); return true;
       }
       if(body.type==='item'){ const [code,out]=await makeItem(room,side,body); send(code,out); return true; }
+      if(body.type==='stock'){
+        // A ready-made item: no drawing to read, so it is added at once.
+        const slot=body.slot===1?1:0, made=D.stockItem(String(body.key||''),String(body.el||'none'));
+        if(!made){ send(400,{error:'Unknown item.'}); return true; }
+        if(S.phase!=='draw'){ send(409,{error:'Too late: the round has started.'}); return true; }
+        const other=S.items[side][1-slot], it=S.setItem(side,slot,made.spec,Math.min(45,D.INK_MAX-(other?other.cost:0)));
+        if(!it){ send(409,{error:'Not enough ink left for that.'}); return true; }
+        room.art[side][slot]={strokes:made.strokes,ver:it.ver,kind:it.kind,style:it.style}; room.dirty=true;
+        broadcast(room,'item',{side,slot,strokes:made.strokes,ver:it.ver,kind:it.kind,style:it.style});
+        send(200,{name:it.name,kind:it.kind,style:it.style,element:it.el}); return true;
+      }
       if(body.type==='ready'){ S.setReady(side); room.dirty=true; send(200,{}); return true; }
       if(body.type==='rematch'){
         room.sim=D.createDuel(); room.art=[[null,null],[null,null]]; room.dirty=true; broadcast(room,'reset',{}); send(200,{}); return true;

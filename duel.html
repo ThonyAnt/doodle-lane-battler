@@ -36,6 +36,9 @@ a{color:var(--ink)}
 
 .arenawrap{position:relative;background:var(--card);border:2px solid var(--ink);border-radius:14px;overflow:hidden;box-shadow:4px 4px 0 var(--ink)}
 #arena{display:block;width:100%;height:auto}
+body.playing main{max-width:none;padding:8px 0}
+body.playing header,body.playing .tcs,body.playing .desks,body.playing .rules{margin:0 12px}
+body.playing .arenawrap{border-left:0;border-right:0;border-radius:0;box-shadow:none}
 .hud{display:flex;align-items:center;gap:12px;padding:8px 12px;border-bottom:2px solid var(--ink);font-variant-numeric:tabular-nums}
 .hp{flex:1;display:flex;align-items:center;gap:8px;min-width:0}
 .hp.right{flex-direction:row-reverse}
@@ -79,12 +82,15 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
 .actions .ready{margin-left:auto}
 .read{font-size:13px;color:var(--muted);min-height:1.4em;overflow-wrap:anywhere}
 .read b{color:var(--ink)}
+.stock{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px;color:var(--muted);border-top:1px dashed var(--grid);padding-top:8px}
+.stock span{flex-basis:100%}
+.stock button{font-size:13px;padding:3px 9px;border-width:1.5px}
 
 .tcs{display:flex;gap:12px;justify-content:space-between;flex-wrap:wrap}
 .tc{flex:1;display:flex;gap:10px;justify-content:space-between;align-items:center;background:var(--card);border:2px solid var(--ink);border-radius:14px;padding:8px 10px;min-width:280px;
   user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 .tc .grp{display:flex;gap:8px}
-.tc button{touch-action:none;min-width:58px;height:58px;font-size:20px;padding:0 8px;border-radius:14px;position:relative;overflow:hidden;line-height:1.05}
+.tc button{touch-action:none;min-width:54px;height:58px;font-size:20px;padding:0 8px;border-radius:14px;position:relative;overflow:hidden;line-height:1.05}
 .tc button small{display:block;font-size:11px;font-weight:600;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tc button.on{background:var(--hi);transform:translateY(2px)}
 .tc button .cdfill{position:absolute;left:0;right:0;bottom:0;height:calc(var(--cd,0)*100%);background:rgba(28,37,65,.28);pointer-events:none}
@@ -109,6 +115,7 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
         <button id="modeBot" aria-pressed="true">vs Bot</button>
         <button id="mode2p" aria-pressed="false">2 players</button>
         <button id="modeOnline" aria-pressed="false">Online</button>
+        <button id="modePractice" aria-pressed="false">Practice</button>
       </div>
       <button id="restart">Restart</button>
       <a href="/" class="badge">Lane Battler</a>
@@ -131,6 +138,13 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
   <ul class="rules">
     <li><b>Draw two things</b> before each round: a sword, a bow, a bomb, a shield, wings, a snack. You share 100 ink between them, and more ink means a stronger item.</li>
     <li><b>Fight live:</b> move, double jump, and use your two drawings. An empty slot is a punch. First to 2 rounds wins.</li>
+    <li><b>How to trigger each move</b> (A and B are your two drawings; F and G on a keyboard, K and L for the second player):
+      <br>· <b>Combo:</b> stand still and tap the button again and again. Swords, spears and hammers chain 3 moves, fists chain 4.
+      <br>· <b>Running attack:</b> hold a direction until you are sprinting, then press.
+      <br>· <b>Air attack:</b> jump, then press.
+      <br>· <b>Special:</b> hold down (S, ↓ or ▼) and press. Melee weapons launch the enemy upward (the hammer spins); bows, guns, staffs and throwing stars fire a slow charged shot.
+      <br>· <b>Rapid fire:</b> with a ranged item, keep tapping after the first shot.
+      <br>Each combo move and shot has two animations picked at random. <b>Practice</b> mode has no clock and a dummy that never dies, and lets you swap items at any time.</li>
     <li><b>Fighting styles:</b> a sword, a spear, a hammer or gloves each fight differently, and so do a bow, a gun, a magic staff or something you throw. Tap for a combo; attack while running, in the air, or holding down for other moves.</li>
     <li><span class="chip fire">fire</span> burns after the hit · <span class="chip water">water</span> slows and shoves · <span class="chip plant">plant</span> heals you for part of the damage · plain ink hits 15% harder.</li>
     <li>Shields only block from the front. Your own bombs hurt you too. Snacks heal 3 times per round.</li>
@@ -245,17 +259,17 @@ const STYLE={blade:{reach:1,dmg:1,kb:1},spear:{reach:1.4,dmg:0.9,kb:0.9},hammer:
 const MUZZLE={bow:[40,72],gun:[48,71],staff:[66,70],hurl:[46,68]};
 const styleOf=(kind,style)=>kind==='melee'?(MELEE_STYLES.includes(style)?style:'blade'):kind==='ranged'?(RANGED_STYLES.includes(style)?style:'gun'):'';
 const ALT=['blade1','blade2','bow_shot','bow_quick','gun_shot','gun_rapid','spear1','spear2','hammer1','hammer2','fist1','fist3','staff_shot','staff_quick','hurl_shot','hurl_quick'];   // moves with a second animation, name + '_b'
-function createDuel(){
+function createDuel(opts){
   let acc=0, nextId=1; const STEP=1/60, r1=v=>Math.round(v*10)/10;
   const PUNCH={name:'Fists',kind:'melee',style:'fist',el:'none',cost:0,st:Object.assign(itemStats('melee','none',6),{reach:58,dmg:5})};
   const fresh=side=>({side,x:side?AW-220:220,y:0,vx:0,vy:0,face:side?-1:1,hp:HP,ground:true,jumps:0,jq:0,buf:[0,0],cd:[0,0],cdMax:[1,1],
     act:null,shield:0,hurt:0,burn:0,burnDps:0,slow:0,dash:0,dashHit:false,dashItem:null,drop:0,uses:[3,3],held:0});
   const S={phase:'draw',t:45,round:1,wins:[0,0],ready:[false,false],items:[[null,null],[null,null]],f:[fresh(0),fresh(1)],pr:[],events:[],
-    winner:-1,champ:-1,ver:0,inp:[{l:0,r:0,d:0},{l:0,r:0,d:0}],cnt:[{j:0,a:0,b:0},{j:0,a:0,b:0}]};
+    winner:-1,champ:-1,ver:0,practice:!!(opts&&opts.practice),inp:[{l:0,r:0,d:0},{l:0,r:0,d:0}],cnt:[{j:0,a:0,b:0},{j:0,a:0,b:0}]};
   const itemOf=(side,k)=>S.items[side][k]||PUNCH;
   S.inkLeft=side=>Math.round(INK_MAX-S.items[side].reduce((n,it)=>n+(it?it.cost:0),0));
   S.setItem=(side,k,spec,cost)=>{
-    if(S.phase!=='draw'&&S.phase!=='count') return null;
+    if(S.phase!=='draw'&&S.phase!=='count'&&!S.practice) return null;
     const other=S.items[side][1-k]; cost=Math.min(cost,INK_MAX-(other?other.cost:0)); if(cost<MIN_COST-0.5) return null;
     const style=styleOf(spec.kind,spec.style);
     return S.items[side][k]={name:spec.name||nameFor(spec),kind:spec.kind,style,el:spec.element,cost,st:itemStats(spec.kind,spec.element,cost),ver:++S.ver};
@@ -388,6 +402,10 @@ function createDuel(){
   }
   function tick(dt){
     if(S.phase==='over') return;
+    if(S.practice){
+      S.phase='fight'; S.t=ROUND_TIME-5;
+      for(const f of S.f){ f.hp=Math.max(1,f.hp); f.rest=f.hurt>0||f.burn>0?0:(f.rest||0)+dt; if(f.rest>1.5){ f.hp=HP; f.uses=[3,3]; } }
+    }
     S.t-=dt;
     if(S.phase==='draw'){ if((S.ready[0]&&S.ready[1])||S.t<=0){ S.phase='count'; S.t=3; S.f=[fresh(0),fresh(1)]; S.pr=[]; } return; }
     if(S.phase==='count'){ if(S.t<=0){ S.phase='fight'; S.t=ROUND_TIME; S.events.push({e:'go'}); } return; }
@@ -400,14 +418,14 @@ function createDuel(){
     for(const f of S.f) control(f,dt);
     projectiles(dt);
     const a=S.f[0], b=S.f[1], d0=a.hp<=0, d1=b.hp<=0;
-    if(d0||d1||S.t<=0){
+    if(!S.practice&&(d0||d1||S.t<=0)){
       S.winner=d0&&d1?-1:d0?1:d1?0:Math.abs(a.hp-b.hp)<0.5?-1:a.hp>b.hp?0:1;
       if(S.winner>=0) S.wins[S.winner]++;
       S.phase='end'; S.t=3.2; S.events.push({e:'ko',side:S.winner});
     }
   }
   S.step=dt=>{ acc+=Math.min(0.25,dt); while(acc>=STEP){ acc-=STEP; tick(STEP); } };
-  S.snapshot=()=>({phase:S.phase,t:+S.t.toFixed(2),round:S.round,wins:S.wins,ready:S.ready,winner:S.winner,champ:S.champ,ink:[S.inkLeft(0),S.inkLeft(1)],
+  S.snapshot=()=>({phase:S.phase,t:+S.t.toFixed(2),round:S.round,wins:S.wins,ready:S.ready,winner:S.winner,champ:S.champ,ink:[S.inkLeft(0),S.inkLeft(1)],practice:S.practice,
     items:S.items.map(a=>a.map(it=>it&&{name:it.name,kind:it.kind,style:it.style,el:it.el,cost:Math.round(it.cost),ver:it.ver,sz:Math.round(it.st.size)})),
     f:S.f.map(f=>({x:r1(f.x),y:r1(f.y),vx:Math.round(f.vx),vy:Math.round(f.vy),face:f.face,hp:Math.max(0,r1(f.hp)),g:f.ground?1:0,
       act:f.act?{k:f.act.k,m:f.act.m+(f.act.v?'_b':''),t:+f.act.t.toFixed(3),r:+f.act.rate.toFixed(2)}:null,
@@ -444,30 +462,34 @@ function makeBot(side){
     S.setInput(side,i);
   };
 }
-// Ready-made doodles for the bot, in pad coordinates.
-function botLoadout(){
-  const ring=(cx,cy,rx,ry,a0,a1)=>{ const pts=[]; for(let i=0;i<=20;i++){ const a=a0+(a1-a0)*i/20; pts.push([Math.round(cx+Math.cos(a)*rx),Math.round(cy+Math.sin(a)*ry)]); } return pts; };
-  const T=Math.PI*2, pick=a=>a[Math.floor(Math.random()*a.length)];
-  const art={
-    melee:[[[240,270],[240,50]],[[205,215],[275,215]],[[240,50],[228,80]],[[240,50],[252,80]]],
-    ranged:[ring(200,150,70,110,-T/4,T/4),[[200,40],[200,260]],[[200,150],[330,150]],[[310,135],[330,150],[310,165]]],
-    bomb:[ring(240,170,62,62,0,T),[[270,115],[300,80],[290,60]]],
-    shield:[[[160,60],[320,60],[320,170],[240,255],[160,170],[160,60]],[[240,90],[240,210]]],
-    dash:[[[120,150],[200,90],[280,150]],[[200,150],[280,90],[360,150]],[[150,190],[330,190]]],
-    spear:[[[240,290],[240,20]],[[240,20],[224,62],[256,62],[240,20]]],
-    hammer:[[[240,285],[240,90]],[[190,30],[290,30],[290,95],[190,95],[190,30]]],
-    fist:[ring(240,150,60,52,0,T),[[190,150],[290,150]],[[215,202],[215,250],[265,250],[265,202]]],
-    staff:[[[240,290],[240,85]],ring(240,52,32,32,0,T)],
-    hurl:[[[240,60],[262,128],[330,150],[262,172],[240,240],[218,172],[150,150],[218,128],[240,60]]],
-    gun:[[[150,110],[330,110],[330,145],[205,145],[192,205],[150,205],[150,110]],[[215,145],[222,170],[200,172]]],
-    heal:[[[240,230],[170,150],[170,110],[205,95],[240,125],[275,95],[310,110],[310,150],[240,230]]]
+// Ready-made doodles, in pad coordinates: one of everything a player can draw. Used by the bot and offered in the
+// sketchbook as stock items, so a move set can be tried without drawing or waiting for the vision model.
+const STOCK=(()=>{
+  const T=Math.PI*2, ring=(cx,cy,rx,ry,a0,a1)=>{ const pts=[]; for(let i=0;i<=20;i++){ const a=a0+(a1-a0)*i/20; pts.push([Math.round(cx+Math.cos(a)*rx),Math.round(cy+Math.sin(a)*ry)]); } return pts; };
+  return {
+    sword: {label:'Sword',kind:'melee',style:'blade',pts:[[[240,285],[240,60]],[[200,235],[280,235]],[[240,30],[226,62],[226,235]],[[240,30],[254,62],[254,235]]]},
+    spear: {label:'Spear',kind:'melee',style:'spear',pts:[[[240,290],[240,20]],[[240,20],[224,62],[256,62],[240,20]]]},
+    hammer:{label:'Hammer',kind:'melee',style:'hammer',pts:[[[240,285],[240,90]],[[190,30],[290,30],[290,95],[190,95],[190,30]]]},
+    gloves:{label:'Gloves',kind:'melee',style:'fist',pts:[ring(240,150,60,52,0,T),[[190,150],[290,150]],[[215,202],[215,250],[265,250],[265,202]]]},
+    bow:   {label:'Bow',kind:'ranged',style:'bow',pts:[ring(200,150,70,110,-T/4,T/4),[[200,40],[200,260]]]},
+    gun:   {label:'Gun',kind:'ranged',style:'gun',pts:[[[150,110],[330,110],[330,145],[205,145],[192,205],[150,205],[150,110]],[[215,145],[222,170],[200,172]]]},
+    staff: {label:'Staff',kind:'ranged',style:'staff',pts:[[[240,290],[240,85]],ring(240,52,32,32,0,T)]},
+    star:  {label:'Throwing star',kind:'ranged',style:'hurl',pts:[[[240,60],[262,128],[330,150],[262,172],[240,240],[218,172],[150,150],[218,128],[240,60]]]},
+    bomb:  {label:'Bomb',kind:'bomb',pts:[ring(240,170,62,62,0,T),[[270,115],[300,80],[290,60]]]},
+    shield:{label:'Shield',kind:'shield',pts:[[[160,60],[320,60],[320,170],[240,255],[160,170],[160,60]],[[240,90],[240,210]]]},
+    wings: {label:'Wings',kind:'dash',pts:[[[120,150],[200,90],[280,150]],[[200,150],[280,90],[360,150]],[[150,190],[330,190]]]},
+    snack: {label:'Snack',kind:'heal',pts:[[[240,230],[170,150],[170,110],[205,95],[240,125],[275,95],[310,110],[310,150],[240,230]]]}
   };
-  const BOT={melee:['melee','blade'],spear:['melee','spear'],hammer:['melee','hammer'],fist:['melee','fist'],ranged:['ranged','bow'],gun:['ranged','gun'],staff:['ranged','staff'],hurl:['ranged','hurl']};
-  const main=pick(['melee','spear','hammer','fist','ranged','gun','staff','hurl','bomb']), side=pick(['shield','dash','heal','bomb','melee','spear','gun','hurl','staff'].filter(k=>k!==main));
-  return [[main,pick(ELS),46],[side,pick(ELS),34]].map(([kind,element,cost])=>{
-    const spec={kind:BOT[kind]?BOT[kind][0]:kind,style:BOT[kind]?BOT[kind][1]:'',element,name:''}; spec.name=nameFor(spec);
-    return {spec,cost,strokes:art[kind].map(pts=>({el:element,pts}))};
-  });
+})();
+function stockItem(key,element){
+  const s=STOCK[key]; if(!s) return null; element=ELS.includes(element)?element:'none';
+  const spec={kind:s.kind,style:s.style||'',element,name:(element==='none'?'':{fire:'Fire ',water:'Water ',plant:'Leafy '}[element])+s.label};
+  return {spec,strokes:s.pts.map(pts=>({el:element,pts}))};
+}
+function botLoadout(){
+  const pick=a=>a[Math.floor(Math.random()*a.length)];
+  const main=pick(['sword','spear','hammer','gloves','bow','gun','staff','star','bomb']), side=pick(['shield','wings','snack','bomb','sword','spear','gun','star','staff'].filter(k=>k!==main));
+  return [[main,46],[side,34]].map(([key,cost])=>Object.assign(stockItem(key,pick(ELS)),{cost}));
 }
 /*DUEL-END*/
 
@@ -476,8 +498,17 @@ const $=id=>document.getElementById(id);
 const PEN={none:'#1c2541',fire:'#e2552d',water:'#2a7fd4',plant:'#2f9e56'}, PCOL=['#2f6fde','#d9486e'], NAME=['Blue','Red'];
 const GY=392, cv=$('arena'), L=cv.getContext('2d');
 // Match the canvas backing store to the screen's real pixels so lines stay sharp on high-density displays.
-let VS=1;
-function fitCanvas(){ const r=Math.min(3,window.devicePixelRatio||1), w=Math.max(960,Math.round(cv.clientWidth*r)); if(cv.width!==w){ cv.width=w; cv.height=Math.round(w*440/960); } VS=cv.width/960; }
+// During a fight the arena fills the window's width. If that would make it taller than the screen allows, the height is
+// capped and the view simply shows more floor either side of the arena (OX), so nothing is stretched and the rules do not change.
+let VS=1, OX=0, VW=960, playing=false;
+function fitCanvas(){
+  const r=Math.min(3,window.devicePixelRatio||1), cw=cv.clientWidth||960, full=cw*440/960;
+  const ch=Math.round(playing?Math.max(240,Math.min(full,window.innerHeight*0.64)):full);
+  if(cv.style.height!==ch+'px') cv.style.height=ch+'px';
+  const w=Math.max(480,Math.round(cw*r)), h=Math.max(220,Math.round(ch*r));
+  if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
+  VS=cv.height/440; VW=Math.max(960,cv.width/VS); OX=(VW-960)/2;
+}
 new ResizeObserver(fitCanvas).observe(cv); fitCanvas();
 let mode='bot', sim=null, bot=null, view=null, viewAt=0, net=null, local=[true,false], fx=[], shake=0, serverInfo={}, canRead=location.protocol.startsWith('http');
 const art=[[null,null],[null,null]], desk=[null,null];
@@ -535,7 +566,8 @@ function buildDesks(){
         <div class="pens">${Object.keys(PEN).map((e,i)=>`<button class="pen" data-el="${e}" style="background:${PEN[e]}" aria-pressed="${i===0}" aria-label="${e==='none'?'Plain':e} ink" title="${e==='none'?'Plain':e} ink"></button>`).join('')}</div></div>
       <div class="inkrow"><span>Ink</span><div class="inkbar"><div class="have"></div><div class="cost"></div></div><span class="inkn"></span></div>
       <div class="actions"><button class="undo">Undo</button><button class="clear">Clear</button><button class="primary make">Make it!</button><button class="ready">I'm ready</button></div>
-      <div class="read">Draw a weapon or ability, then press Make it.</div>`;
+      <div class="read">Draw a weapon or ability, then press Make it.</div>
+      <div class="stock"><span>Or take a ready-made one (it uses the ink colour you have picked):</span>${Object.keys(STOCK).map(k=>`<button data-stock="${k}">${STOCK[k].label}</button>`).join('')}</div>`;
     box.appendChild(el);
     const d=desk[side]={el,side,k:0,pen:'none',strokes:[],busy:false,cur:null,pad:el.querySelector('.pad')}; d.g=d.pad.getContext('2d');
     el.querySelectorAll('.slot').forEach(b=>b.onclick=()=>{ d.k=+b.dataset.k; updateDesk(d); });
@@ -543,10 +575,11 @@ function buildDesks(){
     el.querySelector('.undo').onclick=()=>{ d.strokes.pop(); updateDesk(d); };
     el.querySelector('.clear').onclick=()=>{ d.strokes=[]; updateDesk(d); };
     el.querySelector('.make').onclick=()=>makeItem(d);
+    el.querySelectorAll('[data-stock]').forEach(b=>b.onclick=()=>takeStock(d,b.dataset.stock));
     el.querySelector('.ready').onclick=()=>{ if(sim) sim.setReady(side); else post({type:'ready'}); };
     const pos=e=>{ const r=d.pad.getBoundingClientRect(); return [Math.round((e.clientX-r.left)*PAD_W/r.width),Math.round((e.clientY-r.top)*PAD_H/r.height)]; };
     d.pad.addEventListener('pointerdown',e=>{
-      if(d.busy||!view||view.phase!=='draw'||view.ready[side]) return; e.preventDefault();
+      if(d.busy||!view||(view.phase!=='draw'&&!view.practice)||view.ready[side]) return; e.preventDefault();
       try{ d.pad.setPointerCapture(e.pointerId); }catch(_){}
       d.cur={el:d.pen,pts:[pos(e)]}; d.strokes.push(d.cur); updateDesk(d);
     });
@@ -573,7 +606,7 @@ function updateDesk(d){
   d.el.querySelector('.make').disabled=!d.strokes.length||d.busy||ready;
   d.el.querySelector('.make').textContent=items[d.k]?'Redraw '+'AB'[d.k]:'Make it!';
   d.el.querySelector('.undo').disabled=d.el.querySelector('.clear').disabled=!d.strokes.length||d.busy;
-  const rb=d.el.querySelector('.ready'); rb.disabled=ready||d.busy; rb.textContent=ready?'Ready ✓':"I'm ready";
+  const rb=d.el.querySelector('.ready'); rb.disabled=ready||d.busy; rb.textContent=ready?'Ready ✓':"I'm ready"; rb.hidden=!!(view&&view.practice);
   d.sig=deskSig(d);
 }
 const deskSig=d=>view?JSON.stringify([view.items[d.side],view.ready[d.side],view.phase]):'';
@@ -599,6 +632,24 @@ async function makeItem(d){
   }catch(e){ read.textContent=e.message; }
   d.busy=false; updateDesk(d);
 }
+// Put a ready-made item in the selected slot. No drawing and no vision model, so it is instant.
+async function takeStock(d,key){
+  if(d.busy||!view||(view.phase!=='draw'&&!view.practice)||view.ready[d.side]) return;
+  const k=d.k, read=d.el.querySelector('.read'), made=stockItem(key,d.pen), cost=Math.min(45,budget(d));
+  try{
+    let spec;
+    if(net){
+      d.busy=true; const r=await fetch('/duel/act',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room:net.code,id:cid,type:'stock',slot:k,key,el:d.pen})});
+      const o=await r.json(); d.busy=false; if(!r.ok) throw new Error(o.error||'The server could not add that.'); spec=o;
+    }else{
+      const it=sim.setItem(d.side,k,made.spec,cost); if(!it) throw new Error('Not enough ink left for that.');
+      setArt(d.side,k,made.strokes,it.ver,it.kind,it.style); spec={name:it.name,kind:it.kind,style:it.style,element:it.el};
+    }
+    read.innerHTML=`<b>${esc(spec.name)}</b>: ${spec.kind}${spec.style?' ('+spec.style+')':''}${spec.element!=='none'?', '+spec.element:''}. ${HINT[spec.kind]}`;
+    d.strokes=[]; if(!(view&&view.items[d.side][1-k])&&!view.practice) d.k=1-k;
+  }catch(e){ d.busy=false; read.textContent=e.message; }
+  updateDesk(d);
+}
 const HINT={melee:'Tap again and again for a combo; down + attack is a special; try it running or in the air.',ranged:'Tap to keep firing; hold down and press for a charged shot.',bomb:'Lobbed in an arc; mind the blast.',shield:'Blocks hits from the front for a moment.',dash:'A burst of speed that rams.',heal:'Restores health, 3 uses a round.'};
 
 /* ---------- controls ---------- */
@@ -622,7 +673,7 @@ function buildControls(){
     if(!local[side]) continue;
     const keys=mode==='2p'?(side?'← → move · ↑ jump · ↓ drop · K / L use':'A D move · W jump · S drop · F / G use'):'A D or ← → move · W / Space jump · S drop · F / G use';
     const el=document.createElement('div'); el.className='tc'; el.dataset.side=side;
-    el.innerHTML=`<div class="grp"><button data-k="l" aria-label="Move left">◀</button><button data-k="r" aria-label="Move right">▶</button></div><div class="keys">${keys}</div>
+    el.innerHTML=`<div class="grp"><button data-k="l" aria-label="Move left">◀</button><button data-k="d" aria-label="Down">▼</button><button data-k="r" aria-label="Move right">▶</button></div><div class="keys">${keys}</div>
       <div class="grp"><button data-k="a"><span class="cdfill"></span>A<small></small></button><button data-k="b"><span class="cdfill"></span>B<small></small></button><button data-k="j" aria-label="Jump">⤒<small>jump</small></button></div>`;
     el.querySelectorAll('button').forEach(b=>{
       const k=b.dataset.k, off=()=>{ b.classList.remove('on'); press(side,k,false); };
@@ -638,15 +689,15 @@ function resetLocal(){
   for(const s of [0,1]){ art[s]=[null,null]; Object.assign(inp[s],{l:0,r:0,d:0}); } fx=[]; view=null; resetAnim();
 }
 function setMode(m){
-  mode=m; for(const b of ['Bot','2p','Online']) $('mode'+b).setAttribute('aria-pressed',m===b.toLowerCase());
+  mode=m; for(const b of ['Bot','2p','Online','Practice']) $('mode'+b).setAttribute('aria-pressed',m===b.toLowerCase());
   if(net){ net.es.close(); net=null; } sim=null; bot=null; resetLocal(); lastPhase=''; overlayKey='';
   if(m==='online'){ local=[false,false]; view=createDuel().snapshot(); buildDesks(); buildControls(); const code=(location.hash||'').slice(1).toUpperCase(); if(/^[A-Z]{4}$/.test(code)) joinRoom(code); return; }
   if(location.hash) history.replaceState(null,'',location.pathname);
-  local=m==='2p'?[true,true]:[true,false]; sim=createDuel();
+  local=m==='2p'?[true,true]:[true,false]; sim=createDuel({practice:m==='practice'});
   if(m==='bot'){ bot=makeBot(1); botLoadout().forEach((b,k)=>{ const it=sim.setItem(1,k,b.spec,b.cost); setArt(1,k,b.strokes,it.ver,it.kind,it.style); }); }
   view=sim.snapshot(); buildDesks(); buildControls();
 }
-$('modeBot').onclick=()=>setMode('bot'); $('mode2p').onclick=()=>setMode('2p'); $('modeOnline').onclick=()=>setMode('online');
+$('modeBot').onclick=()=>setMode('bot'); $('mode2p').onclick=()=>setMode('2p'); $('modeOnline').onclick=()=>setMode('online'); $('modePractice').onclick=()=>setMode('practice');
 $('restart').onclick=()=>{ if(net) post({type:'rematch'}); else setMode(mode); };
 
 function post(body){ if(!net) return; fetch('/duel/act',{method:'POST',headers:{'Content-Type':'application/json'},keepalive:true,body:JSON.stringify(Object.assign({room:net.code,id:cid},body))}).catch(()=>{}); }
@@ -685,10 +736,11 @@ function syncUI(){
     $('hp'+s).style.width=(v.phase==='draw'?100:v.f[s].hp)+'%';
     $('pip'+s).textContent='●'.repeat(v.wins[s])+'○'.repeat(Math.max(0,WINS-v.wins[s]));
   }
-  $('clock').textContent=v.phase==='fight'?Math.ceil(v.t):v.phase==='draw'?'Draw '+Math.max(0,Math.ceil(v.t)):v.phase==='over'?'':'Round '+v.round;
+  $('clock').textContent=v.practice?'Practice':v.phase==='fight'?Math.ceil(v.t):v.phase==='draw'?'Draw '+Math.max(0,Math.ceil(v.t)):v.phase==='over'?'':'Round '+v.round;
   if(v.phase!==lastPhase){
     lastPhase=v.phase; const drawing=v.phase==='draw';
-    $('desks').hidden=!drawing; $('tcs').hidden=drawing||v.phase==='over'||!local.some(Boolean);
+    playing=!drawing&&v.phase!=='over'; document.body.classList.toggle('playing',playing);
+    $('desks').hidden=!(drawing||v.practice); $('tcs').hidden=drawing||v.phase==='over'||!local.some(Boolean);
     if(!drawing) for(const s of [0,1]) for(const k of 'lrd') if(inp[s][k]&&!sim){ /* keep held keys */ }
     if(v.phase==='count') document.querySelector('.arenawrap').scrollIntoView({block:'start',behavior:'smooth'});
   }
@@ -851,10 +903,12 @@ function drawFighter(v,i,now,age,dt){
 const shadowY=f=>{ let y=0; for(const p of PLATS) if(f.y>=p.y-1&&f.x>=p.x0-6&&f.x<=p.x1+6) y=Math.max(y,p.y); return y; };
 function render(now){
   const v=view, age=net?Math.min(0.08,(now-viewAt)/1000):0, dt=Math.max(0,Math.min(0.05,(now-(lastRender||now))/1000)); lastRender=now;
-  fitCanvas(); L.setTransform(VS,0,0,VS,0,0); L.clearRect(0,0,960,440); L.fillStyle='#fff'; L.fillRect(0,0,960,440);
+  fitCanvas(); L.setTransform(VS,0,0,VS,OX*VS,0); L.clearRect(-OX,0,VW,440); L.fillStyle='#fff'; L.fillRect(-OX,0,VW,440);
   shake*=Math.exp(-dt*22); if(shake>0.1) L.translate(Math.sin(now*0.112)*shake,Math.cos(now*0.091)*shake*0.35); else shake=0;
   // ground and platforms: plain ink lines, no scenery
-  L.strokeStyle='#111'; L.lineCap='round'; L.lineWidth=4; L.beginPath(); L.moveTo(-10,GY+2); L.lineTo(970,GY+2); L.stroke();
+  L.strokeStyle='#111'; L.lineCap='round'; L.lineWidth=4; L.beginPath(); L.moveTo(-OX-10,GY+2); L.lineTo(970+OX,GY+2); L.stroke();
+  // corner posts mark where the arena ends when the view is wider than it
+  if(OX>12) for(const px of [0,960]){ L.lineWidth=5; L.beginPath(); L.moveTo(px,GY+2); L.lineTo(px,GY-58); L.stroke(); L.lineWidth=3; L.beginPath(); L.moveTo(px,GY-58); L.lineTo(px+(px?-22:22),GY-48); L.lineTo(px,GY-38); L.stroke(); }
   L.lineWidth=5; for(const p of PLATS){ L.beginPath(); L.moveTo(p.x0,GY-p.y+2); L.lineTo(p.x1,GY-p.y+2); L.stroke(); }
   // projectiles
   for(const p of v.pr){
@@ -884,13 +938,13 @@ function render(now){
     else if(e.e==='boom'){ L.strokeStyle=e.el==='none'?'#e2a52d':PEN[e.el]; L.lineWidth=6*(1-a)+1; L.beginPath(); L.arc(e.x,y,e.n*(0.3+0.7*Math.min(1,a*2.2)),0,7); L.stroke();
       L.font='30px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=L.strokeStyle; L.fillText('BOOM',e.x,y-e.n*0.6-a*20); }
   }
-  L.globalAlpha=1; L.setTransform(VS,0,0,VS,0,0);
+  L.globalAlpha=1; L.setTransform(VS,0,0,VS,OX*VS,0);
   // banners
   const banner=(t,size,y,col)=>{ L.font=size+'px "Gochi Hand",cursive'; L.textAlign='center'; L.lineWidth=8; L.strokeStyle='#fffdf6'; L.strokeText(t,480,y); L.fillStyle=col||'#1c2541'; L.fillText(t,480,y); };
   if(v.phase==='draw'){ banner('Round '+v.round+': draw your gear!',40,70);
     const st=s=>NAME[s]+(v.ready[s]?' is ready ✓':' has '+v.items[s].filter(Boolean).length+'/2 drawn'); banner(st(0)+'   ·   '+st(1),22,104,'#59658a'); }
   else if(v.phase==='count') banner(String(Math.max(1,Math.ceil(v.t))),120,200);
-  else if(v.phase==='fight'&&v.t>ROUND_TIME-0.8) banner('FIGHT!',96,190,'#e2552d');
+  else if(v.phase==='fight'&&v.t>ROUND_TIME-0.8&&!v.practice) banner('FIGHT!',96,190,'#e2552d');
   else if(v.phase==='fight'&&v.t<=10) banner(String(Math.ceil(v.t)),44,60,'#e2552d');
   else if(v.phase==='end') banner(v.winner<0?'Draw round!':NAME[v.winner]+' takes the round!',56,180,v.winner<0?'#1c2541':PCOL[v.winner]);
 }
