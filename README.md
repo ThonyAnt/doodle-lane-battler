@@ -12,7 +12,7 @@ Every item gets three stats, shown as bars as soon as it is read: **power**, **r
 
 Big screen: press **Draw on tablets** in the header (or choose Online, then "Use this as the big screen") on a laptop or projector. **Draw here** switches back to drawing and playing on that device. It shows a large join code and then the fight; the first two tablets or phones to scan it are Blue and Red, and they draw and play with the touch buttons.
 
-Keys: A/D move, W jump, S down, J and K use your two drawings. Tap a blade repeatedly for a 3-hit combo; attack while running, in the air, or holding down for other moves. Bows and guns keep firing as you tap, and down + attack is a charged shot. Draw two of the same weapon (twin swords, a pair of pistols) and the fighter holds one in each hand, striking or firing with alternate hands. Second player on one screen: arrows, with , and . to attack. Touch buttons appear under the arena on tablets.
+Keys: A/D move, W jump, S down, J and K use your two drawings. Tap a blade repeatedly for a 3-hit combo; attack while running, in the air, or holding down for other moves. Bows and guns keep firing as you tap, and down + attack is a charged shot. Second player on one screen: arrows, with , and . to attack. Touch buttons appear under the arena on tablets.
 
 ## InkShop: the merged game
 
@@ -84,7 +84,7 @@ The server runs the match; each device only draws and displays, so both players 
 - `index.html`: the whole game (simulation, bot, drawing pads, rendering).
 - `server.js`: serves the page, reads drawings with OpenAI (the key never reaches the browser), and runs online rooms. It loads the match rules from the marked block in `index.html`, so there is one copy of the rules.
 - `duel.html` and `duel-server.js`: Doodle Duel. Same pattern: the rules sit in a marked block in `duel.html` and the server runs that block for online rooms.
-- `anim/`: Doodle Duel animation clips (running, and a move set each for blade, spear, hammer, fists, twin blades, bow, gun, twin pistols, magic staff and thrown weapons) and the engine that plays them; see `anim/README.md`. `anim-lab.html` previews clips and `tools/strip.js` renders them to frame strips.
+- `anim/`: Doodle Duel animation clips (running, and a move set each for blade, spear, hammer, fists, bow, gun, magic staff and thrown weapons) and the engine that plays them; see `anim/README.md`. `anim-lab.html` previews clips and `tools/strip.js` renders them to frame strips.
 - `qrcode.js`: QR Code Generator by Kazuhiko Arase (MIT), used for the join code.
 
 ## Status
