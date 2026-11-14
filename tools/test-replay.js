@@ -41,4 +41,12 @@ test('no seed still varies',()=>new Set([0,1,2,3].map(()=>D.createDuel().seed)).
 test('the dice give numbers from 0 up to 1, the same ones for the same seed',()=>{ const a=D.createDuel({seed:42}), b=D.createDuel({seed:42}), xs=Array.from({length:500},()=>a.rand());
   return xs.every(x=>x>=0&&x<1)&&xs.every(x=>x===b.rand())&&new Set(xs).size>490&&a.seed===42; });
 
+/* ---------- 2. state hash ---------- */
+test('hash is 8 hex digits',()=>{ const h=match(1,5).hash(); return [/^[0-9a-f]{8}$/.test(h),h]; });
+test('equal matches hash equal at every second',()=>{ const a=matchLive(3), b=matchLive(3); for(let s=0;s<40;s++){ stepSecs(a,1); stepSecs(b,1); if(a.hash()!==b.hash()) return [false,s]; } return true; });
+test('one hit point of difference changes the hash',()=>{ const a=match(3,10), h=a.hash(); a.f[0].hp-=1; return a.hash()!==h; });
+test('the hash follows the fight: it changes from second to second and differs between seeds',()=>{ const a=matchLive(3), seen=new Set(); for(let s=0;s<20;s++){ stepSecs(a,1); seen.add(a.hash()); } return [seen.size===20&&match(4,10).hash()!==match(5,10).hash(),seen.size]; });
+test('a shot in the air is part of the hash, and asking for the hash changes nothing',()=>{ const a=match(3,10), h=a.hash(); if(a.hash()!==h) return false;
+  a.pr.push({id:999,k:'shot',side:0,slot:0,x:100,y:50,vx:10,vy:0,dmg:1,el:'none',kb:1,ttl:1,life:1}); const h2=a.hash(); a.pr[a.pr.length-1].x+=0.5; return h2!==h&&a.hash()!==h2; });
+
 console.log(bad?bad+' failed':'all replay tests pass'); process.exit(bad?1:0);
