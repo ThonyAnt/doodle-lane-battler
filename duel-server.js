@@ -9,7 +9,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   const DETAIL=['low','high','auto'].includes(process.env.OPENAI_DETAIL)?process.env.OPENAI_DETAIL:'high';
   const page=path.join(__dirname,'duel.html'), src=fs.readFileSync(page,'utf8');
   const D=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+
-    ';return {createDuel,validItem,localGuess,nameFor,inkCost,stockItem,makeBot,botLoadout,INK_MAX,PAD_W,PAD_H};')();
+    ';return {createDuel,validItem,localGuess,nameFor,inkCost,stockItem,makeBot,botLoadout,INK_MAX,PAD_W,PAD_H,MOVES,KINDS,ELS,FORGE_API,FORGE_LIMITS};')();
 
   /* ---------- reading a drawing ---------- */
   async function askOpenAI(png,strokes){
@@ -37,12 +37,57 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
     return strokes?{spec:D.localGuess(strokes),source:'local guess'}:null;
   }
 
+  /* ---------- RuleForge: match rules written for the items in play ----------
+     Once both sides of a room have an item, a language model is asked for a few small rules about how those items
+     meet. forge.js proves each one in test fights and falls back to built-in rules; what survives is installed in
+     the room's match and sent to its devices (event `forge`). The rules are text from a model: they are parsed,
+     checked and interpreted by forgescript.js and never handed to the JavaScript engine. FORGE=0 switches it all off. */
+  const FORGE_ON=process.env.FORGE!=='0', FORGE_MODEL=process.env.OPENAI_FORGE_MODEL||MODEL;
+  async function askForge(messages,o){
+    try{
+      const r=await fetch(BASE+'/chat/completions',{method:'POST',signal:AbortSignal.timeout(Math.max(1,Math.round((o&&o.timeoutMs)||6000))),
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+KEY},
+        body:JSON.stringify({model:FORGE_MODEL,response_format:{type:'json_object'},max_tokens:700,messages})});
+      const body=await r.json();
+      if(!r.ok) throw new Error((body.error&&body.error.message)||('OpenAI HTTP '+r.status));
+      return body.choices[0].message.content;
+    }catch(e){ console.error('duel forge: the model did not answer:',e.message); throw e; }
+  }
+  const F=require('./forge.js')({D,ForgeScript:require('./forgescript.js'),ask:KEY?askForge:undefined});
+  const forgeSeen=new Map();      // address -> when it last asked POST /duel/forge
+  // What a device is told about a room's rules.
+  const forgeMsg=fg=>fg.state==='done'?{state:'done',ms:fg.ms,rules:fg.rules}:{state:fg.state};
+  // An item of the room has changed (or might have). If anything a rule could see is different, the rules of the old
+  // items go at once and no forge still running for them may install anything (gen); 400 ms after the last change,
+  // with an item on each side, rules for the new ones are forged.
+  function scheduleForge(room){
+    if(!FORGE_ON) return;
+    const fg=room.forge, S=room.sim, items=F.itemsOf(S), key=F.keyOf(items);
+    if(fg.sim===S&&fg.key===key) return;
+    const was=fg.state, gen=++fg.gen; clearTimeout(fg.timer); S.clearRules();
+    Object.assign(fg,{sim:S,key,rules:[],ms:0,state:items.every(row=>row.some(Boolean))?'working':'idle'});
+    if(fg.state!==was) broadcast(room,'forge',forgeMsg(fg));
+    if(fg.state!=='working') return;
+    fg.timer=setTimeout(()=>{
+      F.forgeRules(items).then(out=>{
+        if(fg.gen!==gen||room.sim!==S) return;      // the items changed again, or the match was restarted: these rules are for nothing
+        S.clearRules(); const ids=F.install(S,out.rules);
+        fg.rules=out.rules.map((r,i)=>({id:ids[i],name:r.name,blurb:r.blurb,a:r.a,b:r.b,on:r.on,cooldown:r.cooldown,code:r.code,source:r.source,checks:r.checks})).filter(r=>r.id>0);
+        fg.state='done'; fg.ms=out.ms; S.setHold(0); room.dirty=true; broadcast(room,'forge',forgeMsg(fg));
+        console.log('duel forge',out.ms+'ms',out.calls+' call(s)',fg.rules.map(r=>r.name+' ('+r.source+')').join(', '));
+      });
+    },400);
+  }
+  // A new match in the room: its rules go with the old one.
+  function resetForge(room){ const fg=room.forge, was=fg.state; fg.gen++; clearTimeout(fg.timer); Object.assign(fg,{sim:null,key:'',rules:[],ms:0,state:'idle',held:null}); if(FORGE_ON&&was!=='idle') broadcast(room,'forge',forgeMsg(fg)); }
+
   /* ---------- rooms ---------- */
   const rooms=new Map(), LETTERS='ABCDEFGHJKLMNPQRSTUVWXYZ';
   // bot: Red is played by the game's bot on the server, so one person with a controller can play. skill is its 0 to 1 setting.
   function newRoom(stage,bot,skill){
     let code; do{ code=Array.from({length:4},()=>LETTERS[Math.floor(Math.random()*LETTERS.length)]).join(''); }while(rooms.has(code));
-    const now=Date.now(), room={code,stage:stage==='sheet'?'sheet':'',sim:D.createDuel(stage==='sheet'?{stage:'sheet'}:undefined),art:[[null,null],[null,null]],players:new Map(),watchers:new Set(),clients:new Set(),last:now,sent:0,seen:now,dirty:true,bot:null,skill:Number.isFinite(skill)?Math.max(0,Math.min(1,skill)):0.55};
+    const now=Date.now(), room={code,stage:stage==='sheet'?'sheet':'',sim:D.createDuel(stage==='sheet'?{stage:'sheet'}:undefined),art:[[null,null],[null,null]],players:new Map(),watchers:new Set(),clients:new Set(),last:now,sent:0,seen:now,dirty:true,bot:null,skill:Number.isFinite(skill)?Math.max(0,Math.min(1,skill)):0.55,
+      forge:{sim:null,key:'',gen:0,state:'idle',rules:[],ms:0,timer:null,held:null}};
     if(bot){ room.players.set('(bot)',1); room.bot=D.makeBot(1,()=>room.skill); armBot(room); }
     rooms.set(code,room); return room;
   }
@@ -53,7 +98,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   function armBot(room){
     D.botLoadout().forEach((b,k)=>{ const it=room.sim.setItem(1,k,b.spec,b.cost); if(!it) return;
       room.art[1][k]={strokes:b.strokes,ver:it.ver,kind:it.kind,style:it.style}; for(const c of room.clients) sse(c.res,'item',{side:1,slot:k,strokes:b.strokes,ver:it.ver,kind:it.kind,style:it.style}); });
-    room.dirty=true;
+    room.dirty=true; scheduleForge(room);
   }
   // Who is here: the two seats, and whether a big screen is showing the match (players' devices then act as sketchbook and controller only).
   const roster=room=>({present:present(room),screen:[...room.clients].some(c=>c.watch),bot:!!room.bot});
@@ -66,6 +111,8 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       if(room.heldAt) for(const s of [0,1]) if(room.heldAt[s]&&now-room.heldAt[s]>900){ const b=room.lastIn[s]; room.heldAt[s]=0;
         S.setInput(s,{l:false,r:false,d:false,j:+b.j||0,a:+b.a||0,b:+b.b||0,m:+b.m||0,q:+b.q||0,u:+b.u||0,h:Math.max(0,Math.min(4,b.h|0))}); }
       if(both){ if(room.bot){ room.bot(S,dt); if(S.phase==='draw'&&!S.ready[1]) S.setReady(1); } S.step(dt); }
+      // The countdown has begun and the rules are still being written: it waits for them, once, and four seconds at most (S.setHold).
+      if(S.phase==='count'&&room.forge.state==='working'&&room.forge.held!==S.round){ room.forge.held=S.round; S.setHold(D.FORGE_LIMITS.hold); } else if(S.phase==='draw') room.forge.held=null;
       const live=both&&(S.phase==='count'||S.phase==='fight'||S.phase==='end');
       if(room.clients.size&&((live&&now-room.sent>=15)||room.dirty||now-room.sent>=250)){ broadcast(room,'state',S.snapshot()); room.sent=now; room.dirty=false; }
       if(room.clients.size) room.seen=now; else if(now-room.seen>10*60e3) rooms.delete(room.code);
@@ -108,7 +155,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
     const it=S.setItem(side,slot,spec,D.inkCost(strokes));
     if(!it) return [409,{error:'Too late: the round has started.'}];
     room.art[side][slot]={strokes,ver:it.ver,kind:it.kind,style:it.style}; room.dirty=true;
-    broadcast(room,'item',{side,slot,strokes,ver:it.ver,kind:it.kind,style:it.style});
+    broadcast(room,'item',{side,slot,strokes,ver:it.ver,kind:it.kind,style:it.style}); scheduleForge(room);
     return [200,{name:it.name,kind:it.kind,style:it.style,element:it.el,source}];
   }
 
@@ -132,6 +179,15 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       const out=await readDrawing(await readBody(req,2e6),null);
       out?send(200,Object.assign({source:out.source},out.spec)):send(502,{error:'OpenAI could not read the drawing'}); return true;
     }
+    // Matches played in the page (against the bot there, two on one keyboard) ask here for their rules.
+    if(FORGE_ON&&req.method==='POST'&&p==='/duel/forge'){
+      let body; try{ body=JSON.parse((await readBody(req,8000)).toString('utf8')); }catch(e){ send(400,{error:'Bad request.'}); return true; }
+      const items=F.cleanItems(body&&body.items); if(!items||!items.every(row=>row.some(Boolean))){ send(400,{error:'Two sides with an item each are needed.'}); return true; }
+      const who=req.socket.remoteAddress||'', now=Date.now();
+      if(now-(forgeSeen.get(who)||0)<2000){ send(429,{error:'One forge every two seconds.'}); return true; }
+      forgeSeen.set(who,now); if(forgeSeen.size>2000) for(const [k,t] of forgeSeen) if(now-t>60000) forgeSeen.delete(k);
+      const out=await F.forgeRules(items); send(200,{rules:out.rules,ms:out.ms}); return true;
+    }
     if(req.method==='POST'&&p==='/duel/room'){
       if(rooms.size>=500) send(503,{error:'Too many rooms are open right now.'}); else send(200,{code:newRoom(url.searchParams.get('stage'),url.searchParams.get('bot')==='1',parseFloat(url.searchParams.get('skill'))).code});      // ?stage=sheet: the spreadsheet stage
       return true;
@@ -154,6 +210,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       room.art.forEach((a,s)=>a.forEach((x,slot)=>{ if(x) sse(res,'item',{side:s,slot,strokes:x.strokes,ver:x.ver,kind:x.kind,style:x.style}); }));
       broadcast(room,'players',roster(room));
       if(room.plats) sse(res,'plats',{plats:room.plats});
+      if(FORGE_ON&&room.forge.state!=='idle') sse(res,'forge',forgeMsg(room.forge));      // the rules of the match so far, for a device that joins or comes back late
       sse(res,'state',room.sim.snapshot());
       req.on('close',()=>{
         room.clients.delete(client); broadcast(room,'players',roster(room));
@@ -203,7 +260,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
         const other=S.items[side][1-slot], it=S.setItem(side,slot,made.spec,Math.min(45,D.INK_MAX-(other?other.cost:0)));
         if(!it){ send(409,{error:'Not enough ink left for that.'}); return true; }
         room.art[side][slot]={strokes:made.strokes,ver:it.ver,kind:it.kind,style:it.style}; room.dirty=true;
-        broadcast(room,'item',{side,slot,strokes:made.strokes,ver:it.ver,kind:it.kind,style:it.style});
+        broadcast(room,'item',{side,slot,strokes:made.strokes,ver:it.ver,kind:it.kind,style:it.style}); scheduleForge(room);
         send(200,{name:it.name,kind:it.kind,style:it.style,element:it.el}); return true;
       }
       if(body.type==='tweak'){
@@ -215,12 +272,12 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
         const it=a&&S.tweak(side,slot,ch);
         if(!it){ send(409,{error:'That cannot be changed now.'}); return true; }
         Object.assign(a,{ver:it.ver,kind:it.kind,style:it.style}); room.dirty=true;
-        broadcast(room,'item',{side,slot,strokes:a.strokes,ver:it.ver,kind:it.kind,style:it.style});
+        broadcast(room,'item',{side,slot,strokes:a.strokes,ver:it.ver,kind:it.kind,style:it.style}); scheduleForge(room);
         send(200,{}); return true;
       }
       if(body.type==='ready'){ S.setReady(side); room.dirty=true; send(200,{}); return true; }
       if(body.type==='rematch'){
-        room.sim=D.createDuel(room.stage?{stage:room.stage}:undefined); if(room.layout) room.sim.setLayout(room.layout); else if(room.plats) room.sim.setPlats(room.plats); room.art=[[null,null],[null,null]]; room.dirty=true; broadcast(room,'reset',{}); if(room.bot){ room.bot=D.makeBot(1,()=>room.skill); armBot(room); } send(200,{}); return true;
+        room.sim=D.createDuel(room.stage?{stage:room.stage}:undefined); if(room.layout) room.sim.setLayout(room.layout); else if(room.plats) room.sim.setPlats(room.plats); room.art=[[null,null],[null,null]]; room.dirty=true; broadcast(room,'reset',{}); resetForge(room); if(room.bot){ room.bot=D.makeBot(1,()=>room.skill); armBot(room); } send(200,{}); return true;
       }
       send(400,{error:'Unknown action.'}); return true;
     }

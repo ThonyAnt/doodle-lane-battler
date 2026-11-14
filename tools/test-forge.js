@@ -386,5 +386,88 @@ function mk(replies,opts){
     ok('with no model, four items get three built-in rules that all pass the checks',r.rules.length===3&&r.rules.every(x=>x.source==='built-in'&&Object.values(x.checks).every(Boolean))&&r.rules.filter(x=>x.a.startsWith('blue')).length<=2,r.rules.map(x=>x.name+' '+x.a+'>'+x.b)); }
 }
 
+{ // 8. the server: rooms get their rules, the countdown waits, late clients are told. Child servers on port 3191.
+  const cp=require('child_process'), http=require('http'), os=require('os'), fake=require('./fake-openai.js');
+  const PORT=3191, HOST='http://127.0.0.1:'+PORT, kids=new Set(); process.on('exit',()=>{ for(const k of kids) try{ k.kill('SIGKILL'); }catch(e){} });
+  const until=async(cond,ms)=>{ const t=Date.now(); while(Date.now()-t<ms){ if(cond()) return true; await sleep(20); } return !!cond(); };
+  // node server.js as a child, with the stand-in for the model and no cache file unless one is named. Resolves once it answers.
+  async function serve(env){
+    const e=Object.assign({},process.env,{PORT:String(PORT),OPENAI_API_KEY:'test',FORGE_CACHE:''},env); if(!env||env.FORGE===undefined) delete e.FORGE; delete e.OPENAI_FORGE_MODEL;
+    const child=cp.spawn(process.execPath,[path.join(__dirname,'..','server.js')],{env:e,stdio:'ignore'}); kids.add(child);
+    const up=await until(()=>{ fetch(HOST+'/info').then(r=>{ child.up=r.ok; },()=>{}); return child.up; },5000); if(!up) throw new Error('the server did not start on port '+PORT);
+    child.stop=()=>new Promise(done=>{ child.once('exit',()=>{ kids.delete(child); done(); }); child.kill(); });
+    return child;
+  }
+  const post=async(p,body)=>{ const r=await fetch(HOST+p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})}); let data={}; try{ data=await r.json(); }catch(e){} return Object.assign(data,{status:r.status}); };
+  // One device's event stream: every forge event, the latest state, and when each phase was first seen.
+  function listen(code,id,watch){
+    const got={forge:[],last:null,hello:null,resets:0,seen:{}};
+    const req=http.get(HOST+'/duel/events?room='+code+'&id='+id+(watch?'&watch=1':''),res=>{ let buf=''; res.setEncoding('utf8');
+      res.on('data',d=>{ buf+=d; let i; while((i=buf.indexOf('\n\n'))>=0){ const block=buf.slice(0,i), ev=/^event: (.*)$/m.exec(block), da=/^data: (.*)$/m.exec(block); buf=buf.slice(i+2); if(!ev||!da) continue; const data=JSON.parse(da[1]);
+        if(ev[1]==='state'){ got.last=data; if(!got.seen[data.phase]) got.seen[data.phase]=Date.now(); } else if(ev[1]==='forge') got.forge.push(data); else if(ev[1]==='reset') got.resets++; else if(ev[1]==='hello') got.hello=data; } }); });
+    req.on('error',()=>{}); got.close=()=>req.destroy(); return got;
+  }
+  const act=(R,id,body)=>post('/duel/act',Object.assign({room:R.code,id},body));
+  const open=async bot=>{ const R={code:(await post('/duel/room'+(bot?'?bot=1':''))).code}; R.blue=listen(R.code,'blue'); if(!bot) R.red=listen(R.code,'red'); await until(()=>R.blue.hello&&(bot||R.red.hello),2000); return R; };
+  const arm=async(R,blue,red)=>{ await act(R,'blue',{type:'stock',slot:0,key:blue}); if(red) await act(R,'red',{type:'stock',slot:0,key:red}); };
+  const done=got=>got.forge.filter(e=>e.state==='done'), named=n=>JSON.stringify({rules:[Object.assign({},RACKET,{name:n})]}), good=named('Return Serve');
+
+  { // a room forges once both sides have an item; later clients, a rematch and the page's own route
+    const fk=await fake.start([good,{status:500},{status:500},good]), srv=await serve({OPENAI_BASE_URL:fk.url}), R=await open();      // the model answers the room, fails twice (the changed item, the bot room), then answers the page
+    await arm(R,'sword'); await sleep(600); const early=R.blue.forge.length+fk.bodies.length; await act(R,'red',{type:'stock',slot:0,key:'star'});
+    await until(()=>done(R.blue).length>0&&done(R.red).length>0,4000); const got=R.blue, d=done(got)[0]||{rules:[]};      // both devices have heard
+    ok('both items in: a working event, then the rules',got.forge.length>0&&got.forge[0].state==='working'&&d.rules.length===1&&d.rules[0].code.includes('reflect')&&d.rules[0].source==='ai',got.forge.map(e=>e.state));
+    ok('the server asked the model once with both item names',fk.bodies.length===1&&/Sword/.test(JSON.stringify(fk.bodies[0]))&&/Throwing star/.test(JSON.stringify(fk.bodies[0])));
+    ok('nothing is forged while one side has no item',early===0);
+    ok('the model is asked for JSON, 700 tokens at most, and the rule is sent whole',!!fk.bodies[0]&&d.rules.length===1&&fk.bodies[0].max_tokens===700&&fk.bodies[0].response_format.type==='json_object'&&typeof fk.bodies[0].model==='string'&&fk.bodies[0].messages.length===2
+      &&d.rules[0].id===1&&d.rules[0].name==='Return Serve'&&d.rules[0].a==='blue.0'&&d.rules[0].b==='red.0'&&d.rules[0].on==='swat'&&d.rules[0].cooldown===0.4&&Object.values(d.rules[0].checks).every(Boolean)&&typeof d.ms==='number'&&R.red.forge.length===got.forge.length,{body:fk.bodies[0]&&[fk.bodies[0].max_tokens,fk.bodies[0].response_format,fk.bodies[0].model,fk.bodies[0].messages.length],ms:d.ms,red:R.red.forge.length,blue:got.forge.length});
+    const late=listen(R.code,'late'); await until(()=>late.forge.length>0,1500);
+    ok('a client that connects later is sent the rules',late.forge.some(e=>e.state==='done'&&e.rules.length===1));
+    await act(R,'red',{type:'tweak',slot:0,trait:'flurry'}); await until(()=>done(got).length>1,4000);
+    ok('changing what an item is forges again (here the model fails, so the built-in rules)',done(got).length===2&&fk.bodies.length===2&&done(got)[1].rules.length>=1&&done(got)[1].rules.every(r=>r.source==='built-in'));
+    await act(R,'red',{type:'tweak',slot:0,trait:'boomerang'}); await until(()=>done(got).length>2,4000);
+    ok('the items as they were are answered from memory',done(got).length===3&&fk.bodies.length===2&&done(got)[2].rules[0].name==='Return Serve');
+    const n=got.forge.length; await act(R,'blue',{type:'rematch'}); await until(()=>got.resets===1,1500); await sleep(600); const quiet=got.forge.slice(n).every(e=>e.state==='idle'); await arm(R,'sword','star'); await until(()=>done(got).length>3,4000);
+    ok('after a rematch the rules come back once the items are set again',got.resets===1&&quiet&&done(got).length===4&&done(got)[3].rules[0].name==='Return Serve'&&fk.bodies.length===2,got.forge.slice(n).map(e=>e.state));
+    const B=await open(true); await arm(B,'sword'); await until(()=>done(B.blue).length>0,4000);
+    ok('a bot room forges for the player\'s item against the bot\'s',done(B.blue).length===1&&done(B.blue)[0].rules.length>=1&&done(B.blue)[0].rules.every(r=>/^(blue|red)\.[01]$/.test(r.a)&&r.id>=1));
+    const junk=await post('/duel/forge',{items:'x'}), half=await post('/duel/forge',{items:[[ITEMS[0][0],null],[null,null]]}), page=await post('/duel/forge',{items:ITEMS}), again=await post('/duel/forge',{items:ITEMS});
+    ok('POST /duel/forge answers with verified rules',page.status===200&&page.rules.length>=1&&page.rules.every(r=>r.code&&r.on)&&page.rules[0].source==='ai'&&Object.values(page.rules[0].checks).every(Boolean),page);
+    ok('it wants two sides with an item each, and takes one request per two seconds from an address',junk.status===400&&half.status===400&&again.status===429&&!again.rules);
+    for(const g of [R.blue,R.red,late,B.blue]) g.close(); await srv.stop(); await fk.close();
+  }
+  { // a player changes an item while the model is still writing for the old one
+    const fk=await fake.start([{wait:800,text:named('Stale')},named('Fresh')]), srv=await serve({OPENAI_BASE_URL:fk.url}), R=await open();
+    await arm(R,'sword','star'); await until(()=>fk.bodies.length===1,3000); await sleep(200); await act(R,'blue',{type:'stock',slot:0,key:'spear'}); await sleep(1600);
+    const all=done(R.blue), finalRules=all.length?all[all.length-1].rules:[{name:'Stale'}];
+    ok('changing an item mid-forge installs only the newer rules',finalRules.every(r=>r.name!=='Stale')&&all.length===1&&finalRules.length===1&&finalRules[0].name==='Fresh'&&fk.bodies.length===2&&/Spear/.test(JSON.stringify(fk.bodies[1])),all.map(e=>e.rules.map(r=>r.name)));
+    R.blue.close(); R.red.close(); await srv.stop(); await fk.close();
+  }
+  { // both ready while the model is slow (5 s), or never answers at all
+    const fk=await fake.start([],{then:body=>/Hammer/.test(JSON.stringify(body))?'HANG':{wait:5000,text:good}}), srv=await serve({OPENAI_BASE_URL:fk.url}), R=await open(), H=await open();
+    await arm(R,'sword','star'); await arm(H,'hammer','gun'); for(const X of [R,H]){ await act(X,'blue',{type:'ready'}); await act(X,'red',{type:'ready'}); } const t0=Date.now();
+    await sleep(3500); const phaseAt3500=R.blue.last.phase, heldAt=[R.blue.last.t,H.blue.last.phase]; await sleep(4500); const phaseAt8000=R.blue.last.phase;
+    ok('ready during a slow forge holds the countdown, then the fight starts',phaseAt3500==='count'&&phaseAt8000==='fight',{phaseAt3500,phaseAt8000});
+    const fightR=R.blue.seen.fight-t0, fightH=H.blue.seen.fight-t0, doneR=done(R.blue)[0], doneH=done(H.blue)[0];
+    ok('the fight starts as soon as the rules are in',heldAt[0]===0&&fightR>5000&&fightR<6300&&!!doneR&&doneR.rules[0].source==='ai',{fightR});
+    ok('a model that never answers costs four seconds at most: the round starts with built-in rules',heldAt[1]==='count'&&fightH>6000&&fightH<7500&&H.blue.last.phase==='fight'&&!!doneH&&doneH.rules.length>=1&&doneH.rules.every(r=>r.source==='built-in'),{fightH});
+    for(const g of [R.blue,R.red,H.blue,H.red]) g.close(); await srv.stop(); await fk.close();
+  }
+  { // switched off
+    const offFake=await fake.start([good]), srv=await serve({OPENAI_BASE_URL:offFake.url,FORGE:'0'}), R=await open();
+    await arm(R,'sword','star'); await sleep(1000); const offRun=R.blue, page=await post('/duel/forge',{items:ITEMS});
+    ok('FORGE=0 sends no forge events and asks nothing',offRun.forge.length===0&&offFake.bodies.length===0);
+    await act(R,'blue',{type:'ready'}); await act(R,'red',{type:'ready'}); const t0=Date.now(); await until(()=>R.blue.seen.fight,5000);
+    ok('and then the server is as it was: no forge route, the usual three seconds of countdown',page.status===404&&R.blue.seen.fight-t0>2800&&R.blue.seen.fight-t0<3600&&offRun.forge.length===0,{status:page.status,ms:R.blue.seen.fight-t0});
+    R.blue.close(); R.red.close(); await srv.stop(); await offFake.close();
+  }
+  { // no key on the server: no model to ask
+    const fk=await fake.start([good]), srv=await serve({OPENAI_BASE_URL:fk.url,OPENAI_API_KEY:''}), R=await open();
+    await arm(R,'sword','star'); await until(()=>done(R.blue).length>0,3000); const d=done(R.blue)[0];
+    ok('with no key the built-in rules are there at once',!!d&&d.rules.length>=1&&d.rules.every(r=>r.source==='built-in')&&d.rules[0].name==='Deflect'&&fk.bodies.length===0);
+    R.blue.close(); R.red.close(); await srv.stop(); await fk.close();
+  }
+}
+
 console.log(bad?bad+' failed':'all forge tests pass'); process.exit(bad?1:0);
 })().catch(e=>{ console.log('FAIL the tests themselves broke: '+(e&&e.stack||e)); process.exit(1); });
