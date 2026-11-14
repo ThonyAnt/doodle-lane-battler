@@ -8,8 +8,8 @@ let bad=0; const ok=(name,cond,info)=>{ let c=false; try{ c=typeof cond==='funct
 const compile=code=>{ const p=FS.parse(code); return p.ok?FS.compile(p.ast):null; };
 const item=(key,el)=>Object.assign(D.stockItem(key,el||'none').spec,{power:5,range:5,speed:5,traits:['swift'],trait:'swift'});
 // A whole recorded match between two seeded bots, with the built-in rules for their items installed the way the server does.
-function match(seed,loads,record){
-  const S=D.createDuel({seed,record:!!record}), bots=[D.makeBot(0,()=>0.55,seed+1),D.makeBot(1,()=>0.55,seed+2)];
+function match(seed,loads,record,stage){
+  const S=D.createDuel(Object.assign({seed,record:!!record},stage?{stage}:null)), bots=[D.makeBot(0,()=>0.55,seed+1),D.makeBot(1,()=>0.55,seed+2)];
   loads.forEach((ks,s)=>ks.forEach((k,i)=>S.setItem(s,i,item(k),45)));
   const rules=F.fallbackRules(F.itemsOf(S)), ids=F.install(S,rules);
   S.setReady(0); S.setReady(1);
@@ -27,6 +27,7 @@ const LOADS=[[['sword'],['gun']],[['hammer','shield'],['bow','sword']],[['spear'
   ok('without a compiler the replay leaves the rules out and does not throw',()=>{ const r=D.replayDuel(log); return r.rules.length===0&&r.tickN===m.S.tickN; });
 }
 ok('ten more seeded matches with rules all replay exactly',()=>[21,22,23,24,25,26,27,28,29,30].every((s,i)=>{ const m=match(s,LOADS[i%3],true); return D.replayDuel(JSON.parse(JSON.stringify(m.S.log())),{compile}).hash()===m.S.hash(); }));
+ok('on the spreadsheet stage a recorded match with rules is sound and replays exactly',()=>[31,32,33].every((sd,i)=>{ const m=match(sd,LOADS[i%3],true,'sheet'); return m.S.sane()&&m.S.rules.every(r=>r.faults===0)&&D.replayDuel(JSON.parse(JSON.stringify(m.S.log())),{compile}).hash()===m.S.hash(); }));
 ok('the same seed gives the same match with rules installed, and a rule\'s chance() uses the match\'s own dice',()=>{ const r=Math.random; let n=0; Math.random=()=>{ n++; return r(); }; let a,b; try{ a=match(7,LOADS[1]); b=match(7,LOADS[1]); }finally{ Math.random=r; } return a.S.hash()===b.S.hash()&&n===0; });
 { // the trained CPU's network and the rules, side by side
   const size=D.NET_SHAPE.reduce((n,k,i,a)=>i?n+a[i-1]*k+k:0,0), file=path.join(__dirname,'..','bot-weights.json');
