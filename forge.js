@@ -15,6 +15,9 @@
 // A rule's code is text from a language model. It is only ever parsed, checked and interpreted by ForgeScript: nothing
 // here hands text to the JavaScript engine to run.
 'use strict';
+// Newer OpenAI models (gpt-5 and later, and the o-series) take max_completion_tokens instead of max_tokens, and think
+// before answering unless told not to: the gpt-6 family accepts reasoning_effort 'none', which keeps the answer quick.
+const tokenCap=(model,n)=>/^(gpt-[5-9]|o\d)/.test(model)?Object.assign({max_completion_tokens:n},/^gpt-6/.test(model)?{reasoning_effort:'none'}:null):{max_tokens:n};
 module.exports=function({D,ForgeScript:FS,ask,now,retryMs,onNew}){
   now=now||Date.now;
   const API=D.FORGE_API, FL=D.FORGE_LIMITS, MOVES=D.MOVES||{};
@@ -459,7 +462,7 @@ module.exports.openai=({key,base,model,log})=>async function ask(messages,o){
   try{
     const r=await fetch(base+'/chat/completions',{method:'POST',signal:AbortSignal.timeout(Math.max(1,Math.round((o&&o.timeoutMs)||6000))),
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
-      body:JSON.stringify({model,response_format:{type:'json_object'},max_tokens:700,messages})});
+      body:JSON.stringify(Object.assign({model,response_format:{type:'json_object'},messages},tokenCap(model,700)))});
     const body=await r.json();
     if(!r.ok) throw new Error((body.error&&body.error.message)||('OpenAI HTTP '+r.status));
     return body.choices[0].message.content;
