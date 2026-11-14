@@ -54,6 +54,14 @@ The fighters can play on top of your real desktop instead of in a browser tab. T
 
 Press **Stage** in the header (or open `/duel?stage=sheet`) to fight inside a banker's spreadsheet while he builds a valuation model. The cells he fills in are the platforms. He drags one across, pastes another, deletes a row, then loses his temper and deletes everything, and the `#REF!` errors rain down. Near the end he notices the two of you and comes after you with the cursor: get out of the selection before he presses Delete. It is the same minute every round, so you can learn it. A room made from that page uses the stage for everyone in it.
 
+## Slideshow stage
+
+Press Stage twice (or open `/duel?stage=deck`) to fight inside a founder's pitch deck in "Podium 97". The ledges are whatever is on the slide: placeholder boxes, bullet points, the bars of a revenue chart as they grow, the boxes of an org chart. Each bullet arrives by a different animation effect, named in a yellow tooltip as it happens: one flies in and rams, one drops from the top and stomps, one flashes in and out, one stretches from its middle and pushes outward. On the chart slide an Up Arrow shape throws whoever steps on it into the air, and over the org chart a rainbow WordArt "SYNERGY" becomes a bridge of letters riding a wave. Every time the founder presses Next the whole arena is replaced, and the slide transition itself comes through the stage: a Wipe shoves you along, a Cover Down presses from above, a Checkerboard takes the floor away in patches. Then the chart collapses, clip art is dropped in, the founder notices the fighters and goes after them with the pen, and finally just hammers the space bar. The floating Speaker Notes window says what the founder is thinking, and you can stand on it.
+
+## Making a new scene
+
+The repo carries a Claude Code skill for this, `scene-creation`, in `.claude/skills/scene-creation`. It is a project skill: it comes with the repo, so anyone who opens this folder in Claude Code has it without installing anything. Ask for a new scene, stage or arena (or just describe the program to fight in) and Claude follows it: pitch, a question about an inside joke, research into the real program, a timed script to agree on, then the build. The slideshow stage was made this way.
+
 ## Replays
 
 - **Every knockout is shown again.** When a round ends, the last second before the knockout plays back at a third of the speed under a REPLAY banner, then the next round's drawing begins as usual. The knockout that wins the match is not replayed: the champion screen comes straight up. Add `?ko=0` to the address to switch the replays off (`/duel?ko=0`).
@@ -143,7 +151,7 @@ The server runs the match; each device only draws and displays, so both players 
 | Variable | Default | What it does |
 |---|---|---|
 | `OPENAI_API_KEY` | none | Key used by the server to read drawings |
-| `OPENAI_MODEL` | `gpt-4.1-mini` | Vision model that classifies the drawing |
+| `OPENAI_MODEL` | `gpt-6-luna` | Vision model that classifies the drawing |
 | `PORT` | `3000` | Port the server listens on |
 | `OPENAI_FORGE_MODEL` | `OPENAI_MODEL` | Model that writes the match rules (RuleForge) |
 | `FORGE` | on | `0` switches RuleForge off |

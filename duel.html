@@ -112,6 +112,28 @@ body.retro .overlay h2{margin-bottom:6px}
 body.retro .qr{border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080}
 body.retro .rwin input{border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080}
 body.retro .stock{border-top:1px solid #808080}
+/* The item card (stats, trait, tuning, "not right?") in the old-desktop look. The stats sit in an etched group box and
+   each bar is the old progress bar: a sunken white well filled with solid blocks, in the 16-colour palette (maroon for
+   power, navy for range, green for speed). Applies to the retro desktop and to tablets, which wear the same look. */
+body.retro .card,body.handheld .card{border-top:0;box-shadow:none;padding-top:2px;gap:7px;font:11px Tahoma,Verdana,"Segoe UI",sans-serif;color:#000}
+body.retro .stats,body.handheld .stats{position:relative;margin-top:7px;padding:11px 9px 8px;border:1px solid #808080;box-shadow:1px 1px 0 #fff,inset 1px 1px 0 #fff;display:grid;gap:5px}
+body.retro .stats::before,body.handheld .stats::before{content:"Stats";position:absolute;left:8px;top:-8px;padding:0 4px;background:#c3c3c3;font:11px Tahoma,Verdana,"Segoe UI",sans-serif;color:#000}
+body.retro .stat,body.handheld .stat{grid-template-columns:76px 1fr 30px;gap:8px;font:11px Tahoma,Verdana,"Segoe UI",sans-serif;color:#000}
+body.retro .stat b,body.handheld .stat b{font-weight:700}
+body.retro .sbar,body.handheld .sbar{height:16px;box-sizing:border-box;border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080;box-shadow:inset 1px 1px #404040;background:#fff;padding:2px 2px 1px 3px}
+body.retro .sbar i,body.handheld .sbar i{transition:none;background:repeating-linear-gradient(90deg,#000080 0 8px,transparent 8px 10px)}
+/* whole blocks only: the fill is cut back to a multiple of one block (browsers without round() keep the plain width) */
+body.retro .sbar i,body.handheld .sbar i{width:calc(round(down,var(--w),10px) - 2px)!important}
+body.retro .stat.pw .sbar i,body.handheld .stat.pw .sbar i{background:repeating-linear-gradient(90deg,#800000 0 8px,transparent 8px 10px)}
+body.retro .stat.rg .sbar i,body.handheld .stat.rg .sbar i{background:repeating-linear-gradient(90deg,#000080 0 8px,transparent 8px 10px)}
+body.retro .stat.sp .sbar i,body.handheld .stat.sp .sbar i{background:repeating-linear-gradient(90deg,#008000 0 8px,transparent 8px 10px)}
+body.retro .trait small,body.retro .fix summary,body.handheld .trait small,body.handheld .fix summary{color:#404040;font-size:11px}
+body.retro .trait,body.handheld .trait{padding:4px 8px}
+body.retro .trait[aria-pressed="true"],body.handheld .trait[aria-pressed="true"]{background:#fff;box-shadow:inset 1px 1px #808080}
+body.retro .tune button,body.retro .fix button,body.retro .card .more,body.handheld .tune button,body.handheld .fix button{font:11px Tahoma,Verdana,"Segoe UI",sans-serif}
+body.retro .card .more{border-style:solid;border-width:2px}
+body.retro .fix button[aria-pressed="true"]{background:#000080;color:#fff}
+body.retro .loitem .stat{grid-template-columns:76px 1fr 30px}
 body.retro #rlog{font:11px/1.5 "Courier New",monospace;white-space:nowrap}
 body.retro #rlog .b{color:#1d3fbf} body.retro #rlog .r{color:#b0121f}
 /* Player view, during a fight: a live strip of the arena to draw quick shapes on with a finger or Pencil. */
@@ -297,9 +319,20 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
 /* Spreadsheet stage on the retro desktop: the app window is a spreadsheet program. Its paint tools, colours and timeline go;
    a toolbar, a name box and formula bar, and sheet tabs come in. The grid itself is drawn on the arena canvas. */
 body.sheetstage #inkos .timeline,body.sheetstage #inkos #artboard .stagelabel,body.sheetstage #inkos .toolbox,body.sheetstage #inkos .palette{display:none}
+body.deckstage #inkos .timeline,body.deckstage #inkos #artboard .stagelabel,body.deckstage #inkos .toolbox,body.deckstage #inkos .palette{display:none}
 body.sheetstage #mainwin .titlebar svg{display:none}
+body.deckstage #mainwin .titlebar svg{display:none}
 body.sheetstage #mainwin .titlebar::before{content:"X";font:900 11px/14px Arial,sans-serif;width:14px;height:14px;text-align:center;background:#107c41;color:#fff;flex:none}
+body.deckstage #mainwin .titlebar::before{content:"P";font:900 11px/14px Arial,sans-serif;width:14px;height:14px;text-align:center;background:#b7472a;color:#fff;flex:none}
+/* the two programs share the toolbar holders; each shows only its own rows */
+body.sheetstage .fordeck,body.deckstage .forsheet{display:none!important}
+#pddraw{display:none}
+body.deckstage #pddraw{display:flex;flex:0 0 auto;align-items:center;height:26px;padding:0 2px;border-top:1px solid #fff;overflow:hidden;white-space:nowrap;font:11px Tahoma,Arial,sans-serif;color:#000}
+#pddraw>span{flex:none;min-width:23px;height:22px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;border:1px solid transparent;padding:0 3px}
+#pddraw>span:hover{border-color:#fff #808080 #808080 #fff}
+#pddraw>i{flex:none;width:2px;height:20px;margin:0 3px;border-left:1px solid #808080;border-right:1px solid #fff}
 body.sheetstage #xlbar{display:block;flex:0 0 auto;font:11px Tahoma,Arial,sans-serif;color:#000}
+body.deckstage #xlbar{display:block;flex:0 0 auto;font:11px Tahoma,Arial,sans-serif;color:#000}
 #xlbar .xltools{display:flex;align-items:center;height:26px;padding:0 2px;border-top:1px solid #fff;border-bottom:1px solid #808080;overflow:hidden;white-space:nowrap}
 #xlbar .xltools::before{content:"";flex:none;width:6px;height:20px;margin:0 4px 0 1px;background:linear-gradient(90deg,#fff 0 1px,#c3c3c3 1px 2px,#808080 2px 3px,#fff 3px 4px,#c3c3c3 4px 5px,#808080 5px 6px)}
 #xlbar .xltools>span:not(.xlcombo){flex:none;width:23px;height:22px;display:flex;align-items:center;justify-content:center;border:1px solid transparent;font:13px "Times New Roman",serif}
@@ -317,6 +350,7 @@ body.sheetstage #xlbar{display:block;flex:0 0 auto;font:11px Tahoma,Arial,sans-s
 #xlbar .xlin{flex:1;box-sizing:border-box;background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080;box-shadow:inset 1px 1px #404040;padding:2px 5px 0;height:21px;font:13px Arial,Helvetica,sans-serif;overflow:hidden;white-space:nowrap}
 #xlbar .xlin.mad{color:#b0121f;font-weight:700}
 body.sheetstage #xltabs{display:flex;flex:0 0 18px;height:18px;align-items:stretch;font:11px Tahoma,Arial,sans-serif;color:#000;overflow:hidden}
+body.deckstage #xltabs{display:flex;flex:0 0 18px;height:18px;align-items:stretch;font:11px Tahoma,Arial,sans-serif;color:#000;overflow:hidden}
 #xltabs .xlnav{display:flex;flex:none;margin-right:6px}
 #xltabs u{flex:none;width:16px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;text-decoration:none;font:7px/1 Arial,sans-serif;letter-spacing:-1px;background:#c3c3c3;border:1px solid;border-color:#fff #404040 #404040 #fff;box-shadow:inset -1px -1px #808080}
 #xltabs .xltab{padding:1px 13px;border:1px solid #000;border-top:0;background:#c3c3c3;margin-right:-6px;clip-path:polygon(0 0,100% 0,calc(100% - 7px) 100%,7px 100%)}
@@ -560,7 +594,8 @@ Window titlebars = platforms
 // Health was 100 and the round clock 60 s. Between bots a round then lasted about 23 s and a tenth of them were over in 12 s,
 // which is about when overdrive first fills, so a fighter could die before ever using a hack or an ultimate. With 160 health
 // the same bots take about 41 s (a tenth under 22 s). Damage and overdrive gain are untouched; healing scales with health.
-const AW=960, HP=160, INK_MAX=100, MIN_COST=5, INK_PER_PX=1/24, ROUND_TIME=90, WINS=2, PAD_W=480, PAD_H=300;
+// (Raised again from 160 after play: a round was ending before a scene's minute had played out.)
+const AW=960, HP=208, INK_MAX=100, MIN_COST=5, INK_PER_PX=1/24, ROUND_TIME=90, WINS=2, PAD_W=480, PAD_H=300;
 const PLATS=[{x0:130,x1:330,y:118},{x0:630,x1:830,y:118},{x0:380,x1:580,y:226}];
 const KINDS=['melee','ranged','bomb','shield','dash','heal'], ELS=['none','fire','water','plant'];
 // Every item has power, range and speed. The reader (or the shape of the drawing) says how the item leans, and those
@@ -1047,6 +1082,40 @@ const FORGE_LIMITS={reflect:[0.5,1.5],slow:[0.3,1],turn:[-180,180],shotPower:[0.
   burn:2,soak:2,stun:0.6,heal:8,hurt:8,hpBudget:24,stunBudget:1.5,cooldown:[0.25,5],nearEvery:0.25,nearDist:260,say:18,sayEvery:1.5,faults:3,hold:4};
 // The Math a rule gets: these ten and nothing else of the real one. The two-argument ones take exactly two.
 const FORGE_MATH=Object.freeze({abs:v=>Math.abs(v),sign:v=>Math.sign(v),floor:v=>Math.floor(v),round:v=>Math.round(v),sqrt:v=>Math.sqrt(v),sin:v=>Math.sin(v),cos:v=>Math.cos(v),min:(a,b)=>Math.min(a,b),max:(a,b)=>Math.max(a,b),hypot:(a,b)=>Math.hypot(a,b)});
+// Slideshow stage ("Podium 97"): what is on the four slides, shared by the rules (where fighters can stand) and the page
+// (what is drawn). Heights are above the slide's bottom edge, which is the floor.
+const DECK_H=560, DECK_OF=9;        // how far a slide travels in a Cover Down; the deck's length as the status bar tells it
+const DECK_NO=[1,2,3,7];            // the slide numbers of the four slides the fight sees
+const DECK_BUL=[['Vision',250,470],['Traction (see chart)',190,640],['The ask: $40 million',130,650],['Team',70,420]];      // text, height, right end (they start at x 120)
+const DECK_FX=['Fly From Left','Fly From Top','Flash Once','Stretch Across'];          // the entry effect of each bullet, by the program's own names
+const DECK_BARS=[60,100,150,220,330];                                                       // bar tops; bar i spans x 150+150i to 250+150i
+const DECK_ORG=[[400,560,260,'CEO (me)'],[150,310,170,'VP Vision'],[400,560,170,'VP Synergy'],[650,810,170,'VP Other'],[60,200,80,'Intern'],[290,430,80,'Intern'],[530,670,80,'Intern'],[760,900,80,'Intern']];
+// The ledges of slide s in build state B (how far each bullet has flown in, how tall each bar is, and so on). The floating
+// Speaker Notes window is a ledge on every slide.
+function deckLayout(s,B,t){
+  const out=[{id:'nw',x0:720,x1:945,y:360,wx:720,k:'notes'}], P=(id,x0,x1,y,k,lb,p)=>out.push({id,x0,x1,y,wx:x0,k,lb,p});
+  if(s===0){ P('t0',180,780,205,'ph','title'); P('t1',280,680,105,'ph','sub'); }
+  else if(s===1){ P('ah',110,430,330,'head','Agenda');
+    // Each bullet arrives by a different entry effect (DECK_FX), and each effect is a different thing to be standing near.
+    DECK_BUL.forEach((b,i)=>{ const p=B.bul[i], x0=120, x1=b[2], y=b[1]; if(!(p>0)) return;
+      if(i===0){ const sh=-(1-p)*(x1+60); P('a0',x0+sh,x1+sh,y,'bul',b[0],p); }                                   // Fly From Left: shoots across
+      else if(i===1){ const u=1-Math.sqrt(1-p); P('a1',x0,x1,y+(1-u*u)*520,'bul',b[0],p); }                       // Fly From Top: drops, gathering speed
+      else if(i===2){ if(p>=0.5) P('a2',x0,x1,y,'bul',b[0],1); }                                                  // Flash Once: there, then not
+      else{ const c=(x0+x1)/2, hw=(x1-x0)/2*p; if(hw>8) P('a3',c-hw,c+hw,y,'bul',b[0],p); } }); }                 // Stretch Across: grows from its middle
+  else if(s===2){ B.bars.forEach((y,i)=>{ if(y>6) P('c'+i,150+i*150,250+i*150,y,'bar',i); }); }
+  else{ DECK_ORG.forEach((o,i)=>{ if(i>3&&B.cut) return; const d=i===1?B.drag:0; P('o'+i,o[0]+30*d,o[1]+30*d,o[2]+90*d,'org',o[3]); });
+    if(B.wa) for(let i=0;i<7;i++) P('w'+i,80+i*86,158+i*86,340+24*Math.sin((t||0)*2.6+i*0.8),'wa','SYNERGY'[i]); }      // WordArt: seven letters riding a wave
+  return out;
+}
+// A slide transition at progress u (0 to 1): is the point (x, height y) showing the NEW slide yet? The names are the
+// program's own: Wipe Right, Cover Down, Checkerboard Across, Dissolve.
+function deckCover(k,u,x,y,seed){
+  if(u>=1) return true; if(u<=0) return false;
+  if(k==='wipe') return x<u*960;
+  if(k==='cover') return y>(1-u)*DECK_H;
+  if(k==='checker') return u>=0.5||((Math.floor(x/120)+Math.floor(y/90))&1)===0;
+  const v=Math.sin((Math.floor(x/60)*12.9898+Math.floor(y/60)*78.233+seed)*437.585453); return u>v-Math.floor(v);      // dissolve
+}
 function createDuel(opts){
   if(opts&&opts.record) opts=viaJSON(opts);       // a recorded match keeps its own copy of what it was made with (see S.log)
   let acc=0, nextId=1; const STEP=1/120, r1=round1;
@@ -1205,6 +1274,7 @@ function createDuel(opts){
   S.ult=-1; S.ultT=0; S.ultDmg=0;
   const ultLock=()=>{ for(const f of S.f) if(casting(f)&&f.hp>0) return f.side; const p=S.pr.find(p=>p.tr==='fleet'); return p?p.side:-1; };
   S.sheet=(opts&&opts.stage==='sheet')?{}:null;        // the spreadsheet stage (see sheetTick)
+  S.deck=(opts&&opts.stage==='deck')?{}:null;          // the slideshow stage (see deckTick)
   S.inkLeft=side=>Math.round(INK_MAX-S.items[side].reduce((n,it)=>n+(it?it.cost:0),0));
   S.width=()=>W; S.board=()=>BOARD;      // where the walls are: read by the trained opponent (botFeatures)
   S.setItem=(side,k,spec,cost)=>{
@@ -1234,7 +1304,7 @@ function createDuel(opts){
   // Replace the platforms mid-match (the desktop overlay does this as real windows move). Platforms may carry an id and
   // wx, the left edge of the thing they belong to: a fighter standing on one is carried along when it moves, and falls
   // if it is no longer under their feet.
-  S.setPlats=list=>{ if(!S.sheet) applyPlats(list); };     // on the spreadsheet stage the banker owns the platforms
+  S.setPlats=list=>{ if(!S.sheet&&!S.deck) applyPlats(list); };     // on a scene (spreadsheet, slideshow) the scene owns the platforms
   function applyPlats(list){
     const old=PL; PL=list;
     for(const f of S.f){
@@ -1575,6 +1645,7 @@ function createDuel(opts){
     S.bins=[];
     S.objs=[]; S.fields=[]; S.groups=[null,null]; S.hack=null; S.effects=[]; S.broken=null; S.breached=false; S.cells=boardCells(BOARD); fx('clear',{});
     if(S.sheet) sheetReset();
+    if(S.deck) deckReset();
     if(!BOARD) return;
     const b=BOARD, w=b.x1-b.x0, fl=-b.floor;
     const sk=(x0,x1,y)=>{ const pts=INK.densify([{x:x0,y},{x:x1,y:y+rand(-2,2)}],6).map(p=>({x:p.x,y:p.y+rand(-1.2,1.2)})); addObj({kind:'platform',x:x0,y,w:x1-x0,strokes:[pts],color:'#8a8f99',life:Infinity}); };
@@ -1585,8 +1656,8 @@ function createDuel(opts){
     if(!L) return; const idle=S.phase==='draw'||S.phase==='count'||S.practice;
     if(L.plats) S.setPlats(L.plats);
     if(!idle&&S.cells.length) return;                                   // the board is not rebuilt in the middle of a fight
-    if(L.w&&!S.sheet) W=Math.max(600,L.w);
-    const b=S.sheet?null:L.board; BOARD=b&&b.x1-b.x0>300&&b.top-b.floor>180?{x0:rr(b.x0),x1:rr(b.x1),floor:Math.max(0,rr(b.floor)),top:rr(b.top)}:null;
+    if(L.w&&!S.sheet&&!S.deck) W=Math.max(600,L.w);
+    const b=S.sheet||S.deck?null:L.board; BOARD=b&&b.x1-b.x0>300&&b.top-b.floor>180?{x0:rr(b.x0),x1:rr(b.x1),floor:Math.max(0,rr(b.floor)),top:rr(b.top)}:null;
     S.f=[fresh(0),fresh(1)]; S.pr=[]; resetWorld();
   };
   const addObj=o=>{ o.id=oid++; S.objs.push(o);
@@ -1794,6 +1865,120 @@ function createDuel(opts){
     for(const f of S.f){ f.buf[0]=f.buf[1]=0; f.jq=0; f.mbuf=0; if(f.act&&!f.ground) f.act=null; control(f,dt); }
     S.inp=keep;
   }
+  /* -- Slideshow stage ("Podium 97"). A founder is rehearsing a pitch and the fight happens on the slide. The ledges are
+        what is on the slide: placeholder boxes, bullet lines that fly in, chart bars that grow, the boxes of an org chart.
+        Pressing Next replaces the whole arena through a slide transition, and the transition itself moves through the
+        stage: a Wipe shoves, a Cover Down presses, a Checkerboard and a Dissolve take the floor away in patches. Later
+        the chart collapses, clip art is dropped in, the founder notices the fighters and goes after them with the pen,
+        then gives up and hammers the space bar: slides change faster and faster, each with a random transition.
+        The acts are a script; inside them, chance decides (which transition, which slide, who the pen picks). -- */
+  const deckFresh=()=>({typed:0,bul:[0,0,0,0],bars:[0,0,0,0,0],drag:0,cut:0,act:0,pad:0,wa:0});
+  const deckFull=()=>({typed:2,bul:[1,1,1,1],bars:DECK_BARS.slice(),drag:1,cut:0,act:0,pad:1,wa:1});
+  const tip=(h,text)=>{ h.tip=[text,h.t]; };      // the yellow tooltip at the pointer: what the founder just reached for
+  const dnote=(h,m,x,y)=>{ h.msg=m; h.said=h.t; if(x!==undefined) h.aim={x,y}; };
+  const tween=(h,k,i,to,dur)=>h.tw.push({o:h.B,k,i,from:i===undefined?h.B[k]:h.B[k][i],to,t0:h.t,dur});
+  const deckGo=(h,to,k,dur,B)=>{ h.tr={k,to,B,t0:h.t,dur,u:0,seed:Math.floor(RNG()*997),px:0,hit:[0,0]}; tip(h,'Slide Transition: '+{wipe:'Wipe Right',checker:'Checkerboard Across',cover:'Cover Down',dissolve:'Dissolve'}[k]); fx('slide',{to,k}); };
+  const CLIP=[[[0,20],[30,20],[30,50],[0,50]],[[100,20],[70,20],[70,50],[100,50]],[[30,28],[45,22],[58,26],[70,30]],[[30,44],[46,50],[60,46],[70,42]],[[44,24],[42,46]],[[52,25],[50,48]],[[60,27],[58,47]]];
+  const MASH=['random transition. apply to all. APPLY TO ALL.','next. next. NEXT.','why is it going backwards','space bar space bar space bar','this is fine. this is a feature.','any questions? no? great.'];
+  const DSCRIPT=[
+    [0,   h=>{ dnote(h,'ok. series A. 9am. you are a visionary.',480,170); }],
+    [1.4, h=>{ h.B.typed=1; dnote(h,'Spoonr.com. say it with confidence.',480,170); }],
+    [2.8, h=>{ h.B.typed=2; h.aim={x:480,y:80}; }],
+    [4,   h=>{ deckGo(h,1,'wipe',0.9,deckFresh()); dnote(h,'slide 2. agenda. breathe.',270,300); }],
+    [6,   h=>{ tween(h,'bul',0,1,0.2); tip(h,DECK_FX[0]); h.aim={x:300,y:230}; }],
+    [7.2, h=>{ tween(h,'bul',1,1,0.3); tip(h,DECK_FX[1]); dnote(h,'vision. traction. the ask.',380,170); }],
+    [7.5, h=>{ fx('quake',{x:380,y:DECK_BUL[1][1],n:150}); fx('puff',{x:380,yd:-DECK_BUL[1][1],col:'#667',n:10}); }],
+    [8.4, h=>{ h.B.bul[2]=1; h.fl=h.t; tip(h,DECK_FX[2]); h.aim={x:380,y:110}; }],
+    [9.3, h=>{ h.B.bul[2]=0; dnote(h,'where did the ask go'); }],
+    [9.6, h=>{ tween(h,'bul',3,1,0.35); tip(h,DECK_FX[3]); h.aim={x:270,y:50}; }],
+    [10.1,h=>{ h.B.bul[2]=1; h.fl=h.t; }],
+    [10.9,h=>{ h.B.bul[2]=0; }],
+    [11.5,h=>{ h.B.bul[2]=1; h.fl=h.t; dnote(h,'(do NOT mention the lawsuit)'); }],
+    [13,  h=>{ deckGo(h,2,'checker',0.9,deckFresh()); dnote(h,'everyone loves a chart.',200,40); }],
+    [15,  h=>{ tip(h,'Insert Chart'); tween(h,'bars',0,DECK_BARS[0],1.1); h.aim={x:200,y:40}; }],
+    [16.2,h=>{ tween(h,'bars',1,DECK_BARS[1],1.1); h.aim={x:350,y:60}; }],
+    [17.4,h=>{ tween(h,'bars',2,DECK_BARS[2],1.1); dnote(h,'up and to the right.',500,90); }],
+    [18,  h=>{ h.B.pad=1; tip(h,'AutoShapes: Up Arrow'); h.aim={x:908,y:30}; }],
+    [18.6,h=>{ tween(h,'bars',3,DECK_BARS[3],1.1); }],
+    [19.8,h=>{ tween(h,'bars',4,DECK_BARS[4],1.1); h.aim={x:800,y:200}; }],
+    [21,  h=>{ tween(h,'bars',4,640,1.7); dnote(h,'year 5: $900 billion. conservative.',800,300); }],
+    [23,  h=>{ tip(h,'Edit Data'); h.tw=[]; [34,22,40,16,0].forEach((y,i)=>tween(h,'bars',i,y,0.35)); h.B.act=1; dnote(h,'why does that say ACTUALS. who put actuals in here',500,60); fx('quake',{x:rr(W/2),y:0,n:260}); }],
+    [26,  h=>{ deckGo(h,3,'cover',1.1,Object.assign(deckFull(),{drag:0,wa:0})); dnote(h,'next slide next slide'); }],
+    [28.5,h=>{ dnote(h,'meet the team.',480,240); }],
+    [30,  h=>{ tip(h,'Drag and Drop'); tween(h,'drag',undefined,1,1.4); dnote(h,'promoting VP Vision. morale.',250,200); }],
+    [33,  h=>{ tip(h,'Delete'); h.B.cut=1; dnote(h,'we are a flat organization. as of right now.',480,60); }],
+    [35,  h=>{ tip(h,'Insert Clip Art'); const x=clamp(430+rand(-180,180),80,780); addObj({kind:'crate',solid:true,dyn:true,x,y:-540,w:100,h:70,vx:0,vy:0,local:CLIP.map(st=>st.map(p=>({x:p[0],y:p[1]}))),color:'#1c2541',life:20}); dnote(h,'people trust a handshake.',x+50,120); }],
+    [36.5,h=>{ h.B.wa=1; tip(h,'Insert WordArt'); dnote(h,'synergy. in rainbow. investors love rainbow.',380,300); }],
+    [38.5,h=>{ dnote(h,'...is that clip art MOVING? i did not insert stick men'); }],
+    [40,  h=>{ tip(h,'Pen'); h.pen={side:S.f[0].hp===S.f[1].hp?(RNG()<0.5?0:1):S.f[0].hp>S.f[1].hp?0:1,t:0,n:0,caged:0,x:0,y:0}; dnote(h,'pen tool. PEN TOOL.'); }],
+    [46,  h=>{ h.pen=null; h.mash={t:2.2,per:3,n:0}; dnote(h,MASH[0]); }]
+  ];
+  function deckReset(){
+    const h=S.deck={t:0,i:0,s:0,B:deckFresh(),tr:null,tw:[],msg:'',said:0,cur:{x:520,y:300},aim:null,pen:null,mash:null,tip:null,fl:-9,bp:{},bh:{},pc:[0,0]};
+    while(h.i<DSCRIPT.length&&DSCRIPT[h.i][0]<=0){ DSCRIPT[h.i][1](h); h.i++; }
+    applyPlats(deckLayout(0,h.B,0));
+  }
+  // The ledges while a transition runs: the old slide's where it still shows, the new slide's where it shows already.
+  function deckMix(T,old,nw){
+    const out=[], drop=T.k==='cover'?(1-T.u)*DECK_H:0, cuts=[]; for(let x=60;x<960;x+=60) cuts.push(x); if(T.k==='wipe') cuts.push(T.u*960);
+    const add=(p,isNew)=>{
+      if(p.k==='notes'){ if(!isNew) out.push(p); return; }                 // the notes window floats above the slide; transitions pass under it
+      const y=p.y+(isNew?drop:0), xs=cuts.filter(x=>x>p.x0&&x<p.x1).concat([p.x0,p.x1]).sort((a,b)=>a-b); let seg=null, n=0;
+      for(let i=0;i<xs.length-1;i++){ const a=xs[i], c=xs[i+1]; if(c-a<1){ continue; }
+        if(deckCover(T.k,T.u,(a+c)/2,isNew?y-drop+0.5:y-0.5,T.seed)===isNew){ if(seg&&Math.abs(seg.x1-a)<0.01) seg.x1=c; else{ n++; seg=Object.assign({},p,{id:p.id+(n>1?'.'+n:''),x0:a,x1:c,y}); out.push(seg); } }
+        else seg=null; } };
+    for(const p of old) add(p,false); for(const p of nw) add(p,true); return out;
+  }
+  function deckTick(dt){
+    const h=S.deck; h.t+=dt; if(S.practice&&h.t>=75){ deckReset(); return; }
+    while(h.i<DSCRIPT.length&&h.t>=DSCRIPT[h.i][0]){ DSCRIPT[h.i][1](h); h.i++; }
+    for(const w of h.tw){ const u=clamp((h.t-w.t0)/w.dur,0,1), v=w.from+(w.to-w.from)*(1-(1-u)*(1-u)); if(w.i===undefined) w.o[w.k]=v; else w.o[w.k][w.i]=v; w.done=u>=1; }
+    h.tw=h.tw.filter(w=>!w.done);
+    let list=deckLayout(h.s,h.B,h.t);
+    if(h.tr){
+      const T=h.tr; T.u=clamp((h.t-T.t0)/T.dur,0,1); list=deckMix(T,list,deckLayout(T.to,T.B,h.t));
+      // Wipe Right: the edge takes along whoever it passes
+      if(T.k==='wipe'){ const X=T.u*W; for(const f of S.f) if(f.hp>0&&f.x>T.px&&f.x<=X){ f.vx=Math.max(f.vx,460); if(f.ground){ f.vy=250; f.ground=false; } } T.px=X; }
+      // Cover Down: the new slide comes down like a press; whoever is standing under its edge is hit once, anyone in the air is pushed down
+      if(T.k==='cover'){ const edge=(1-T.u)*DECK_H; for(const f of S.f){ if(f.hp<=0||f.y>=edge||f.y+92*f.scale<=edge) continue;
+          if(!f.ground) f.vy=Math.min(f.vy,-320); else if(!T.hit[f.side]){ T.hit[f.side]=1; hurt(f,6,'none',0,0,null,f.x,0.15,undefined,'slam'); } } }
+      if(T.u>=1){ h.s=T.to; h.B=T.B; h.tr=null; list=deckLayout(h.s,h.B,h.t); }
+    }
+    applyPlats(list);
+    // Bullets act on whoever is in the way as they arrive: the one that flies in rams, the one that drops in stomps, the
+    // one that stretches pushes outward from both ends. Each can catch a fighter once.
+    if(h.s===1&&!h.tr){ const band=(f,y)=>f.y<y+2&&f.y+92*f.scale>y-38;
+      for(const p of list){ if(p.k!=='bul') continue; const q=h.bp[p.id]; h.bp[p.id]={x0:p.x0,x1:p.x1,y:p.y}; if(!q) continue;
+        for(const f of S.f){ if(f.hp<=0||h.bh[p.id+f.side]) continue; let hit=0; const head=f.y+86*f.scale;
+          if(p.id==='a0'&&p.x1>q.x1+0.5&&f.x>q.x1-14&&f.x<=p.x1+14&&band(f,p.y)){ hit=1; hurt(f,4,'none',600,200,null,p.x1-40,0.14,undefined,'slam'); }
+          else if(p.id==='a1'&&p.y<q.y-0.5&&f.x>p.x0-8&&f.x<p.x1+8&&head<=q.y&&head>p.y){ hit=1; hurt(f,5,'none',0,-460,null,f.x,0.16,undefined,'slam'); }
+          else if(p.id==='a3'&&band(f,p.y)){
+            if(p.x0<q.x0-0.5&&f.x>p.x0-14&&f.x<q.x0+14){ hit=1; hurt(f,3,'none',-500,170,null,p.x0+40,0.12,undefined,'thud'); }
+            else if(p.x1>q.x1+0.5&&f.x<p.x1+14&&f.x>q.x1-14){ hit=1; hurt(f,3,'none',500,170,null,p.x1-40,0.12,undefined,'thud'); } }
+          if(hit){ h.bh[p.id+f.side]=1; fx('spark',{x:rr(f.x),yd:rr(-(f.y+50)),col:'#000080'}); } } } }
+    // The AutoShape on the chart slide: an Up Arrow on the floor that throws whoever steps on it into the air.
+    if(h.s===2&&!h.tr&&h.B.pad) for(const f of S.f){ h.pc[f.side]=Math.max(0,h.pc[f.side]-dt);
+      if(f.hp>0&&f.ground&&f.y<3&&f.x>866&&f.x<950&&h.pc[f.side]<=0){ h.pc[f.side]=0.5; f.vy=1000; f.ground=false; f.jumps=1; fx('puff',{x:rr(f.x),yd:0,col:'#3a9',n:8}); } }
+    // the pen: it follows a fighter, fences them in with two strokes, crosses them out, and turns to the other one
+    if(h.pen){ const q=h.pen, f=S.f[q.side]; q.t+=dt;
+      if(q.t<0.9) h.aim={x:f.x,y:f.y+60};
+      else if(!q.caged){ q.caged=1; q.x=f.x; q.y=f.y;
+        for(const sx of [-54,54]){ const x=clamp(q.x+sx,14,W-14), top=-(q.y+104); addObj({kind:'wall',solid:true,x:x-5,y:top,w:10,h:104,strokes:[[{x:x+3,y:top},{x:x-3,y:top+52},{x:x+2,y:top+104}]],color:'#c1121f',life:1.9}); } }
+      else if(q.t>=1.6){
+        if(f.hp>0&&Math.abs(f.x-q.x)<62&&Math.abs(f.y-q.y)<76) hurt(f,8,'none',(RNG()<0.5?-1:1)*220,300,null,q.x,undefined,undefined,'slam');
+        fx('penx',{x:rr(q.x),y:rr(q.y+50)}); q.t=0; q.caged=0; q.n++; q.side=1-q.side; if(q.n>=3) h.pen=null; } }
+    // the finale: the space bar, harder and harder
+    if(h.mash&&!h.tr){ const m=h.mash; m.t+=dt;
+      if(m.t>=m.per){ m.t=0; m.per=Math.max(1.5,m.per-0.25); m.n++; let to=Math.floor(RNG()*4); if(to===h.s) to=(to+1)%4;
+        const k=['wipe','checker','cover','dissolve'][Math.floor(RNG()*4)]; deckGo(h,to,k,k==='cover'?1:0.75,deckFull()); dnote(h,MASH[m.n%MASH.length]); } }
+    if(h.aim){ const sp=900*dt; h.cur.x+=clamp(h.aim.x-h.cur.x,-sp,sp); h.cur.y+=clamp(h.aim.y-h.cur.y,-sp,sp); }
+  }
+  function deckView(){
+    const h=S.deck; if(!h||h.t===undefined) return null;
+    const r2=v=>Math.round(v*100)/100, r3=v=>Math.round(v*1000)/1000, B=b=>({typed:b.typed,bul:b.bul.map(r3),bars:b.bars.map(rr),drag:r2(b.drag),cut:b.cut,act:b.act,pad:b.pad,wa:b.wa}), T=h.tr;
+    return {t:r1(h.t),s:h.s,B:B(h.B),tr:T&&{k:T.k,to:T.to,u:+T.u.toFixed(3),seed:T.seed,B:B(T.B)},msg:h.msg,said:r1(h.said),cur:[rr(h.cur.x),rr(h.cur.y)],
+      pen:h.pen&&{side:h.pen.side,on:h.pen.caged,x:rr(h.pen.x),y:rr(h.pen.y)},mash:h.mash?1:0,tip:h.tip&&[h.tip[0],r1(h.tip[1])],fl:r1(h.fl)};
+  }
   function tick(dt){
     if(S.phase==='over'){ S.overT=(S.overT||0)+dt; if(S.overT<4) settle(dt); return; }
     if(S.practice){
@@ -1828,7 +2013,7 @@ function createDuel(opts){
       S.time+=dt; SOL=solids();
       if(S.rules.length) ruleStep(dt);
       for(const f of S.f) control(f,dt);
-      projectiles(dt,-1); world(dt); if(S.sheet) sheetTick(dt);
+      projectiles(dt,-1); world(dt); if(S.sheet) sheetTick(dt); if(S.deck) deckTick(dt);
     }
     const a=S.f[0], b=S.f[1], d0=a.hp<=0, d1=b.hp<=0;
     if(!S.practice&&(d0||d1||S.t<=0)){
@@ -1839,7 +2024,7 @@ function createDuel(opts){
   }
   S.step=dt=>{ acc+=Math.min(0.25,dt); while(acc>=STEP){ acc-=STEP; tick(STEP); S.tickN++; } };
   S.snapshot=()=>({phase:S.phase,t:+S.t.toFixed(2),round:S.round,wins:S.wins,ready:S.ready,winner:S.winner,champ:S.champ,ink:[S.inkLeft(0),S.inkLeft(1)],practice:S.practice,hs:S.phase==='fight'&&S.stop>0?1:0,ul:S.phase==='fight'&&S.ult>=0?[S.ult,+S.ultT.toFixed(2)]:null,
-    w:W,board:BOARD,sheet:sheetView(),broken:S.broken&&{t:r1(S.broken.t),hole:S.broken.hole},breached:S.breached,cells:S.cells.filter(c=>c.hp<2&&c.side!=='c').map(c=>[c.id,c.hp]),
+    w:W,board:BOARD,sheet:sheetView(),deck:deckView(),broken:S.broken&&{t:r1(S.broken.t),hole:S.broken.hole},breached:S.breached,cells:S.cells.filter(c=>c.hp<2&&c.side!=='c').map(c=>[c.id,c.hp]),
     objs:S.objs.map(o=>[o.id,r1(o.x),r1(o.y),o.life===Infinity?-1:r1(o.life)]),fields:S.fields.map(q=>({a:q.a,b:q.b,u:q.u,life:r1(q.life),max:q.max,col:q.col})),
     hack:S.hack&&{by:S.hack.by,target:S.hack.target,name:S.hack.def.name,desc:S.hack.def.desc,t:+S.hack.t.toFixed(2),max:S.hack.max,counter:S.hack.counter},
     fxs:S.effects.map(e=>({by:e.by,target:e.target,counter:e.counter,name:e.name})),
@@ -1870,6 +2055,7 @@ function createDuel(opts){
     return fnv1a(out.join(','));
   };
   if(S.sheet) sheetReset();
+  if(S.deck) deckReset();
   // Every way into the match from outside. Each one rolls this match's dice for as long as the call lasts (see RNG).
   // A new method that changes the match from outside must be added to this list.
   // With record:true each command is also written to the log on its way in (see the notes above replayDuel). Only what
@@ -2334,7 +2520,7 @@ const DESK=new URLSearchParams(location.search).has('desk'), DESK_SCALE=1.15, ho
 // bars are the platforms. It shares the overlay's machinery; only the backdrop and where the window edges come from differ.
 // Tablets and phones keep the plain layout, and ?plain=1 turns it off.
 // ?stage=sheet plays on the spreadsheet stage. On the retro desktop the sheet is the document open in the app window.
-const STAGE=new URLSearchParams(location.search).get('stage')==='sheet'?'sheet':'';
+const STAGE=(st=>st==='sheet'||st==='deck'?st:'')(new URLSearchParams(location.search).get('stage'));      // 'sheet' spreadsheet, 'deck' slideshow, '' the desktop
 // /moves is the move tester: this page in practice mode with a panel of buttons, one for every move and ultimate.
 const LAB=location.pathname==='/moves';
 // duel?replay=CODE watches a room's match again (see setReplay). It always uses the plain layout, whatever the stage was.
@@ -2351,16 +2537,17 @@ const deskSc=()=>RETRO?1:deskStage?Math.min(1.6,innerWidth/960):DESK_SCALE;
 // Spreadsheet stage on the retro desktop: the 960-wide sheet is fitted into the app window's canvas area (its art board),
 // with the floor on that area's bottom edge. k is screen pixels per game unit. sheetLive follows the match being shown,
 // so a device that joins a spreadsheet room lays it out the same way.
-let sheetLive=false;
-const sheetOn=()=>!!(STAGE||sheetLive), sheetEmb=()=>RETRO&&sheetOn(), SHEET_GUT=30;      // SHEET_GUT: the row-number column down the left
+let sheetLive=false, deckLive=false;
+// Which scene is showing: what the match says once there is one, the page's own setting until then.
+const sceneKind=()=>sheetLive?'sheet':deckLive?'deck':STAGE, sheetOn=()=>sceneKind()==='sheet', deckOn=()=>sceneKind()==='deck', sceneOn=()=>!!sceneKind(), sheetEmb=()=>RETRO&&sceneOn(), SHEET_GUT=30;      // SHEET_GUT: the row-number column down the left
 function sheetBox(){
-  const b=document.querySelector('#artboard').getBoundingClientRect(), k=Math.max(0.3,Math.min((b.width-6)/(960+SHEET_GUT),(b.height-6)/(GY+2)));
-  return {k,left:b.left+(b.width-(960+SHEET_GUT)*k)/2+SHEET_GUT*k,bottom:b.bottom-3,top:b.top+3};
+  const b=document.querySelector('#artboard').getBoundingClientRect(), gut=deckOn()?0:SHEET_GUT, k=Math.max(0.3,Math.min((b.width-6)/(960+gut),(b.height-6)/(GY+2)));      // only the spreadsheet has a row-number column
+  return {k,left:b.left+(b.width-(960+gut)*k)/2+gut*k,bottom:b.bottom-3,top:b.top+3,l0:b.left+3,r0:b.right-3};
 }
 // Real windows as terrain. The overlay app reports the visible top edges of the other apps' windows in screen pixels;
 // here they become platforms in game units. They replace the stage's fixed platforms.
 function deskTerrain(){
-  if(!deskLike()||!deskEdges||sheetOn()) return;      // on the spreadsheet stage the banker's cells are the only platforms
+  if(!deskLike()||!deskEdges||sceneOn()) return;      // on the spreadsheet stage the banker's cells are the only platforms
   if(typeof net!=='undefined'&&net&&!net.watch) return;      // a player in someone else's room uses that room's terrain
   fitCanvas(); const sc=deskSc(), out=[];
   for(const e of deskEdges){
@@ -2657,7 +2844,7 @@ function updateDesk(d){
 // The three stats mean something different for things that are not weapons, so they are named for what they do.
 const STAT_NAMES={melee:['Power','Range','Speed'],ranged:['Power','Range','Speed'],bomb:['Power','Blast size','Reload'],
   shield:['Block time','Mobility','Recharge'],dash:['Impact','Distance','Recharge'],heal:['Healing','Helpings','Recharge']};
-const statBars=it=>['pw','rg','sp'].map((k,n)=>[k,(STAT_NAMES[it.kind]||STAT_NAMES.melee)[n]]).map(([k,l])=>`<div class="stat ${k}"><span>${l}</span><div class="sbar"><i style="width:${Math.round(it[k]*100/9)}%"></i></div><b>${it[k].toFixed(1)}</b></div>`).join('');
+const statBars=it=>['pw','rg','sp'].map((k,n)=>[k,(STAT_NAMES[it.kind]||STAT_NAMES.melee)[n]]).map(([k,l])=>`<div class="stat ${k}"><span>${l}</span><div class="sbar"><i style="width:${Math.round(it[k]*100/9)}%;--w:${Math.round(it[k]*100/9)}%"></i></div><b>${it[k].toFixed(1)}</b></div>`).join('');
 const FIXES=[['melee','blade','Sword'],['melee','spear','Spear or whip'],['melee','hammer','Hammer'],['melee','fist','Fists'],['melee','dual','Twin blades'],['ranged','bow','Bow'],['ranged','gun','Gun'],['ranged','akimbo','Twin guns'],['ranged','staff','Magic'],['ranged','hurl','Thrown'],['bomb','','Bomb'],['shield','','Shield'],['dash','','Speed'],['heal','','Healing']];
 function cardHTML(it,locked,showStock){
   const off=locked?'disabled':'', weapon=it.kind==='melee'||it.kind==='ranged';
@@ -2823,8 +3010,9 @@ function setMode(m){
 }
 $('modeBot').onclick=()=>setMode('bot'); $('mode2p').onclick=()=>setMode('2p'); $('modeOnline').onclick=()=>setMode('online'); $('modePractice').onclick=()=>setMode('practice');
 $('playBot').onclick=()=>startMatch(true); $('playPvp').onclick=()=>startMatch(false);
-$('stageBtn').textContent=STAGE?'Stage: spreadsheet':'Stage: desktop'; $('stageBtn').setAttribute('aria-pressed',!!STAGE);
-$('stageBtn').onclick=()=>{ const q=new URLSearchParams(location.search); if(STAGE) q.delete('stage'); else q.set('stage','sheet'); location.href=location.pathname+(q.toString()?'?'+q:''); };
+const STAGES=['','sheet','deck'], STAGE_NAME={'':'desktop',sheet:'spreadsheet',deck:'slideshow'};      // the Stage button steps through the scenes
+$('stageBtn').textContent='Stage: '+STAGE_NAME[STAGE]; $('stageBtn').setAttribute('aria-pressed',!!STAGE); $('stageBtn').title='Change the scene: desktop, spreadsheet, slideshow';
+$('stageBtn').onclick=()=>{ const q=new URLSearchParams(location.search), nx=STAGES[(STAGES.indexOf(STAGE)+1)%STAGES.length]; if(nx) q.set('stage',nx); else q.delete('stage'); location.href=location.pathname+(q.toString()?'?'+q:''); };
 $('restart').onclick=()=>{ if(net) post({type:'rematch'}); else setMode(mode); };
 
 /* ---------- replay viewer (duel?replay=CODE) ---------- */
@@ -2890,7 +3078,7 @@ function replayShow(want){
   if(S!==rep.S){ rep.S=S; wobj.clear(); wPending[0]=[]; wPending[1]=[]; }      // the match was started again: nothing drawn is left over
   if(jump){ v.ev=replayWorld(v.ev); fx=[]; ultFx=null; ultEnd=null; ultPops=[]; ultDmg[0]=ultDmg[1]=null; shake=0; FXI.S.parts=[]; FXI.S.floats=[]; resetAnim(); }
   repQuiet=jump; try{ accept(v); }finally{ repQuiet=false; }
-  ARENA_W=v.w||960; if(!v.sheet) ARENA_PLATS=S.plats();
+  ARENA_W=v.w||960; if(!v.sheet&&!v.deck) ARENA_PLATS=S.plats();
   for(const c of replayArt(v.items,art.map(a=>a.map(x=>x?x.ver:null)),rep.byVer)) setArt(c.side,c.slot,c.art?c.art.strokes:null,c.ver,c.item&&c.item.kind,c.item&&c.item.style);
   rep.shown=want;
 }
@@ -3046,6 +3234,7 @@ function accept(v){
     if(e.e==='ult'){ ultFx={side:e.side,name:e.name||'ULTIMATE',sub:e.sub||'',slot:e.slot|0,intro:e.intro||0.85,t0:now}; ultEnd=null; shake=Math.max(shake,10*soft); FXI.ring(e.x,-(e.y+60),PCOL[e.side]); FXI.burst(e.x,-(e.y+60),PCOL[e.side],22); }
     if(e.e==='ultend') ultEnd={side:e.side,x:e.x,y:e.y,n:e.n,t0:now};
     if(e.e==='zip') FXI.spark(e.x,-e.y,PCOL[e.side]);
+    if(e.e==='penx'){ shake=Math.max(shake,8); deckXs.push({x:e.x,y:e.y,t0:performance.now()}); }
     if(e.e==='del'){ shake=Math.max(shake,12); sheetDels.push({x:e.x,y:e.y,t0:performance.now()}); }
     if(e.e==='hit'&&navigator.vibrate&&local[e.side]&&navigator.userActivation&&navigator.userActivation.hasBeenActive) navigator.vibrate(30);
   }
@@ -3053,6 +3242,7 @@ function accept(v){
   const seen=new Set(); for(const [id,x,y,life] of v.objs||[]){ seen.add(id); const o=wobj.get(id); if(o){ o.x=x; o.y=y; o.life=life<0?Infinity:life; } }
   for(const id of wobj.keys()) if(!seen.has(id)) wobj.delete(id);
   if(net&&!net.watch&&v.w){ ARENA_W=v.w; }
+  deckLive=!!v.deck; if(v.deck){ ARENA_PLATS=[]; ARENA_W=960; }      // on the slideshow stage the ledges are drawn as the slide's own contents
   sheetLive=!!v.sheet; if(v.sheet){ ARENA_PLATS=v.sheet.plats; ARENA_W=960; }      // on the spreadsheet stage the rules own the platforms
   sfxHear(view,v);
   view=v; viewAt=performance.now();
@@ -3177,6 +3367,12 @@ function retroBuild(){
       +'<div class="xltools">'+combo('Arial',128)+combo('10',42)+tb('<b>B</b> <em>I</em> <u>U</u> | al ac ar merge | cur pct comma dec0 dec1 | border fill ink')+'</div>'
       +'<div class="xlfx">'+combo('A1',96,'xlname')+'<span class="xlbtns"><span class="x">✕</span><span class="ok">✓</span><span>=</span></span><span class="xlin" id="xlin"></span></div></div>');
     ab.insertAdjacentHTML('afterend','<div id="xltabs"><span class="xlnav">'+nav('|◀ ◀ ▶ ▶|')+'</span><span class="xltab">Assumptions</span><span class="xltab on">DCF</span><span class="xltab">Comps</span><span class="xltab">Sheet4</span><span class="xlscroll"><u>◀</u><i></i><u>▶</u></span></div>');
+    // The slideshow program's rows go in the same holders; a class on each row says whose it is.
+    for(const id of ['xlbar','xltabs']) for(const el of $(id).children) el.classList.add('forsheet');
+    $('xlbar').insertAdjacentHTML('beforeend','<div class="xltools fordeck">'+tb('new open save | print spell | cut copy paste brush | undo redo | link chart draw |')+combo('46%',58)+tb('help')+'</div>'
+      +'<div class="xltools fordeck">'+combo('Times New Roman',150)+combo('24',42)+tb('<b>B</b> <em>I</em> <u>U</u> <b>S</b> | al ac ar | \u2261 \u2630 | A\u2191 A\u2193')+'</div>');
+    $('xltabs').insertAdjacentHTML('beforeend','<span class="xlnav fordeck" title="Slide View, Outline View, Slide Sorter View, Notes Page View, Slide Show">'+nav('\u25ad \u2261 \u25a6 \u25a4 \u25b7')+'</span><span class="xlscroll fordeck"><u>\u25c0</u><i></i><u>\u25b6</u></span>');
+    $('xltabs').insertAdjacentHTML('afterend','<div id="pddraw"><span>D<u>r</u>aw \u25be</span><i></i><span>\u2196</span><span>\u21bb</span><i></i><span>A<u>u</u>toShapes \u25be</span><i></i><span>\u2572</span><span>\u2192</span><span>\u25ad</span><span>\u25ef</span><span>\u25a4</span><span><b>A</b></span><i></i><span>\u25a7</span><span>\u2571</span><span><u>A</u></span><i></i><span>\u2261</span><span>\u2504</span><span>\u21c4</span><span>\u25aa</span><span>\u25eb</span></div>');
     if(STAGE) FXI.setTool('pencil'); }
   document.querySelector('#hint').textContent='A D move \u00b7 W jump \u00b7 J K attack \u00b7 L mine \u00b7 mouse draws (B R O) \u00b7 Q hack';
   // His rig sliders drive the spring layer over this game's clips (anim/rig.js). They start gentler than his defaults,
@@ -3263,8 +3459,9 @@ function retroSync(menu){
   document.querySelectorAll('#hacks > div').forEach((d,i)=>d.classList.toggle('sel',i===FXI.hackSel));
   const mtxt='Mode: '+({bot:'Player vs CPU',practice:'Practice','2p':'2 players',online:bigScreen?'Big screen':'Online'}[mode])+' \u00b7 NetLink: '+(net?'room '+net.code+(net.line?' \u00b7 '+linkText(net.line.stats()):''):'local sim');      // the link: which one, round trip, jitter, kB/s arriving
   if(Q('#st-net').textContent!==mtxt) Q('#st-net').textContent=mtxt;
-  const sh=sheetOn(); document.body.classList.toggle('sheetstage',sh);
-  Q('#inkos .titlebar span').textContent=(sh?'Granola Sheets 97 \u2014 Anthropik_IPO_model_v7_FINAL_final(2).xls  [':'InkShop 2.0 \u2014 arena.ink  [')+mtxt.slice(6).split(' \u00b7 ')[0]+']';
+  const sh=sceneOn(), dk=deckOn(); document.body.classList.toggle('sheetstage',sh&&!dk); document.body.classList.toggle('deckstage',dk);
+  if(dk&&v.deck){ const st=Q('#st-tool'), txt='Slide '+DECK_NO[v.deck.tr?v.deck.tr.to:v.deck.s]+' of '+DECK_OF; if(st&&st.textContent!==txt) st.textContent=txt; }
+  Q('#inkos .titlebar span').textContent=(dk?'Podium 97 \u2014 SeriesA_pitch_v12_REAL_final.ppt  [':sh?'Granola Sheets 97 \u2014 Anthropik_IPO_model_v7_FINAL_final(2).xls  [':'InkShop 2.0 \u2014 arena.ink  [')+mtxt.slice(6).split(' \u00b7 ')[0]+']';
   if(++rTick%8) return;
   // layout: the board and arena size when they change (only between fights), window edges whenever they move
   const board=retroBoard(), w=Math.round(innerWidth/deskSc()), lay=JSON.stringify([w,board]);
@@ -3609,6 +3806,133 @@ function worldFront(v,now){
   L.restore();
 }
 const shadowY=f=>{ let y=0; for(const p of ARENA_PLATS) if(f.y>=p.y-1&&f.x>=p.x0-6&&f.x<=p.x1+6) y=Math.max(y,p.y); return y; };
+/* ---------- slideshow stage ("Podium 97") ----------
+   Researched for the look (late-1990s presentation program): the five view buttons sit at the lower left beside the
+   horizontal scroll bar (Slide, Outline, Slide Sorter, Notes Page, Slide Show); transition names are the program's own
+   (Wipe Right, Cover Down, Checkerboard Across, Dissolve); placeholders are dashed boxes reading "Click to add title".
+   Sources: CSUN "PowerPoint 97/98 Basics" pages 4 and 6; Microsoft Knowledge Base Q162385 (effect names).
+   From memory, not confirmed against a screenshot: the toolbar contents, the drawing toolbar's order, the status text
+   "Slide 3 of 9", and the floating Speaker Notes window. Names, the logo letter and all slide content are invented. */
+const deckXs=[], DECK_F='"Times New Roman",Times,serif';
+// Where the slide sits on the canvas: its top edge, the grey workspace around it, and the size of one screen pixel.
+function deckGeom(){
+  const emb=RETRO, bx=emb?sheetBox():null, top=emb?Math.min(0,GY+2-(bx.bottom-bx.top)/bx.k):0;
+  return {top,wl:emb?(bx.l0-bx.left)/bx.k:-OX,wr:emb?(bx.r0-bx.left)/bx.k:VW-OX,px:emb?1/bx.k:1,st:top+(emb?14:24)};
+}
+// One slide, in build state B. Every ledge from deckLayout is drawn as the thing it is; fighters stand on its top edge.
+function deckSlide(s,B,g,h){
+  const px=g.px, P=deckLayout(s,B,h.t), Y=y=>GY-y;
+  L.fillStyle='#fff'; L.fillRect(0,g.st,960,GY+2-g.st); L.textBaseline='top'; L.textAlign='left'; L.lineJoin='miter';
+  if(s===0){
+    for(const p of P){ if(p.k!=='ph') continue;
+      const big=p.lb==='title', hh=big?76:50, done=B.typed>=(big?1:2), txt=big?(done?'Spoonr.com':'Click to add title'):(done?'The Internet. But for spoons.':'Click to add sub-title');
+      L.save(); L.setLineDash([5*px,4*px]); L.lineWidth=px; L.strokeStyle='#808080'; L.strokeRect(p.x0,Y(p.y),p.x1-p.x0,hh); L.restore();
+      L.fillStyle='#000'; L.fillRect(p.x0,Y(p.y),p.x1-p.x0,2.5);                                  // the top edge is the shelf fighters stand on
+      if(B.typed===(big?1:2)&&h.s===0){ L.fillStyle='#fff'; L.strokeStyle='#000'; L.lineWidth=px;      // the box being typed in is selected: sizing handles
+        for(const hx of [p.x0,(p.x0+p.x1)/2,p.x1]) for(const hy of [Y(p.y),Y(p.y)+hh/2,Y(p.y)+hh]){ if(hx===(p.x0+p.x1)/2&&hy===Y(p.y)+hh/2) continue; L.fillRect(hx-4,hy-4,8,8); L.strokeRect(hx-4,hy-4,8,8); } }
+      L.font=(done&&big?'bold ':'')+(big?52:28)+'px '+DECK_F; L.textAlign='center'; L.fillStyle=done?'#000':'#808080'; L.fillText(txt,(p.x0+p.x1)/2,Y(p.y)+(big?12:11)); }
+  }else if(s===1){
+    for(const p of P){
+      if(p.k==='head'){ L.font='bold 46px '+DECK_F; L.textAlign='left'; L.fillStyle='#000080'; L.fillText('Agenda',p.x0+10,Y(p.y)+2); L.fillRect(p.x0,Y(p.y)+56,330,3); }
+      if(p.k==='bul'){ const yy=Y(p.y), i=+p.id.slice(1), full=DECK_BUL[i][2]-120, w=p.x1-p.x0, moving=p.p<1, c=(p.x0+p.x1)/2;
+        if(i===2&&h.t-h.fl<0.22&&!CALM){ L.fillStyle='#ffff66'; L.fillRect(p.x0-14,yy-12,w+28,64); }                 // Flash Once: it flashes as it shows
+        L.fillStyle='#000080'; L.fillRect(p.x0,yy,w,2.5);                                                             // the shelf: the top edge of the line's text box
+        L.save(); L.setLineDash([3*px,3*px]); L.strokeStyle='#a0a8b8'; L.lineWidth=px; L.strokeRect(p.x0,yy,w,40); L.restore();
+        L.save(); if(i===3&&moving){ L.translate(c,0); L.scale(Math.max(0.03,w/full),1); L.translate(-c,0); }          // Stretch Across: the words stretch with it
+        L.font='32px '+DECK_F; L.fillStyle='#000'; L.textAlign='left'; L.fillText('\u2022  '+p.lb,(i===3?c-full/2:p.x0)+4,yy+4); L.restore();
+        if(moving&&!CALM){ L.fillStyle='#606878';
+          if(i===0) for(let k=0;k<6;k++) L.fillRect(p.x0-46-k*40,yy+5+k*6,30+k*8,2.5);                                  // Fly From Left: streaks trailing behind
+          if(i===1) for(let k=0;k<6;k++) L.fillRect(p.x0+30+k*(w-60)/5,yy-44-(k%2)*22,2.5,34);                         // Fly From Top: streaks above
+          if(i===3){ L.font='bold 22px Arial,sans-serif'; L.textAlign='center'; L.fillText('\u25c0',p.x0-16,yy+8); L.fillText('\u25b6',p.x1+16,yy+8); } } } }
+  }else if(s===2){
+    L.font='bold 30px '+DECK_F; L.fillStyle='#000080'; L.fillText('Revenue ($ millions)',120,Math.max(g.st+12,Y(400)));
+    L.font='13px Arial,sans-serif'; L.textAlign='right'; L.lineWidth=px;
+    for(let y=60;y<=300;y+=60){ L.strokeStyle='#c0c0c0'; L.beginPath(); L.moveTo(110,Y(y)); L.lineTo(900,Y(y)); L.stroke(); L.fillStyle='#000'; L.fillText(String(y*3),104,Y(y)-7); }
+    L.strokeStyle='#000'; L.lineWidth=2*px; L.beginPath(); L.moveTo(110,Y(340)); L.lineTo(110,GY); L.lineTo(900,GY); L.stroke();
+    for(const p of P){ if(p.k!=='bar') continue;
+      L.fillStyle=B.act?'#800000':'#000080'; L.fillRect(p.x0,Y(p.y),p.x1-p.x0,p.y); L.strokeStyle='#000'; L.lineWidth=px; L.strokeRect(p.x0,Y(p.y),p.x1-p.x0,p.y);
+      if(p.y>34){ L.fillStyle='#fff'; L.textAlign='center'; L.font='bold 14px Arial,sans-serif'; L.fillText('Yr '+(p.lb+1),(p.x0+p.x1)/2,GY-22);
+        L.fillStyle='#fff'; L.font='bold 15px Arial,sans-serif'; L.fillText('$'+Math.round(p.y*3)+'M',(p.x0+p.x1)/2,Y(p.y)+8); } }
+    if(B.pad){ const bx=908, b0=GY, bob=CALM?0:Math.sin(h.t*9)*3;                                                    // AutoShapes: Up Arrow. Step on it and it throws you up
+      L.beginPath(); L.moveTo(bx,b0-72-bob); L.lineTo(bx+42,b0-34-bob); L.lineTo(bx+18,b0-34-bob); L.lineTo(bx+18,b0); L.lineTo(bx-18,b0); L.lineTo(bx-18,b0-34-bob); L.lineTo(bx-42,b0-34-bob); L.closePath();
+      L.fillStyle='#00cc99'; L.fill(); L.strokeStyle='#000'; L.lineWidth=1.5*px; L.stroke();
+      if(!CALM){ L.strokeStyle='#00cc99'; L.lineWidth=3; const u=(h.t*1.6)%1; L.globalAlpha=1-u; L.beginPath(); L.moveTo(bx-24,b0-86-u*46); L.lineTo(bx,b0-106-u*46); L.lineTo(bx+24,b0-86-u*46); L.stroke(); L.globalAlpha=1; } }
+    if(B.act){ L.fillStyle='#c00000'; L.font='bold 36px '+DECK_F; L.textAlign='center'; L.fillText('ACTUALS',505,Y(170)); }
+  }else{
+    L.font='bold 30px '+DECK_F; L.fillStyle='#000080'; L.fillText('Our Team',40,Math.max(g.st+12,Y(440)));
+    const bx={}; for(const p of P) if(p.k==='org') bx[p.id]=p;
+    L.strokeStyle='#000'; L.lineWidth=1.5*px;
+    const link=(a,b)=>{ const A=bx[a], C=bx[b]; if(!A||!C) return; const ax=(A.x0+A.x1)/2, ay=Y(A.y)+40, cx=(C.x0+C.x1)/2, cy=Y(C.y), my=(ay+cy)/2; L.beginPath(); L.moveTo(ax,ay); L.lineTo(ax,my); L.lineTo(cx,my); L.lineTo(cx,cy); L.stroke(); };
+    link('o0','o1'); link('o0','o2'); link('o0','o3'); link('o1','o4'); link('o2','o5'); link('o2','o6'); link('o3','o7');
+    for(const p of P){ if(p.k!=='org') continue;
+      L.fillStyle='#808080'; L.fillRect(p.x0+4,Y(p.y)+4,p.x1-p.x0,40); L.fillStyle=p.id==='o0'?'#ffffcc':'#fff'; L.fillRect(p.x0,Y(p.y),p.x1-p.x0,40); L.strokeRect(p.x0,Y(p.y),p.x1-p.x0,40);
+      L.fillStyle='#000'; L.font='15px Arial,sans-serif'; L.textAlign='center'; L.fillText(p.lb,(p.x0+p.x1)/2,Y(p.y)+12); }
+    // WordArt: fat slanted letters in a rainbow, each one a ledge riding the wave
+    for(const p of P){ if(p.k!=='wa') continue; const i=+p.id.slice(1), cx=(p.x0+p.x1)/2, yy=Y(p.y), tilt=Math.cos(h.t*2.6+i*0.8)*0.1;
+      L.save(); L.translate(cx,yy); L.rotate(-tilt); L.font='italic 900 78px "Arial Black",Impact,sans-serif'; L.textAlign='center'; L.textBaseline='top';
+      const gr=L.createLinearGradient(0,4,0,70); gr.addColorStop(0,'#ff2a2a'); gr.addColorStop(0.25,'#ffb000'); gr.addColorStop(0.5,'#ffee00'); gr.addColorStop(0.75,'#22bb44'); gr.addColorStop(1,'#2244dd');
+      L.fillStyle='#808080'; L.fillText(p.lb,5,3); L.fillStyle=gr; L.fillText(p.lb,0,-2); L.lineWidth=2; L.strokeStyle='#000'; L.strokeText(p.lb,0,-2); L.restore(); }
+  }
+}
+// The floating Speaker Notes window: the founder's thoughts, typed as they have them. Its top is a ledge on every slide.
+function deckNotes(h,g,now){
+  const x=720, w=225, y=GY-360, hh=104, px=g.px, n=DECK_NO[h.tr?h.tr.to:h.s];
+  L.save(); L.fillStyle='rgba(0,0,0,.3)'; L.fillRect(x+4,y+4,w,hh);
+  L.fillStyle='#c3c3c3'; L.fillRect(x,y,w,hh); L.fillStyle='#fff'; L.fillRect(x,y,w,px); L.fillRect(x,y,px,hh); L.fillStyle='#404040'; L.fillRect(x,y+hh-px,w,px); L.fillRect(x+w-px,y,px,hh);
+  const gr=L.createLinearGradient(x,0,x+w,0); gr.addColorStop(0,'#000080'); gr.addColorStop(1,'#1084d0'); L.fillStyle=gr; L.fillRect(x+3,y+3,w-6,18);
+  L.fillStyle='#fff'; L.font='bold 12px Tahoma,Arial,sans-serif'; L.textBaseline='middle'; L.textAlign='left'; L.fillText('Speaker Notes - Slide '+n,x+8,y+12.5);
+  L.fillStyle='#c3c3c3'; L.fillRect(x+w-21,y+5,15,14); L.fillStyle='#fff'; L.fillRect(x+w-21,y+5,15,px); L.fillRect(x+w-21,y+5,px,14); L.fillStyle='#404040'; L.fillRect(x+w-21,y+19-px,15,px); L.fillRect(x+w-6-px,y+5,px,14);
+  L.fillStyle='#000'; L.font='bold 11px Arial,sans-serif'; L.textAlign='center'; L.fillText('\u00d7',x+w-13.5,y+12);
+  L.fillStyle='#fff'; L.fillRect(x+6,y+26,w-12,hh-33); L.fillStyle='#808080'; L.fillRect(x+6,y+26,w-12,px); L.fillRect(x+6,y+26,px,hh-33);
+  const typed=h.msg.slice(0,Math.max(0,Math.floor((h.t-h.said)*40))), caret=typed.length<h.msg.length||Math.floor(now/400)%2?'|':'';
+  L.fillStyle='#000'; L.font='13px Arial,Helvetica,sans-serif'; L.textAlign='left'; L.textBaseline='top';
+  const words=(typed+caret).split(' '), lines=['']; for(const wd of words){ const t=lines[lines.length-1]+(lines[lines.length-1]?' ':'')+wd; if(L.measureText(t).width>w-26&&lines[lines.length-1]) lines.push(wd); else lines[lines.length-1]=t; }
+  lines.slice(-4).forEach((t,i)=>L.fillText(t,x+11,y+30+i*16));
+  L.restore();
+}
+function deckBack(v,now){
+  const h=v.deck, g=deckGeom(), px=g.px, T=h.tr, bot=GY+2, hgt=bot-g.st;
+  L.save();
+  L.fillStyle='#808080'; L.fillRect(g.wl,g.top,g.wr-g.wl,bot-g.top);                        // the grey workspace around the slide
+  L.fillStyle='#000'; L.fillRect(960,g.st+4,4,hgt-4);                                       // the slide's shadow
+  // While a transition runs the old slide shows where the new one has not reached yet. The shapes are the same ones
+  // the rules use for the ledges (deckCover).
+  const clipTo=isNew=>{ L.beginPath();
+    if(T.k==='wipe'){ const X=T.u*960; if(isNew) L.rect(0,g.st,X,hgt); else L.rect(X,g.st,960-X,hgt); }
+    else if(T.k==='cover'){ const e=Math.max(g.st,GY-(1-T.u)*DECK_H); if(isNew) L.rect(0,g.st,960,e-g.st); else L.rect(0,e,960,bot-e); }
+    else{ const cw=T.k==='checker'?120:60, ch=T.k==='checker'?90:60;
+      for(let c=0;c*cw<960;c++) for(let r=0;GY-r*ch>g.st;r++) if(deckCover(T.k,T.u,c*cw+cw/2,r*ch+ch/2,T.seed)===isNew) L.rect(c*cw,GY-(r+1)*ch,cw,ch+(r?0:2)); }
+    L.clip(); };
+  L.save(); L.beginPath(); L.rect(0,g.st,960,hgt); L.clip();
+  if(!T) deckSlide(h.s,h.B,g,h);
+  else{
+    L.save(); clipTo(false); deckSlide(h.s,h.B,g,h); L.restore();
+    L.save(); clipTo(true); if(T.k==='cover') L.translate(0,-(1-T.u)*DECK_H); deckSlide(T.to,T.B,g,h); L.restore();
+    L.fillStyle='#000';
+    if(T.k==='wipe'){ const X=T.u*960; L.fillRect(X-px,g.st,2*px,hgt);
+      if(!CALM){ L.fillStyle='rgba(0,0,128,.45)'; for(let k=0;k<9;k++){ const yy=g.st+20+k*(hgt-40)/8; L.fillRect(X-26-((k*37)%60),yy,22+((k*53)%40),3); }
+        L.fillStyle='#000080'; L.font='bold 20px Arial,sans-serif'; L.textBaseline='middle'; L.textAlign='left'; for(let k=0;k<4;k++) L.fillText('\u25b6',X+4,g.st+60+k*(hgt-120)/3); } }
+    if(T.k==='cover'){ const e=GY-(1-T.u)*DECK_H; L.fillRect(0,e,960,2*px); L.fillStyle='rgba(0,0,0,.25)'; L.fillRect(0,e+2*px,960,6); }
+  }
+  L.restore();
+  L.strokeStyle='#000'; L.lineWidth=px; L.strokeRect(0,g.st,960,hgt);
+  deckNotes(h,g,now);
+  L.restore();
+}
+function deckFront(v,now){
+  const h=v.deck; L.save();
+  for(let i=deckXs.length-1;i>=0;i--){ const d=deckXs[i], a=(now-d.t0)/600; if(a>=1){ deckXs.splice(i,1); continue; }
+    L.strokeStyle='#c1121f'; L.globalAlpha=1-a*a; L.lineWidth=7; L.lineCap='round'; const r=46, cy=GY-d.y;
+    L.beginPath(); L.moveTo(d.x-r,cy-r); L.lineTo(d.x+r,cy+r); L.moveTo(d.x+r,cy-r); L.lineTo(d.x-r,cy+r); L.stroke(); }
+  L.globalAlpha=1;
+  const cx=h.cur[0], cy=GY-h.cur[1];
+  if(h.tip&&h.t-h.tip[1]<1.9){ L.save(); L.font='13px Tahoma,Arial,sans-serif'; const tw=L.measureText(h.tip[0]).width+12, tx=Math.max(4,Math.min(956-tw,cx+14)), ty=Math.min(GY-24,cy+26);      // the yellow tooltip: what was just used
+    L.fillStyle='#000'; L.fillRect(tx+2,ty+2,tw,20); L.fillStyle='#ffffe1'; L.fillRect(tx,ty,tw,20); L.strokeStyle='#000'; L.lineWidth=1; L.strokeRect(tx+0.5,ty+0.5,tw-1,19); L.fillStyle='#000'; L.textBaseline='middle'; L.textAlign='left'; L.fillText(h.tip[0],tx+6,ty+10.5); L.restore(); }
+  if(h.pen){ L.translate(cx,cy); L.rotate(0.6); L.fillStyle='#c1121f'; L.strokeStyle='#000'; L.lineWidth=1.2; L.lineJoin='round';      // the pen, nib at the pointer
+    L.beginPath(); L.moveTo(0,0); L.lineTo(6,-13); L.lineTo(6,-54); L.lineTo(-6,-54); L.lineTo(-6,-13); L.closePath(); L.fill(); L.stroke(); L.fillStyle='#000'; L.beginPath(); L.moveTo(0,0); L.lineTo(2.4,-5); L.lineTo(-2.4,-5); L.closePath(); L.fill(); }
+  else sheetArrow(cx,cy,2);
+  L.restore();
+}
 /* ---------- spreadsheet stage ---------- */
 // The banker's sheet: a formula bar showing what he is typing, column and row headings, faint figures that keep changing,
 // and the cells he has filled in (the platforms) in spreadsheet green.
@@ -3861,15 +4185,15 @@ function render(now){
   const v=koView||view, age=net&&!v.hs&&!koView&&(v.phase==='fight'||v.phase==='end')?Math.min(0.08,(now-viewAt)/1000):0, dt=Math.max(0,Math.min(0.05,(now-(lastRender||now))/1000)); lastRender=now;
   fitCanvas(); L.setTransform(1,0,0,1,0,0); L.clearRect(0,0,cv.width,cv.height); L.setTransform(VS,0,0,VS,OX*VS,OY);
   if(!deskLike()){ L.fillStyle='#fff'; L.fillRect(-OX,VTOP,VW,440-VTOP); }
-  if(v.sheet) sheetBack(v,now);
+  if(v.sheet) sheetBack(v,now); else if(v.deck) deckBack(v,now);
   shake*=Math.exp(-dt*22); if(shake>0.1&&impactLive(now)){ /* the impact frame is held dead still; the jolt comes when it drops */ } else if(shake>0.1) L.translate(Math.sin(now*0.112)*shake,Math.cos(now*0.091)*shake*0.35); else shake=0;
   // ground and platforms: plain ink lines, no scenery
   L.strokeStyle='#111'; L.lineCap='round'; L.lineWidth=DESK?3:4; if(RETRO) L.globalAlpha=0; L.beginPath(); L.moveTo(-OX-10,GY+2); L.lineTo(ARENA_W+10+OX,GY+2); L.stroke(); L.globalAlpha=1;
   // corner posts mark where the arena ends when the view is wider than it
-  if(OX>12&&!(RETRO&&v.sheet)) for(const px of [0,ARENA_W]){ L.lineWidth=5; L.beginPath(); L.moveTo(px,GY+2); L.lineTo(px,GY-58); L.stroke(); L.lineWidth=3; L.beginPath(); L.moveTo(px,GY-58); L.lineTo(px+(px?-22:22),GY-48); L.lineTo(px,GY-38); L.stroke(); }
+  if(OX>12&&!(RETRO&&(v.sheet||v.deck))) for(const px of [0,ARENA_W]){ L.lineWidth=5; L.beginPath(); L.moveTo(px,GY+2); L.lineTo(px,GY-58); L.stroke(); L.lineWidth=3; L.beginPath(); L.moveTo(px,GY-58); L.lineTo(px+(px?-22:22),GY-48); L.lineTo(px,GY-38); L.stroke(); }
   const terrain=deskLike()&&deskEdges&&!(net&&!net.watch);
   if(terrain){ L.strokeStyle='#ffd84a'; L.globalAlpha=RETRO?0:.85; L.lineWidth=3; }else L.lineWidth=5;
-  if(!v.sheet) for(const p of ARENA_PLATS){ L.beginPath(); L.moveTo(p.x0+(terrain?3:0),GY-p.y+(terrain?0:2)); L.lineTo(p.x1-(terrain?3:0),GY-p.y+(terrain?0:2)); L.stroke(); }
+  if(!v.sheet&&!v.deck) for(const p of ARENA_PLATS){ L.beginPath(); L.moveTo(p.x0+(terrain?3:0),GY-p.y+(terrain?0:2)); L.lineTo(p.x1-(terrain?3:0),GY-p.y+(terrain?0:2)); L.stroke(); }
   L.globalAlpha=1; L.strokeStyle='#111';
   worldBack(v,now);
   // an ultimate is playing: the stage goes dark around its caster (see ultBack)
@@ -3919,7 +4243,7 @@ function render(now){
   if(fleetSeen.size>40) for(const id of [...fleetSeen.keys()]) if(!v.pr.some(p=>p.id===id)) fleetSeen.delete(id);
   drawFighter(v,1,now,age,dt); drawFighter(v,0,now,age,dt);
   worldFront(v,now);
-  if(v.sheet) sheetFront(v,now);
+  if(v.sheet) sheetFront(v,now); else if(v.deck) deckFront(v,now);
   hpGhostStep(v,now,dt);
   // effects
   fx=fx.filter(e=>now-e.t0<(e.e==='rule'?900:700));

@@ -121,7 +121,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   // brain: 'net' asks for the trained CPU; without weights for it the room quietly gets the classic bot.
   function newRoom(stage,bot,skill,brain,plain){      // plain: a room without match rules (its page was opened with ?forge=0)
     let code; do{ code=Array.from({length:4},()=>LETTERS[Math.floor(Math.random()*LETTERS.length)]).join(''); }while(rooms.has(code));
-    const now=Date.now(), room={code,stage:stage==='sheet'?'sheet':'',sim:D.createDuel(stage==='sheet'?{stage:'sheet',record:true}:{record:true}),art:[[null,null],[null,null]],shown:[],players:new Map(),watchers:new Set(),clients:new Set(),last:now,sent:0,seen:now,dirty:true,bot:null,brain:brain==='net'&&NET?'net':'classic',skill:Number.isFinite(skill)?Math.max(0,Math.min(1,skill)):0.55,
+    const now=Date.now(), room={code,stage:stage==='sheet'||stage==='deck'?stage:'',sim:D.createDuel(stage==='sheet'||stage==='deck'?{stage,record:true}:{record:true}),art:[[null,null],[null,null]],shown:[],players:new Map(),watchers:new Set(),clients:new Set(),last:now,sent:0,seen:now,dirty:true,bot:null,brain:brain==='net'&&NET?'net':'classic',skill:Number.isFinite(skill)?Math.max(0,Math.min(1,skill)):0.55,
       forge:{sim:null,key:'',gen:0,state:'idle',rules:[],ms:0,timer:null,held:null,off:!!plain}};
     if(bot){ room.players.set('(bot)',1); room.bot=makeCpu(room); armBot(room); }
     rooms.set(code,room); return room;
