@@ -61,6 +61,52 @@ Hackathon MVP. A one-lane battler where every unit is something the player draws
 - `tools/balance.js --seed=N` plays round i of every pairing with seed N+i and players made afresh from derived seeds, so a run repeats exactly and two versions can be compared on identical rounds. Its numbers are not comparable with unseeded ones: without `--seed` the same bots play every round of a pairing and still hold the last round's shot ids in `seenShot` (each round is a new match that numbers shots from 1), so from round two they react to every shot with no reaction time. That makes ranged look weaker than in a real match: `quick` gives melee-beats-ranged about 53% unseeded and about 41% seeded, sword+bow against a sword about 55% and about 85%. The balance figures in the notes above came from the unseeded bench.
 - Bot-vs-bot simulation gives a median round of about 22 s; melee wins most often between bots. Not tested on real tablets.
 
+## RuleForge (match rules written by a model, Doodle Duel only)
+
+Once both sides of a match have an item, a language model writes up to three small rules for how those items meet; each is proven in test fights and loaded into the live match. Plan and design: `docs/superpowers/plans/2026-11-14-rule-forge.md`.
+
+Files:
+- `forgescript.js`: the rule language, a strict subset of JavaScript. `ForgeScript.parse / check / compile / LIMITS / Fault`. UMD: the server requires it, the page loads it as `/forgescript.js`.
+- `duel.html`, rules block: `FORGE_API` (everything a rule can name, per event: the one source for the checker, the sim's host object and the prompt), `FORGE_LIMITS`, and in `createDuel`: `S.addRule`, `S.rules`, `S.clearRules`, `S.sane`, `S.setHold`, `fireRules`, events `rule` and `rulefault`. The block must not name `ForgeScript`: compiled rules are handed in as functions.
+- `forge.js` (Node): `buildPrompt`, `parseReply`, `verifyRule`, `fallbackRules`, `install`, `forgeRules` (generate, verify, repair once, fall back; memory cache), `dump` / `load` / `known` (the disk cache), `cleanName`, `cleanItems`, `itemsOf`, `keyOf`; statics `openai` (the model call) and `keep` (the cache file).
+- `duel-server.js`: `scheduleForge(room)` after every item change (400 ms later, an item on each side), `room.forge={key,gen,state,rules}`, SSE event `forge` (`{state:'working'}`, `{state:'done',ms,rules}`, `{state:'idle'}`; replayed to a device that connects later), `POST /duel/forge` for matches simulated in the page (one request per 2 s per address), `forge-cache.json`.
+- `duel.html`, page: the block between `/*FORGE-UI-START*/` and `/*FORGE-UI-END*/` is pure and run by the tests (`forgeCards`, `forgeTyped`, `forgeLine`, `forgeCallout`, `forgeInstall`, `forgeItems`, `shotOwner`); after it `setForge`, `forgeTick`, `localForge`. The window is `retroWindow('forge','FORGE.EXE',...)`, its styles are at the end of `inkshop.css`.
+- `tools/test-forge.js` (everything above; child servers on port 3191), `tools/fake-openai.js` (the stand-in for the model; run on its own it is a model with one joke), `tools/forge-warm.js` and `tools/forge-live.js` (need the key; `tools/forge-env.js` is their shared setup).
+
+The four events. A rule is for one ordered pair of items: `a` (its holder is `me`) and `b` on the other side.
+
+| `on` | When the sim runs the rule | `a` must be |
+| --- | --- | --- |
+| `swat` | a foe projectile from `b` is inside my swing (see `swatting`) | melee (`b`: ranged or bomb) |
+| `guard` | a foe projectile from `b` touches me while my shield from `a` is up, before the normal block | shield (`b`: ranged or bomb) |
+| `strike` | my hit with `a` is about to land on the foe, who holds `b`; in `hurt()`, after the element match-up, before the block test | melee, ranged, bomb or dash |
+| `near` | every 0.25 s of the fight while I hold `a`, the foe holds `b` and we are within 260 px | any |
+
+An ultimate never triggers a rule; a projectile triggers shot rules once in its life.
+
+Limits the sim enforces whatever the code asks for (`FORGE_LIMITS`):
+
+| What | Limit |
+| --- | --- |
+| `shot.reflect` / `shot.slow` / `shot.power` / `hit.scale` | 0.5 to 1.5 / 0.3 to 1 / 0.5 to 1.5 / 0.6 to 1.4 |
+| `shot.turn` | -180 to 180 degrees |
+| `push` | 520 px/s each way |
+| `burn`, `soak` / `stun` | 2 s a call / 0.6 s a call, 1.5 s per rule per round |
+| `heal`, `hurt` | 8 hp a call, 24 hp per rule per round (a rule's fire included) |
+| cooldown / `say` | 0.25 to 5 s / 18 characters, one per rule per 1.5 s |
+| faults / countdown hold | 3 switch a rule off / 4 s |
+| code | 800 characters, 250 nodes, 2000 steps a run |
+
+Rules to keep:
+- A rule's code is text from a model. It may only be parsed, checked and interpreted by ForgeScript: never `eval`, `new Function`, `vm`, a timer string or a script tag, on the server or in the page. Rule names, blurbs, code and item names are escaped (`fesc`) before they become HTML.
+- A run "fires" (cooldown, `rule` event, call-out) only if it called an effect. An effect stopped by the spent round budget does not count, and neither does a `say` or `spark` in that same run. A returned shot can hit at once (`safe` 0).
+- `verifyRule` runs its test fights with `Math.random` replaced by a fixed sequence, so a verdict is repeatable. Its staging is described above `scenarios` in `forge.js`.
+- A room's forge carries a generation number: when an item changes, the rules of the old items are cleared at once and a forge still running for them installs nothing.
+- The cache key (`keyOf`) is the cleaned name, kind, style, element, trait and the three stats of each item: a tuned or recoloured item is a different key. Only results with a model-written rule are kept on disk, and they are verified again when first used.
+- In test fixtures give items a fixed trait (`traits:['swift'],trait:'swift'`): by name a Sword gets Lucky and a Ball gets Boomerang. A practice sim heals both fighters once `f.rest` passes 1.5 s. A landed swing starts a hit-stop during which nothing moves.
+
+Not tested with the real model: every test uses the stand-in. Unknown until someone runs `node tools/forge-live.js` with the key: whether the model writes valid ForgeScript from this prompt, how long it takes, whether the rules are funny, and whether `max_tokens: 700` and `response_format: json_object` suit the model chosen. The `FORGE.EXE` window, the call-outs and the "Forging rules..." banner were written without a browser; their logic is tested in Node, their look is not.
+
 ## Online play
 
 - `POST /room` creates a room with a 4-letter code. `GET /events?room=CODE&id=CLIENT` is a Server-Sent Events stream (`hello`, `players`, `state`, `pending`, `spawn`, `cancel`, `reset`, `gone`). `POST /act` takes `start`, `reset` and `send` (strokes plus a PNG of the pad).

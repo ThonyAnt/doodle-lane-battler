@@ -4,3 +4,5 @@ node_modules/
 motion-review.html
 anim/out/
 bot/checkpoints/
+forge-cache.json
+forge-cache.json.tmp

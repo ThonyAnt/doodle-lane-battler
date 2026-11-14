@@ -3,6 +3,8 @@
 const fs=require('fs'), path=require('path'), http=require('http'), cp=require('child_process'), vm=require('vm');
 const src=fs.readFileSync(path.join(__dirname,'..','duel.html'),'utf8').replace(/\r\n/g,'\n');
 const D=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,makeBot,stockItem,INK,replayDuel};')();
+// A recorded match's rules are logged as their source (see COMMANDS in duel.html): this is the compiler a replay needs for them.
+const FS=(()=>{ try{ return require('../forgescript.js'); }catch(e){ return null; } })(), compile=code=>{ if(!FS) return null; const p=FS.parse(code); return p.ok?FS.compile(p.ast):null; };
 // The page's own replay code that needs no screen: the part of duel.html between the PAGE-PURE marks, loaded after the rules.
 const pure=names=>new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';'+((src.split('/*PAGE-PURE-START*/')[1]||'').split('/*PAGE-PURE-END*/')[0])+';return {'+names.map(n=>n+':typeof '+n+'==="undefined"?undefined:'+n).join(',')+'};')();
 let bad=0; const ok=(name,cond,info)=>{ if(!cond) bad++; console.log((cond?'ok   ':'FAIL ')+name+(info!==undefined?'  '+JSON.stringify(info):'')); };
@@ -120,6 +122,7 @@ function fakePage(search,respond){
     EventSource:function(){ return el(); }, ResizeObserver:function(){ return {observe(){},disconnect(){}}; }, MutationObserver:function(){ return {observe(){},disconnect(){}}; },
     matchMedia:()=>({matches:false,addEventListener(){},addListener(){}}), innerWidth:1200, innerHeight:800, devicePixelRatio:1,
     sessionStorage:keep(), localStorage:keep(), addEventListener(){}, removeEventListener(){}, alert(){}, getComputedStyle:()=>el(), Image:function(){ return el(); }, Audio:function(){ return el(); }};
+  if(FS) ctx.ForgeScript=FS;      // the page loads forgescript.js with a script tag; here it is handed over
   ctx.window=ctx; ctx.self=ctx; ctx.globalThis=ctx; vm.createContext(ctx);
   const run=(code,name)=>vm.runInContext(code,ctx,{filename:name});
   for(const f of ['anim/core','anim/locomotion','anim/blade','anim/bow','anim/gun','anim/spear','anim/hammer','anim/fist','anim/staff','anim/hurl','anim/dual','anim/akimbo','anim/ultimate','inkshop'])
@@ -162,7 +165,7 @@ try{
   await act({type:'input',seq:++seq,l:false,r:false,d:false,j,a,b:0,m:0,q:0,u:0,h:3}); await sleep(300);
   const res=await get('/duel/replay?room='+code), liveState=me.state; let replayed=null;
   await atest('the room serves its replay',()=>[res.status===200&&res.body.log.v===1&&res.body.log.cmds.length>10,{status:res.status,cmds:res.body&&res.body.log&&res.body.log.cmds.length,secs:Math.round((Date.now()-t0)/1000)}]);
-  await atest('replaying it reproduces the round result',()=>{ replayed=D.replayDuel(res.body.log); return [liveState.wins[0]+liveState.wins[1]===1&&replayed.wins.join()===liveState.wins.join(),[replayed.wins,liveState.wins]]; });
+  await atest('replaying it reproduces the round result',()=>{ replayed=D.replayDuel(res.body.log,{compile}); return [liveState.wins[0]+liveState.wins[1]===1&&replayed.wins.join()===liveState.wins.join(),[replayed.wins,liveState.wins]]; });
   await atest('and ends in exactly the state the server was in',()=>[/^[0-9a-f]{8}$/.test(res.body.hash)&&replayed.hash()===res.body.hash&&replayed.tickN===res.body.log.ticks,[replayed.hash(),res.body.hash]]);
   // Blue's sword, the same sword after its change, and the bot's two items; a weapon forged in the fight brings its picture in its own event.
   await atest('the replay comes with the drawings, by item version',()=>{ const art=res.body.art, vers=art.map(x=>x.ver), its=[].concat(...replayed.items).filter(Boolean), forged=replayed.events.filter(e=>e.e==='forge').map(e=>e.ver);
@@ -173,11 +176,11 @@ try{
   await act({type:'rematch'}); await sleep(150);
   const afterRematch=(await get('/duel/replay?room='+code)).body;
   await atest('a rematch starts a new log and keeps the last one',()=>[afterRematch.log.cmds.length<res.body.log.cmds.length||afterRematch.previous===true,{previous:afterRematch.previous,cmds:afterRematch.log.cmds.length}]);
-  await atest('the kept one is the whole of the last match',()=>afterRematch.previous===true&&afterRematch.log.ticks>=res.body.log.ticks&&afterRematch.log.seed===res.body.log.seed&&D.replayDuel(afterRematch.log).hash()===afterRematch.hash);
+  await atest('the kept one is the whole of the last match',()=>afterRematch.previous===true&&afterRematch.log.ticks>=res.body.log.ticks&&afterRematch.log.seed===res.body.log.seed&&D.replayDuel(afterRematch.log,{compile}).hash()===afterRematch.hash);
   await act({type:'stock',slot:0,key:'gun',el:'fire'}); await act({type:'ready'});
   for(let i=0;i<60&&!(me.state&&me.state.phase!=='draw'&&me.state.wins[0]+me.state.wins[1]===0);i++) await sleep(50);
   await sleep(120); const fresh=(await get('/duel/replay?room='+code)).body;
-  await atest('once the new match is under way the replay is the new one',()=>[!fresh.previous&&fresh.log.seed!==res.body.log.seed&&fresh.log.cmds.length<res.body.log.cmds.length&&D.replayDuel(fresh.log).hash()===fresh.hash,{previous:fresh.previous,cmds:fresh.log.cmds.length}]);
+  await atest('once the new match is under way the replay is the new one',()=>[!fresh.previous&&fresh.log.seed!==res.body.log.seed&&fresh.log.cmds.length<res.body.log.cmds.length&&D.replayDuel(fresh.log,{compile}).hash()===fresh.hash,{previous:fresh.previous,cmds:fresh.log.cmds.length}]);
   me.req.destroy();
 }catch(e){ ok('the room tests ran',false,String(e&&e.message||e)); }
 finally{ stop(); }
