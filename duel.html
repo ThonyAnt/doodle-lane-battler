@@ -1897,6 +1897,26 @@ function replayFit(w,top,cw,maxCh){
   const full=Math.max(392,(top||0)+40)+48, ch=Math.max(1,Math.min(Math.round(maxCh),Math.round(cw*full/w))), sc=Math.min(cw/w,ch/full);
   return {ch,sc,vw:cw/sc,ox:(cw/sc-w)/2,vtop:440-ch/sc};
 }
+/* ---- the knockout replay ---- */
+// Every knockout that does not end the match is shown again in slow motion. The page keeps the last five seconds of
+// snapshots; nothing is simulated again. After the knockout the live picture stays for KO_WAIT, then for KO_SHOW the last
+// KO_BACK before the knockout is drawn (so at a third of the speed), then the live picture comes back. That is 3.4 s, about
+// the 3.2 s the rules wait before the next round's drawing begins.
+const KO_WAIT=400, KO_SHOW=3000, KO_BACK=1000, KO_KEEP=5000;      // milliseconds
+// ring: [{ms, snap}], oldest first (ms: when each snapshot arrived). koMs: when the knockout arrived. sinceKoMs: how long
+// ago that was. Returns the snapshot to draw, or null for the live picture.
+function koReplayFrame(ring,koMs,sinceKoMs){
+  if(!ring||!ring.length||!(sinceKoMs>=KO_WAIT)||sinceKoMs>KO_WAIT+KO_SHOW) return null;
+  const want=koMs-KO_BACK+(sinceKoMs-KO_WAIT)*KO_BACK/KO_SHOW; let best=null, gap=Infinity;
+  for(const r of ring){ if(r.ms>koMs) break; const d=Math.abs(r.ms-want); if(d<=gap){ gap=d; best=r; } }      // nothing from after the knockout
+  return best?best.snap:null;
+}
+// Called with every snapshot: k is {ring, koMs} (koMs -1 when there is no knockout to show). winsToEnd: rounds that win a match.
+function koNote(k,snap,ms,winsToEnd){
+  k.ring.push({ms,snap}); while(k.ring.length>1&&ms-k.ring[0].ms>KO_KEEP) k.ring.shift();
+  if(snap.ev&&snap.ev.some(e=>e.e==='ko')) k.koMs=snap.winner>=0&&snap.wins[snap.winner]>=winsToEnd?-1:ms;      // the knockout that wins the match is not shown again: the champion screen comes next
+  return k;
+}
 /*PAGE-PURE-END*/
 
 /* ================= page ================= */
@@ -1952,6 +1972,8 @@ function deskTerrain(){
 // During a fight the arena fills the window's width. If that would make it taller than the screen allows, the height is
 // capped and the view simply shows more floor either side of the arena (OX), so nothing is stretched and the rules do not change.
 let VS=1, OX=0, VW=960, playing=false, bigScreen=false, padView=false;
+const KO_ON=new URLSearchParams(location.search).get('ko')!=='0', ko={ring:[],koMs:-1};      // the knockout replay (koReplayFrame); ?ko=0 switches it off
+let koView=null;      // the snapshot being drawn in place of the live one while a knockout is shown again, else null
 let rep=null, repQuiet=false, VTOP=0;      // rep: the replay being watched (see playReplay); VTOP: the top edge of the picture, 0 except for a tall replayed stage
 function fitCanvas(){
   if(deskLike()){
@@ -2265,7 +2287,7 @@ function buildControls(){
 
 /* ---------- modes ---------- */
 function resetLocal(){
-  for(const s of [0,1]){ art[s]=[null,null]; Object.assign(inp[s],{l:0,r:0,d:0}); } fx=[]; view=null; resetAnim();
+  for(const s of [0,1]){ art[s]=[null,null]; Object.assign(inp[s],{l:0,r:0,d:0}); } fx=[]; view=null; resetAnim(); ko.ring=[]; ko.koMs=-1; koView=null;
 }
 function setMode(m){
   deskMenu=false;
@@ -2437,7 +2459,7 @@ function worldEvent(e){
 // so the same hit is not heard twice. Everything here checks window.SFX, so the page works without the file.
 const sfxPan=x=>Math.max(-0.7,Math.min(0.7,((x||0)/(ARENA_W||960)*2-1)*0.7));
 function sfxHear(p,v){
-  const X=window.SFX; if(!X||X.muted||repQuiet||(padView&&net&&net.screen)) return;
+  const X=window.SFX; if(!X||X.muted||repQuiet||koView||(padView&&net&&net.screen)) return;      // no sound over a replayed knockout or a jump in the replay viewer
   for(const e of v.ev){ const pan=sfxPan(e.x);
     switch(e.e){
       case 'hit': X.play(e.ult&&e.fin?'boom':'hit',{pan,w:e.w!==undefined?e.w:Math.min(1,e.n/18),el:e.el}); break;
@@ -2493,6 +2515,7 @@ function accept(v){
   sheetLive=!!v.sheet; if(v.sheet){ ARENA_PLATS=v.sheet.plats; ARENA_W=960; }      // on the spreadsheet stage the rules own the platforms
   sfxHear(view,v);
   view=v; viewAt=performance.now();
+  koNote(ko,v,viewAt,WINS);
 }
 
 /* ---------- interface state ---------- */
@@ -2713,7 +2736,7 @@ function syncUI(){
   document.body.classList.toggle('ultdim',!!(v.ul&&v.phase==='fight')&&!DESK);      // and everything behind the fight blurs (retro desktop)
   document.body.classList.toggle('ultlock',!!(v.ul&&v.phase==='fight'));      // an ultimate is playing: the controller greys out
   for(const s of [0,1]){
-    $('hp'+s).style.width=(v.phase==='draw'?100:v.f[s].hp*100/HP)+'%';
+    $('hp'+s).style.width=((koView||v).phase==='draw'?100:(koView||v).f[s].hp*100/HP)+'%';
     $('pip'+s).textContent='●'.repeat(v.wins[s])+'○'.repeat(Math.max(0,WINS-v.wins[s]));
   }
   $('clock').textContent=v.practice?'Practice':v.phase==='fight'?Math.ceil(v.t):v.phase==='draw'?'Draw '+Math.max(0,Math.ceil(v.t)):v.phase==='over'?'':'Round '+v.round;
@@ -3292,7 +3315,7 @@ function ultFront(v,now){
   if(ultEnd&&!CALM){ const el=(now-ultEnd.t0)/1000; if(el<0.55){ const u=ease(el/0.55); L.save(); L.strokeStyle=PFLASH[ultEnd.side]; L.globalAlpha=1-u; L.lineWidth=12*(1-u)+1; L.beginPath(); L.arc(ultEnd.x,GY-ultEnd.y,30+u*340,0,7); L.stroke(); L.restore(); } }
 }
 function render(now){
-  const v=view, age=net&&!v.hs?Math.min(0.08,(now-viewAt)/1000):0, dt=Math.max(0,Math.min(0.05,(now-(lastRender||now))/1000)); lastRender=now;
+  const v=koView||view, age=net&&!v.hs&&!koView?Math.min(0.08,(now-viewAt)/1000):0, dt=Math.max(0,Math.min(0.05,(now-(lastRender||now))/1000)); lastRender=now;
   fitCanvas(); L.setTransform(1,0,0,1,0,0); L.clearRect(0,0,cv.width,cv.height); L.setTransform(VS,0,0,VS,OX*VS,OY);
   if(!deskLike()){ L.fillStyle='#fff'; L.fillRect(-OX,VTOP,VW,440-VTOP); }
   if(v.sheet) sheetBack(v,now);
@@ -3374,7 +3397,8 @@ function render(now){
   // banners
   ultDamageDraw(v,now,dt);
   const banner=(t,size,y,col)=>{ L.font=size+'px "Gochi Hand",cursive'; L.textAlign='center'; L.lineWidth=8; const bx=v.board?(v.board.x0+v.board.x1)/2:ARENA_W/2, by=v.board?y-(v.board.floor+Math.max(0,v.board.top-v.board.floor-330)):y; L.strokeStyle='#fffdf6'; L.strokeText(t,bx,by); L.fillStyle=col||'#1c2541'; L.fillText(t,bx,by); };
-  if(v.phase==='draw'&&RETRO&&(local[0]||local[1]||!$('overlay').hidden)){ /* a window is open there: the sketchbook, or the join code, which must stay scannable */ }
+  if(koView){ banner('REPLAY',56,84,'#e2552d'); banner(view.winner<0?'Draw round!':NAME[view.winner]+' takes the round!',30,124,view.winner<0?'#1c2541':PCOL[view.winner]); }
+  else if(v.phase==='draw'&&RETRO&&(local[0]||local[1]||!$('overlay').hidden)){ /* a window is open there: the sketchbook, or the join code, which must stay scannable */ }
   else if(v.phase==='draw'){ banner('Round '+v.round+': draw your gear!',40,70);
     const st=s=>NAME[s]+(v.ready[s]?' is ready ✓':' has '+v.items[s].filter(Boolean).length+'/2 drawn'); banner(st(0)+'   ·   '+st(1),22,104,'#59658a'); }
   else if(v.phase==='count') banner(String(Math.max(1,Math.ceil(v.t))),120,200);
@@ -3383,7 +3407,7 @@ function render(now){
   else if(deskLike()&&v.phase==='fight'&&!v.practice&&!RETRO) banner(String(Math.ceil(v.t)),26,40,'#59658a');
   if(RETRO&&deskPaused) banner('Paused',44,150,'#fff');
   if(DESK&&deskPaused&&!deskMenu) banner('Paused. Press Ctrl+Alt+D to come back.',30,150,'#59658a');
-  else if(v.phase==='end') banner(v.winner<0?'Draw round!':NAME[v.winner]+' takes the round!',56,180,v.winner<0?'#1c2541':PCOL[v.winner]);
+  else if(v.phase==='end'&&!koView) banner(v.winner<0?'Draw round!':NAME[v.winner]+' takes the round!',56,180,v.winner<0?'#1c2541':PCOL[v.winner]);
 }
 let last=performance.now(), fpsT=0, fpsN=0;
 function frame(now){
@@ -3394,6 +3418,7 @@ function frame(now){
   if(rep) replayTick(dt);
   FXI.step(dt);
   if(RETRO){ fpsT+=dt; fpsN++; if(fpsT>0.5){ document.querySelector('#st-fps').textContent=Math.round(fpsN/fpsT)+' fps'; fpsT=0; fpsN=0; } }
+  koView=KO_ON&&!rep&&view&&ko.koMs>=0?koReplayFrame(ko.ring,ko.koMs,now-ko.koMs):null;
   if(view){ syncUI(); render(now); if(padView&&net&&net.side>=0){ const tc=document.querySelector('.tcs'); if(tc) document.body.style.setProperty('--pad',(tc.getBoundingClientRect().height+12)+'px'); $('strip').hidden=$('stripbar').hidden=false; drawStrip(view); } }
   requestAnimationFrame(frame);
 }

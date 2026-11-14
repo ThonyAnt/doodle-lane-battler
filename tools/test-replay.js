@@ -241,5 +241,42 @@ test('a recording stops when it is full, says so, and still replays up to there'
     return [P.replayProblem({log,rules:'aaaaaaaa'},'aaaaaaaa')===''&&P.replayProblem({log,rules:'aaaaaaaa'},'bbbbbbbb')===said&&P.replayProblem({log:Object.assign({},log,{v:2}),rules:'aaaaaaaa'},'aaaaaaaa')===said&&P.replayProblem({},'aaaaaaaa')!==''&&P.replayProblem(null,'aaaaaaaa')!=='',P.replayProblem({log,rules:'x'},'y')]; });
 }
 
+/* ---------- 5. the knockout replay ---------- */
+{ const {koReplayFrame,koNote}=pure(['koReplayFrame','koNote']);
+  const ring=Array.from({length:300},(_,i)=>({ms:i*16.7,snap:{i}})), ko=299*16.7;
+  test('nothing for the first 0.4 s',()=>koReplayFrame(ring,ko,300)===null);
+  test('starts one second before the knockout',()=>Math.abs(koReplayFrame(ring,ko,400).i*16.7-(ko-1000))<17);
+  test('runs at one third speed',()=>Math.abs(koReplayFrame(ring,ko,1900).i*16.7-(ko-500))<17);
+  test('ends on the knockout, then stops',()=>Math.abs(koReplayFrame(ring,ko,3399).i-299)<=1&&koReplayFrame(ring,ko,3401)===null);
+  test('a short ring does not crash',()=>koReplayFrame(ring.slice(-10),ko,1000)!==undefined&&koReplayFrame([],ko,1000)===null);
+  test('it never shows anything from after the knockout, and goes forward only',()=>{ const late=ring.concat(Array.from({length:200},(_,i)=>({ms:ko+(i+1)*16.7,snap:{i:300+i}}))); let last=-1;
+    for(let t=400;t<=3400;t+=7){ const s=koReplayFrame(late,ko,t); if(!s||s.i>299||s.i<last) return [false,t]; last=s.i; } return last===299; });
+  test('the page keeps five seconds of snapshots, and a knockout starts the replay clock',()=>{ const k={ring:[],koMs:-1}; let t=0;
+    for(let i=0;i<600;i++){ t=i*16.7; koNote(k,{ev:[],wins:[0,0],winner:-1},t,2); } const span=t-k.ring[0].ms, idle=k.koMs;
+    koNote(k,{ev:[{e:'hit'},{e:'ko',side:1}],wins:[0,1],winner:1},t+16.7,2); return [span<=5000&&span>4900&&idle===-1&&k.koMs===t+16.7&&k.ring[k.ring.length-1].ms===k.koMs,{span,ko:k.koMs}]; });
+  test('the knockout that ends the match is not replayed, so the champion screen is never covered',()=>{ const k={ring:[],koMs:-1};
+    koNote(k,{ev:[{e:'ko',side:1}],wins:[0,1],winner:1},100,2); const first=k.koMs; koNote(k,{ev:[{e:'ko',side:1}],wins:[0,2],winner:1},9000,2); const last=k.koMs;
+    koNote(k,{ev:[{e:'ko',side:-1}],wins:[1,1],winner:-1},20000,2); return [first===100&&last===-1&&k.koMs===20000,[first,last,k.koMs]]; });      // a drawn round is replayed like any other
+}
+// The page itself, in the pretend browser: a match against the bot on this device (Blue never touches a button, so Red wins 2 : 0).
+// what: 'past' while the picture comes from before the knockout, 'live' otherwise; sounds are counted through a stand-in for sfx.js.
+async function botMatchInPage(search){
+  const page=fakePage(search,()=>({reader:'local guess'})), kos=[], log=[]; await page.frames(3);
+  page.get("window.SFX={muted:false,n:0,play(){ this.n++; },toggle(){}}; setMode('bot'); sim.setReady(0);"); let prev=0, t0=0;
+  await page.frames(30000,now=>{ const wins=page.get('view.wins[0]+view.wins[1]'), phase=page.get('view.phase');
+    if(wins>prev){ prev=wins; t0=now; kos.push({ended:page.get('view.wins[view.winner]>=WINS'),past:0,live:0,early:0,late:0,soundsPast:0,from:[],lastPast:0,banner:page.get('NAME[view.winner]')}); }
+    const k=kos[kos.length-1]; if(k){ const since=now-t0, shown=page.get('koView'), sfx=page.get('SFX.n');
+      if(shown){ k.past++; k.lastPast=since; if(since<400) k.early++; if(since>3400+17) k.late++; k.from.push(shown.phase); if(k.sfx!==undefined&&sfx!==k.sfx) k.soundsPast++; } else k.live++;
+      k.sfx=sfx; }
+    return phase!=='over'||now-t0<5000; });
+  return {kos,phase:page.get('view.phase'),overlay:page.byId('overlay').hidden,wins:page.get('view.wins.join()')};
+}
+await atest('in the page, a round-ending knockout is shown again for three seconds, then the game is live again',async()=>{ const m=await botMatchInPage('?plain=1'), k=m.kos[0];
+  return [m.kos.length===2&&!k.ended&&k.past>=170&&k.past<=185&&k.early===0&&k.late===0&&k.lastPast>3300&&k.from.slice(0,150).every(p=>p==='fight')&&k.soundsPast===0,m.kos.map(x=>({ended:x.ended,past:x.past,live:x.live,early:x.early,late:x.late,lastPast:Math.round(x.lastPast),sounds:x.soundsPast}))]; });
+await atest('the knockout that wins the match goes straight to the champion screen',async()=>{ const m=await botMatchInPage('?plain=1'), k=m.kos[m.kos.length-1];
+  return [m.phase==='over'&&k.ended&&k.past===0&&m.overlay===false,{past:k.past,overlay:m.overlay,wins:m.wins}]; });
+await atest('?ko=0 switches the knockout replay off',async()=>{ const m=await botMatchInPage('?plain=1&ko=0'); return [m.kos.length===2&&m.kos.every(k=>k.past===0),m.kos.map(k=>k.past)]; });
+await atest('it works the same on the retro desktop layout',async()=>{ const m=await botMatchInPage(''), k=m.kos[0]; return [m.kos.length===2&&k.past>=170&&k.past<=185&&m.kos[1].past===0&&m.phase==='over',m.kos.map(x=>x.past)]; });
+
 console.log(bad?bad+' failed':'all replay tests pass'); process.exit(bad?1:0);
 })();
