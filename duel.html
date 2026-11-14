@@ -1712,7 +1712,7 @@ function createDuel(opts){
       else if(!dn&&o.kind!=='platform'){ const mx=clamp(f.x+f.face*24,x0,x1), dx=(mx-f.x)*f.face; if(dx>-10&&dx<R&&y1>f.y-4&&y0<f.y+88) consider(o,mx,clamp(cy,y0,y1),'obj'); } }
     if(!best) return;
     const t=best.t; if(t.hp===undefined) t.hp={wall:2,block:3,crate:2,pot:2}[t.kind]||1;
-    t.hp--; puff(best.x,-best.y,'#999',6); fx('chip',{x:rr(best.x),yd:rr(-best.y)});
+    t.hp-=3; puff(best.x,-best.y,'#999',6);      // a swing of the pick does 3: walls, cells, crates and blocks (2 to 3 health) all go in one fx('chip',{x:rr(best.x),yd:rr(-best.y)});
     if(t.hp>0) return;
     burst(best.x,-best.y,'#777',14);
     if(best.kind==='obj'){ t.life=0; log(f,'mined through a '+t.kind); }
