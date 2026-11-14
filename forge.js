@@ -5,13 +5,14 @@
 //     ForgeScript  the rule language (forgescript.js)
 //     ask          (messages, {timeoutMs}) -> Promise<string>: the model; leave it out and the built-in rules are used
 //     now          a clock in ms (Date.now)
+//     retryMs      how long built-in rules given because the model failed are kept before it is asked again (30 s)
 //   items is [[it|null,it|null],[it|null,it|null]] (Blue's two slots, Red's two), it={name,kind,style,el,trait} and,
 //   if known, the three stats a rule can read: power, range, speed.
 //   A rule as the model writes it: {name,blurb,a:'blue.0',b:'red.1',on,cooldown,code}; see FORGE_API in duel.html.
 // A rule's code is text from a language model. It is only ever parsed, checked and interpreted by ForgeScript: nothing
 // here hands text to the JavaScript engine to run.
 'use strict';
-module.exports=function({D,ForgeScript:FS,ask,now}){
+module.exports=function({D,ForgeScript:FS,ask,now,retryMs}){
   now=now||Date.now;
   const API=D.FORGE_API, FL=D.FORGE_LIMITS, MOVES=D.MOVES||{};
   const KINDS=D.KINDS||['melee','ranged','bomb','shield','dash','heal'], ELS=D.ELS||['none','fire','water','plant'];
@@ -331,5 +332,83 @@ module.exports=function({D,ForgeScript:FS,ask,now}){
     return {rules:rules.filter(r=>r&&typeof r==='object'&&!Array.isArray(r)).slice(0,3)};
   }
 
-  return {keyOf,cleanName,cleanItems,itemsOf,buildPrompt,parseReply,verifyRule,fallbackRules,install,EXAMPLE};
+  /* ---------- the pipeline ---------- */
+  // items -> prompt -> the model's reply (1 to 3 rules) -> each rule through verifyRule -> the failures go back once,
+  // with their errors -> whatever still fails, or did not come in time, is replaced by a built-in rule.
+  const TIME={total:9000,first:6000,repair:5000,least:250};      // ms: the whole forge; the first call; the repair call; too little left to ask again
+  const KEEP=Number.isFinite(retryMs)?retryMs:30000;
+  const cache=new Map(), flying=new Map();      // key -> {rules, until (0: for good)}; key -> the forge in progress
+  const copy=rules=>rules.map(r=>Object.assign({},r,{checks:Object.assign({},r.checks)}));
+  const breath=()=>new Promise(r=>setImmediate(r));      // a test fight takes some milliseconds: let the server's matches step in between
+  // The model's answer as text; null if it failed, said something that is not text, or took longer than ms.
+  function timed(messages,ms){
+    return new Promise(resolve=>{
+      let done=false; const end=v=>{ if(done) return; done=true; clearTimeout(timer); resolve(typeof v==='string'?v:null); }, timer=setTimeout(end,Math.max(0,ms),null);
+      try{ Promise.resolve(ask(messages,{timeoutMs:ms})).then(end,()=>end(null)); }catch(e){ end(null); }
+    });
+  }
+  const rawSide=r=>{ const m=/^\s*(blue|red)\./i.exec(r&&typeof r.a==='string'?r.a:''); return m?SIDES.indexOf(m[1].toLowerCase()):-1; };
+  const label=r=>cleanName(r&&r.name)||'(a rule with no name)';
+  // Rules for these items: {rules:[rule with source ('ai', 'repaired' or 'built-in') and checks], ms, calls}. Never
+  // rejects. The same items are answered from memory; two asks at once share one forge. Rules are at most three, at
+  // most two of them with a on the same side.
+  function forgeRules(items,opts){
+    const its=cleanItems(items), none={rules:[],ms:0,calls:0};
+    if(!its||!its[0].some(Boolean)||!its[1].some(Boolean)) return Promise.resolve(none);
+    const key=keyOf(its), had=cache.get(key), budget=opts&&Number.isFinite(opts.budgetMs)?opts.budgetMs:TIME.total;
+    if(had&&(had.until===0||had.until>now())) return Promise.resolve({rules:copy(had.rules),ms:0,calls:0,cached:true});
+    if(!flying.has(key)){
+      const t0=now(), p=make(its,budget).catch(()=>({rules:builtIn(its,fallbackRules(its)),ms:now()-t0,calls:0})).catch(()=>none).then(out=>{
+        flying.delete(key);
+        if(out.rules.length) cache.set(key,{rules:copy(out.rules),until:!ask||out.rules.some(r=>r.source!=='built-in')?0:now()+KEEP});
+        return out;
+      });
+      flying.set(key,p);
+    }
+    return flying.get(key).then(out=>({rules:copy(out.rules),ms:out.ms,calls:out.calls}));
+  }
+  // Built-in rules as they are handed out: with their checks, like any other. They are installed whatever the checks say.
+  const builtIn=(its,rules)=>rules.map(r=>Object.assign({},r,{source:'built-in',checks:verifyRule(r,its).checks}));
+  async function make(its,budget){
+    const t0=now(), left=()=>budget-(now()-t0), got=[], failed=[]; let calls=0;
+    const count=side=>got.filter(r=>sideOf(r)===side).length+failed.filter(f=>f.side===side).length;
+    if(ask){
+      const messages=buildPrompt(its), reply=await timed(messages,Math.min(TIME.first,left())); calls++;
+      let note='';
+      if(reply!==null){
+        const first=parseReply(reply);
+        if(first.error) note=first.error; else if(!first.rules.length) note='the reply had no rules in it';
+        else for(const raw of first.rules){
+          const side=rawSide(raw); if(side>=0&&count(side)>=2) continue;      // a third rule for one player is dropped unread
+          const v=verifyRule(raw,its); await breath();
+          if(v.ok) got.push(Object.assign(v.spec,{source:'ai',checks:v.checks})); else failed.push({raw,side,errors:v.errors});
+        }
+      }
+      if(reply!==null&&(note||failed.length)&&left()>=TIME.least){
+        const text=note?'Your reply could not be used: '+note+'. Reply again with the same JSON shape.'
+          :'These rules failed their checks:\n'+failed.map(f=>'- '+label(f.raw)+': '+f.errors.slice(0,3).join('; ')).join('\n')+'\nFix only these rules. Reply with the same JSON shape.';
+        const again=await timed(messages.concat({role:'assistant',content:reply},{role:'user',content:text}),Math.min(TIME.repair,left())); calls++;
+        const second=again===null?{error:'no reply'}:parseReply(again);
+        for(const raw of second.rules||[]){
+          if(got.length>=3||(!note&&!failed.length)) break;
+          const side=rawSide(raw), twin=got.some(g=>cleanName(g.name)===label(raw)||(g.code===raw.code&&g.on===raw.on&&sideOf(g)===side));
+          if(twin||(side>=0&&got.filter(r=>sideOf(r)===side).length>=2)) continue;      // the model sent a good rule again, or one too many for a player
+          const v=verifyRule(raw,its); await breath(); if(!v.ok) continue;
+          got.push(Object.assign(v.spec,{source:'repaired',checks:v.checks}));
+          let i=failed.findIndex(f=>label(f.raw)===label(raw)); if(i<0) i=failed.findIndex(f=>f.side===side);
+          failed.splice(Math.max(0,i),1);      // it takes the place of the rule it repairs: the one of its name, or one of the same player
+        }
+      }
+    }
+    if(!got.length) got.push(...builtIn(its,fallbackRules(its)));
+    else for(const f of failed){      // still failing: a built-in rule for the same player takes its place
+      if(got.length>=3) break;
+      const side=f.side>=0?f.side:(got.some(r=>sideOf(r)===0)?1:0), has=n=>got.filter(r=>sideOf(r)===n).length;
+      const pick=builtIns(its).find(r=>sideOf(r)===side&&has(side)<2&&!got.some(g=>g.a===r.a&&g.b===r.b&&g.on===r.on));
+      if(pick) got.push(...builtIn(its,[pick]));
+    }
+    return {rules:got,ms:now()-t0,calls};
+  }
+
+  return {keyOf,cleanName,cleanItems,itemsOf,buildPrompt,parseReply,verifyRule,fallbackRules,install,forgeRules,EXAMPLE};
 };

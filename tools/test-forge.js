@@ -334,4 +334,57 @@ const KINDS=['melee','ranged','bomb','shield','dash','heal'];
   ok('the forge keeps no way to run text as code',(()=>{ const src=fs.readFileSync(path.join(__dirname,'..','forge.js'),'utf8').replace(/\/\/.*$/gm,''); return !/\beval\s*\(|new\s+Function|\bFunction\s*\(|require\(\s*['"]vm['"]|setTimeout\(\s*['"`]|<script/.test(src); })());
 }
 
+// ---- the pipeline, the server and the page: these wait for replies, so they run in order inside one async function ----
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+// A forge whose model answers with the queued strings in turn and records what it was asked. 'HANG' never answers,
+// 'THROW' fails, {wait,text} answers late, anything that is not text is handed over as it is.
+function mk(replies,opts){
+  const calls=[], asked=[], q=replies.slice();
+  const ask=(messages,o)=>{ calls.push(messages); asked.push(o); const r=q.shift();
+    if(r==='HANG') return new Promise(()=>{}); if(r==='THROW') return Promise.reject(new Error('network down'));
+    if(r&&typeof r==='object'&&'wait' in r) return sleep(r.wait).then(()=>r.text); return Promise.resolve(r); };
+  return {calls,asked,F:require('../forge.js')(Object.assign({D,ForgeScript:FS,ask},opts))};
+}
+(async()=>{
+{ // 7. generate, verify, repair, fall back
+  { const f=mk([JSON.stringify({rules:[RACKET]})]), r=await f.F.forgeRules(ITEMS); ok('a good reply is installed as written',r.rules.length===1&&r.rules[0].source==='ai'&&r.calls===1); }
+  { const badR=Object.assign({},RACKET,{code:'hit.scale(2);'}), f=mk([JSON.stringify({rules:[badR]}),JSON.stringify({rules:[RACKET]})]), r=await f.F.forgeRules(ITEMS);
+    ok('a failed rule is sent back once with its errors',r.rules[0].source==='repaired'&&r.calls===2&&/hit/.test(f.calls[1][f.calls[1].length-1].content)); }
+  { const badR=Object.assign({},RACKET,{code:'hit.scale(2);'}), f=mk([JSON.stringify({rules:[badR]}),JSON.stringify({rules:[badR]})]), r=await f.F.forgeRules(ITEMS); ok('two failures fall back to a built-in rule',r.rules.length>=1&&r.rules.every(x=>x.source==='built-in')&&r.calls===2); }
+  { const f=mk(['HANG']), t=Date.now(), r=await f.F.forgeRules(ITEMS,{budgetMs:300}); ok('a silent model costs no more than the budget',r.rules[0].source==='built-in'&&Date.now()-t<600); }
+  { const f=mk([]); f.F=require('../forge.js')({D,ForgeScript:FS}); const r=await f.F.forgeRules(ITEMS); ok('no model at all still gives rules',r.rules.length>=1&&r.calls===0); }
+  { const three=[RACKET,Object.assign({},RACKET,{name:'B'}),Object.assign({},RACKET,{name:'C'})], f=mk([JSON.stringify({rules:three})]), r=await f.F.forgeRules(ITEMS); ok('one side gets at most two of the rules',r.rules.length===2); }
+  { const f=mk([JSON.stringify({rules:[RACKET]})]); await f.F.forgeRules(ITEMS); const r=await f.F.forgeRules(ITEMS); ok('the same items are answered from the cache',f.calls.length===1&&r.rules[0].name==='Return Serve'); }
+  // beyond the plan
+  const good=JSON.stringify({rules:[RACKET]}), REDS={name:'Bounce Back',blurb:'The ball stings more off the strings.',a:'red.0',b:'blue.0',on:'strike',cooldown:1,code:"hit.scale(1.2); say('BOING');"}, REDBAD=Object.assign({},REDS,{code:"hit.scale(1.2); say('BOING' + 1);"});
+  const fields=r=>['name','blurb','a','b','on','code'].every(k=>typeof r[k]==='string')&&typeof r.cooldown==='number'&&['ai','repaired','built-in'].includes(r.source)&&['shape','parse','check','scenarios','stress'].every(k=>typeof r.checks[k]==='boolean');
+  { const f=mk([good]), r=await f.F.forgeRules(ITEMS), S=duo(SWORD,BALL);
+    ok('what comes back is plain data: a rule with its source and its five checks, ready to install',r.rules.every(fields)&&Object.values(r.rules[0].checks).every(Boolean)&&typeof r.ms==='number'&&JSON.stringify(JSON.parse(JSON.stringify(r)))===JSON.stringify(r)&&F.install(S,r.rules).join()==='1'&&r.rules[0].code===RACKET.code);
+    ok('the model is asked with the prompt, and given 6 s',f.calls[0].length===2&&f.calls[0][0].role==='system'&&f.calls[0][1].content.includes('Tennis Racket')&&f.asked[0].timeoutMs===6000); }
+  { const f=mk([JSON.stringify({rules:[RACKET,REDBAD]}),JSON.stringify({rules:[REDS]})]), r=await f.F.forgeRules(ITEMS), fix=f.calls[1];
+    ok('only the failed rule is sent back: the good one stays as written, the other comes back repaired',r.rules.length===2&&r.rules[0].source==='ai'&&r.rules[0].name==='Return Serve'&&r.rules[1].source==='repaired'&&r.rules[1].name==='Bounce Back'&&r.calls===2
+      &&fix.length===4&&fix[2].role==='assistant'&&fix[2].content.includes('BOING')&&fix[3].role==='user'&&fix[3].content.includes('Bounce Back')&&!fix[3].content.includes('Return Serve')&&/Fix only these rules\. Reply with the same JSON shape\./.test(fix[3].content)&&f.asked[1].timeoutMs<=5000&&f.asked[1].timeoutMs>0,fix[3]&&fix[3].content); }
+  { const f=mk([JSON.stringify({rules:[RACKET,REDBAD]}),JSON.stringify({rules:[RACKET,REDS]})]), r=await f.F.forgeRules(ITEMS); ok('a repair that repeats the good rule does not double it',r.rules.map(x=>x.source).join()==='ai,repaired'); }
+  { const f=mk([JSON.stringify({rules:[RACKET,REDBAD]}),JSON.stringify({rules:[REDBAD]})]), r=await f.F.forgeRules(ITEMS);
+    ok('a rule that fails twice is replaced by a built-in rule for the same player',r.rules.length===2&&r.rules[0].source==='ai'&&r.rules[1].source==='built-in'&&r.rules[1].a==='red.0'&&r.rules.every(fields),r.rules.map(x=>x.source+' '+x.name)); }
+  { const f=mk([JSON.stringify({rules:[Object.assign({},RACKET,{code:'hit.scale(2);'}),REDBAD]}),JSON.stringify({rules:[Object.assign({},REDS,{name:'Boing'})]})]), r=await f.F.forgeRules(ITEMS);
+    ok('of two failed rules, the one that comes back repaired stands for its player and a built-in rule for the other',r.rules.length===2&&r.rules.some(x=>x.source==='repaired'&&x.name==='Boing'&&x.a==='red.0')&&r.rules.some(x=>x.source==='built-in'&&x.a==='blue.0'),r.rules.map(x=>x.source+' '+x.name+' '+x.a)); }
+  { const f=mk(['sorry, I cannot',good]), r=await f.F.forgeRules(ITEMS); ok('a reply that is not JSON is asked for again',r.rules.length===1&&r.rules[0].source==='repaired'&&r.calls===2&&/JSON/.test(f.calls[1][3].content)); }
+  { const f=mk(['{"rules":[]}','{"rules":[]}']), r=await f.F.forgeRules(ITEMS); ok('no rules twice over is answered with the built-in ones',r.calls===2&&r.rules.length>=2&&r.rules.every(x=>x.source==='built-in')); }
+  for(const [what,reply] of [['fails','THROW'],['answers with something that is not text',{rules:[RACKET]}],['answers with nothing',undefined]])
+    { const f=mk([reply]), r=await f.F.forgeRules(ITEMS).catch(()=>null); ok('a model that '+what+' is not asked again, and the built-in rules stand in',!!r&&r.calls===1&&r.rules.length>=1&&r.rules.every(x=>x.source==='built-in')); }
+  { const f=mk([{wait:150,text:JSON.stringify({rules:[Object.assign({},RACKET,{code:'hit.scale(2);'})]})},good]), r=await f.F.forgeRules(ITEMS,{budgetMs:300}); ok('there is no repair call when the time is nearly up',r.calls===1&&f.calls.length===1&&r.rules.every(x=>x.source==='built-in')); }
+  { const evil=["constructor.constructor('return process')().exit();","while (true) {}","shot['reflect'](1);","process.exit(1);"].map((code,i)=>Object.assign({},RACKET,{name:'Evil '+i,code})), f=mk([JSON.stringify({rules:evil.slice(0,3)}),JSON.stringify({rules:evil.slice(1)})]), r=await f.F.forgeRules(ITEMS);
+    ok('code that reaches outside the language never gets in',r.rules.length>=1&&r.rules.every(x=>x.source==='built-in'&&!/Evil/.test(x.name))); }
+  { const f=mk([good,good]), both=await Promise.all([f.F.forgeRules(ITEMS),f.F.forgeRules(JSON.parse(JSON.stringify(ITEMS)))]); both[0].rules[0].name='changed';
+    ok('two asks for the same items at once share one call, and each gets its own copy',f.calls.length===1&&both[1].rules[0].name==='Return Serve'&&(await f.F.forgeRules(ITEMS)).rules[0].name==='Return Serve'); }
+  { const f=mk(['HANG',good],{retryMs:60}), a=await f.F.forgeRules(ITEMS,{budgetMs:60}), b=await f.F.forgeRules(ITEMS,{budgetMs:60}); await sleep(90); const c=await f.F.forgeRules(ITEMS);
+    ok('built-in rules given because the model failed are kept only a short while, then the model is asked again',a.rules[0].source==='built-in'&&b.rules[0].source==='built-in'&&f.calls.length===2&&c.rules[0].source==='ai'); }
+  { const f=mk([good]), none=await f.F.forgeRules([[ITEMS[0][0],null],[null,null]]), junk=await f.F.forgeRules('items'), odd=await f.F.forgeRules([[{kind:'laser'},null],[ITEMS[1][0],null]]);
+    ok('without an item on each side, or with items that are not items, there is nothing to forge',[none,junk,odd].every(r=>r.rules.length===0&&r.calls===0)&&f.calls.length===0); }
+  { const four=[[ITEMS[0][0],{name:'Shield',kind:'shield',style:'',el:'none',trait:'thorns'}],[ITEMS[1][0],{name:'Bomb',kind:'bomb',style:'',el:'none',trait:'heavy'}]], f=mk([]); f.F=require('../forge.js')({D,ForgeScript:FS}); const r=await f.F.forgeRules(four);
+    ok('with no model, four items get three built-in rules that all pass the checks',r.rules.length===3&&r.rules.every(x=>x.source==='built-in'&&Object.values(x.checks).every(Boolean))&&r.rules.filter(x=>x.a.startsWith('blue')).length<=2,r.rules.map(x=>x.name+' '+x.a+'>'+x.b)); }
+}
+
 console.log(bad?bad+' failed':'all forge tests pass'); process.exit(bad?1:0);
+})().catch(e=>{ console.log('FAIL the tests themselves broke: '+(e&&e.stack||e)); process.exit(1); });
