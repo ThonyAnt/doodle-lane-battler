@@ -75,8 +75,6 @@ the scene as a parameter instead of copying it.
   starts with whoever has more health, then alternates). Layouts should not favour the left or right start.
 - **The players decide the round.** Scene damage is a seasoning. The spreadsheet's errors do 5 and its delete 12
   against `HP` of 160; a scene that kills on its own is a cutscene with victims.
-- **No announcements.** Do not add warnings, countdowns or marked danger zones before the arena changes; the owner
-  does not want changes telegraphed.
 - **Always somewhere to stand.** Even at the scene's emptiest moment the floor remains, unless removing it is the
   scene's signature.
 - **Light on the wire.** The scene's snapshot field is sent constantly: round the numbers, send ids and positions,

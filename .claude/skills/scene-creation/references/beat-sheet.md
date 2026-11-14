@@ -23,8 +23,6 @@ Rules of thumb for filling it in:
 
 - **A beat every three to five seconds.** Longer gaps feel like nothing is happening; shorter ones are noise.
 - **Three acts.** Routine (about the first third), it goes wrong (the middle), they notice (the last third and on).
-- **No warnings.** Changes to the arena are not announced: no countdown, flash or marked danger zone. The ground
-  changes when the user acts.
 - **Count the kinds of change.** Appears, moves, vanishes, replaced. Use at least three.
 - **Mark the hazards and their damage.** Fighters have `HP` health (see the constant in the rules). Keep any one hit
   small next to a weapon's hit, so the players decide the round and the scene only shapes it.

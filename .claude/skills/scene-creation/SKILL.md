@@ -73,12 +73,6 @@ about where the fighters can stand should change every few seconds, and over the
 three different ways: ground appears, ground moves (and carries whoever is on it), ground vanishes, the whole layout is
 replaced. Each scene should have one signature change that no other scene has.
 
-Do not announce changes to the arena. No countdowns, warning flashes, highlighted danger zones or "watch out" text,
-and no pause added before a change so players can get ready. The program's user is not thinking about the fighters,
-so the ground simply changes when they act; being caught out by it is part of the fun, and a scene that telegraphs
-every move plays like a tutorial. What the user visibly does (the pointer moving, text being typed) is there because
-it is how the program looks in use, not as a courtesy to the players.
-
 ### 2. Every obstacle is a piece of the program
 
 This is the creative heart of a scene, and it deserves the most thought. List everything the real program has:
@@ -148,7 +142,7 @@ invent every name, logo and icon.
 
 - The pitch was agreed, the inside-joke question was asked, and the beat sheet was shown before building.
 - The script runs thirty to sixty seconds, has three acts, and its finale escalates until the round ends.
-- The ground changes every few seconds, in at least three different ways, and none of the changes is announced.
+- The ground changes every few seconds, in at least three different ways.
 - At least four interface elements are obstacles, and none is a generic game hazard.
 - The user of the program has a voice, and the biggest joke changes the arena.
 - A new program window was researched and matches the desktop around it; all names and icons are invented.
