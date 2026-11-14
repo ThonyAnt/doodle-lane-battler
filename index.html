@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doodle Lane Battler</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Gochi+Hand&family=Karla:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* layout: lane on top at full width, one drawing desk per player underneath. Single paper theme by choice. */
+  --paper:#f3f6fb; --grid:#d3deee; --ink:#1c2541; --muted:#59658a;
+  --hi:#ffd84a; --card:#ffffff;
+  --p1:#2f6fde; --p2:#d9486e;
+  --fire:#e2552d; --water:#2a7fd4; --plant:#2f9e56;
+  --display:"Gochi Hand","Comic Sans MS",cursive;
+  --body:"Karla",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.4;
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:24px 24px}
+main{max-width:1120px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px}
+h1{font-family:var(--display);font-weight:400;font-size:34px;line-height:1;margin:0;
+  background:linear-gradient(transparent 58%,var(--hi) 58%);padding:0 6px}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-left:auto}
+.seg{display:flex;border:2px solid var(--ink);border-radius:10px;overflow:hidden;background:var(--card)}
+.seg button{border:0;background:transparent;border-radius:0;padding:6px 12px}
+.seg button[aria-pressed="true"]{background:var(--ink);color:#fff}
+button{font:600 14px var(--body);color:var(--ink);background:var(--card);border:2px solid var(--ink);
+  border-radius:10px;padding:6px 14px;cursor:pointer}
+button:hover{background:#fff7d1}
+.seg button[aria-pressed="true"]:hover{background:var(--ink)}
+button:focus-visible{outline:3px solid var(--p1);outline-offset:2px}
+button:disabled{opacity:.45;cursor:not-allowed;background:var(--card)}
+button.primary{background:var(--hi)}
+.badge{font-size:13px;color:var(--muted);background:var(--card);border:1px dashed var(--muted);border-radius:999px;padding:3px 10px}
+
+.lanewrap{position:relative;background:var(--card);border:2px solid var(--ink);border-radius:14px;overflow:hidden;
+  box-shadow:4px 4px 0 var(--ink)}
+#lane{display:block;width:100%;height:auto}
+.hud{display:flex;align-items:center;gap:12px;padding:8px 12px;border-bottom:2px solid var(--ink);font-variant-numeric:tabular-nums}
+.hp{flex:1;display:flex;align-items:center;gap:8px;min-width:0}
+.hp.right{flex-direction:row-reverse}
+.hp b{white-space:nowrap}
+.bar{flex:1;height:14px;border:2px solid var(--ink);border-radius:8px;background:#eef1f7;overflow:hidden;min-width:40px}
+.bar i{display:block;height:100%;width:100%}
+.hp.left .bar i{background:var(--p1)} .hp.right .bar i{background:var(--p2);margin-left:auto}
+#clock{font-family:var(--display);font-size:26px;min-width:64px;text-align:center}
+#clock.rush{color:var(--fire)}
+.overlay{position:absolute;inset:44px 0 0 0;display:flex;align-items:center;justify-content:center;padding:12px;
+  background:rgba(243,246,251,.82)}
+.overlay[hidden]{display:none}
+.overlay .box{background:var(--card);border:2px solid var(--ink);border-radius:14px;padding:14px 18px;max-width:520px;text-align:center;
+  box-shadow:4px 4px 0 var(--ink)}
+.overlay h2{font-family:var(--display);font-weight:400;font-size:28px;margin:0 0 4px;text-wrap:balance}
+.overlay p{margin:0 0 10px;color:var(--muted)}
+
+.desks{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.desk{background:var(--card);border:2px solid var(--ink);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.desk h2{font-family:var(--display);font-weight:400;font-size:22px;margin:0;display:flex;align-items:center;gap:8px}
+.dot{width:12px;height:12px;border-radius:50%;display:inline-block;border:2px solid var(--ink)}
+.padrow{display:flex;gap:10px;align-items:stretch}
+.pad{flex:1;min-width:0;border:2px dashed var(--ink);border-radius:10px;background:#fff;touch-action:none;cursor:crosshair;
+  width:100%;height:auto;aspect-ratio:640/420;display:block}
+.pens{display:flex;flex-direction:column;gap:6px}
+.pen{width:34px;height:34px;padding:0;border-radius:50%}
+.pen[aria-pressed="true"]{outline:3px solid var(--hi);outline-offset:2px}
+.inkrow{display:flex;align-items:center;gap:8px;font-variant-numeric:tabular-nums}
+.inkbar{flex:1;height:16px;border:2px solid var(--ink);border-radius:8px;background:#eef1f7;position:relative;overflow:hidden}
+.inkbar .have{position:absolute;inset:0 auto 0 0;background:var(--ink)}
+.inkbar .cost{position:absolute;inset:0 auto 0 0;background:var(--hi);border-right:2px solid var(--ink)}
+.inkbar.full{animation:shake .25s}
+@keyframes shake{25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
+.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.read{font-size:13px;color:var(--muted);min-height:1.4em;overflow-wrap:anywhere}
+.read b{color:var(--ink)}
+.rules{margin:0;padding:0;list-style:none;display:grid;gap:4px;font-size:14px}
+.rules b{font-weight:700}
+.chip{display:inline-block;border-radius:6px;padding:0 6px;color:#fff;font-weight:600;font-size:13px}
+.fire{background:var(--fire)} .water{background:var(--water)} .plant{background:var(--plant)}
+.botplan{font-size:14px;color:var(--muted)}
+.code{letter-spacing:.12em;background:var(--hi);padding:0 8px;border-radius:6px}
+.share{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.qr{width:150px;height:150px;flex:none;background:#fff;border:2px solid var(--ink);border-radius:8px;padding:4px}
+.qr svg{width:100%;height:100%;display:block}
+.link{font-weight:700;overflow-wrap:anywhere;user-select:all;-webkit-user-select:all;margin:4px 0}
+input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;padding:6px 10px;width:6.5em;text-transform:uppercase;color:var(--ink);background:#fff}
+input:focus-visible{outline:3px solid var(--p1);outline-offset:2px}
+[hidden]{display:none!important}
+@media (max-width:760px){ .desks{grid-template-columns:1fr} h1{font-size:28px} .controls{margin-left:0} }
+@media (prefers-reduced-motion:reduce){ .inkbar.full{animation:none} }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Doodle Lane Battler</h1>
+    <div class="controls">
+      <span class="badge" id="reader">Drawings read by: local guess</span>
+      <div class="seg" role="group" aria-label="Opponent">
+        <button id="modeBot" aria-pressed="true">vs Bot</button>
+        <button id="mode2p" aria-pressed="false">2 players</button>
+        <button id="modeOnline" aria-pressed="false" hidden>Online</button>
+      </div>
+      <button id="restart">Restart</button>
+    </div>
+  </header>
+
+  <section class="lanewrap" aria-label="Battlefield">
+    <div class="hud">
+      <div class="hp left"><b>Blue base</b><div class="bar"><i id="hp0"></i></div><span id="hp0n">500</span></div>
+      <div id="clock">1:30</div>
+      <div class="hp right"><b>Red base</b><div class="bar"><i id="hp1"></i></div><span id="hp1n">500</span></div>
+    </div>
+    <canvas id="lane" width="1200" height="320"></canvas>
+    <div class="overlay" id="overlay">
+      <div class="box">
+        <h2 id="ovTitle">Draw a unit, then press Send</h2>
+        <p id="ovText">Your drawing walks at the red base. The clock starts when the first unit is sent.</p>
+        <button class="primary" id="ovBtn">Start the clock now</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="desks">
+    <div class="desk" id="desk0"></div>
+    <div class="desk" id="desk1"></div>
+  </section>
+
+  <section class="desk">
+    <h2>How a drawing becomes a unit</h2>
+    <ul class="rules">
+      <li><b>Ink is the price.</b> Every stroke spends ink, and the ink you spend sets the unit's total strength.</li>
+      <li><b>The reader picks the kind,</b> never the power: ground, flying or stationary; melee, ranged, area or no attack; one element.</li>
+      <li><span class="chip fire">fire</span> beats <span class="chip plant">plant</span>, <span class="chip plant">plant</span> beats <span class="chip water">water</span>, <span class="chip water">water</span> beats <span class="chip fire">fire</span> (1.5x damage).</li>
+      <li><b>Flying</b> units cannot be hit by ground melee. Ranged and area attacks reach them.</li>
+      <li><b>Stationary</b> drawings (a wall, a tower) hold a spot in front of your base and are tougher.</li>
+      <li><b>Last 30 seconds:</b> ink refills twice as fast. Most base health at 0:00 wins. If the bases are tied, the side that pushed further down the lane wins.</li>
+    </ul>
+  </section>
+</main>
+
+<script src="qrcode.js"></script>
+<script>
+/*SIM-START*/
+const EL_BEATS={fire:'plant',plant:'water',water:'fire'};
+const ATK={melee:{hp:1,d:1,r:22},ranged:{hp:.55,d:.75,r:170},area:{hp:.7,d:.5,r:70},none:{hp:1.8,d:0,r:0}};
+const MOV={ground:{hp:1,d:1,sp:76},flying:{hp:.65,d:1,sp:104},stationary:{hp:1.5,d:1.2,sp:0}};
+const BASE_HP=500, INK_MAX=100, MATCH_S=90, HIT_EVERY=0.6, LANE=1000;
+const INK_PER_PX=1/28, MIN_COST=5;
+
+function elMult(a,d){ if(EL_BEATS[a]===d) return 1.5; if(EL_BEATS[d]===a) return 0.67; return 1; }
+function statsFor(spec,B){
+  const a=ATK[spec.attack], m=MOV[spec.movement];
+  return { hp:Math.round(5*B*a.hp*m.hp), dps:+(0.8*B*a.d*m.d).toFixed(1), range:a.r, speed:m.sp,
+           size:Math.round(34+Math.sqrt(B)*6) };
+}
+function canHit(u,e){
+  if(u.dps<=0) return false;
+  if(e.move==='flying') return u.atk==='ranged'||u.atk==='area'||u.move==='flying';
+  return true;
+}
+function nameFor(spec){
+  const el={fire:'Fire ',water:'Water ',plant:'Leaf ',none:''}[spec.element];
+  const nouns={
+    ground:{melee:'Brawler',ranged:'Archer',area:'Bomb Thrower',none:'Shield Bearer'},
+    flying:{melee:'Swooper',ranged:'Sky Archer',area:'Bomber',none:'Balloon'},
+    stationary:{melee:'Spike Trap',ranged:'Tower',area:'Mortar',none:'Wall'}};
+  return el+nouns[spec.movement][spec.attack];
+}
+function createSim(){
+  const S={t:0,started:false,over:false,winner:null,units:[],fx:[],events:[],
+           bases:[{hp:BASE_HP},{hp:BASE_HP}],ink:[45,45],nextId:1};
+  S.spawn=function(side,spec,budget,sprite,source){
+    const st=statsFor(spec,budget), dir=side===0?1:-1, home=side===0?0:LANE, id=S.nextId++;
+    const jitter=((id*37)%41)-20;
+    const u={id,side,x:spec.movement==='stationary'?home+dir*(150+jitter):home+dir*24,
+      hp:st.hp,maxHp:st.hp,dps:st.dps,range:st.range,speed:st.speed,size:st.size,
+      move:spec.movement,atk:spec.attack,el:spec.element,name:spec.name||nameFor(spec),
+      cd:0.3,born:S.t,sprite:sprite||null,source:source||'local',budget};
+    S.units.push(u); return u;
+  };
+  S.step=function(dt){
+    if(S.over||!S.started) return;
+    S.t+=dt;
+    const rate=S.t>MATCH_S-30?12:6;
+    for(let i=0;i<2;i++) S.ink[i]=Math.min(INK_MAX,S.ink[i]+rate*dt);
+    for(const u of S.units){
+      if(u.hp<=0) continue;
+      const dir=u.side===0?1:-1, baseX=u.side===0?LANE:0, foe=1-u.side;
+      let tgt=null,best=1e9;
+      for(const e of S.units){
+        if(e.side===u.side||e.hp<=0||!canHit(u,e)) continue;
+        const d=Math.abs(e.x-u.x);
+        if(d<=u.range+6&&d<best){best=d;tgt=e;}
+      }
+      const atBase=Math.abs(baseX-u.x)<=Math.max(u.range,22);
+      if(tgt||(atBase&&u.dps>0)){
+        u.cd-=dt;
+        if(u.cd<=0){
+          u.cd=HIT_EVERY;
+          const dmg=u.dps*HIT_EVERY;
+          if(tgt){
+            const hitList=u.atk==='area'
+              ? S.units.filter(e=>e.side!==u.side&&e.hp>0&&canHit(u,e)&&Math.abs(e.x-tgt.x)<=55)
+              : [tgt];
+            for(const e of hitList){ e.hp-=dmg*elMult(u.el,e.el); e.flash=0.15; }
+            S.fx.push({kind:u.atk,from:u.id,x0:u.x,x1:tgt.x,fly0:u.move==='flying',fly1:tgt.move==='flying',el:u.el,ttl:0.25});
+          }else{
+            S.bases[foe].hp=Math.max(0,S.bases[foe].hp-dmg);
+            S.events.push({type:'baseHit',side:foe,el:u.el});
+            S.fx.push({kind:u.atk,from:u.id,x0:u.x,x1:baseX,fly0:u.move==='flying',fly1:false,el:u.el,ttl:0.25});
+          }
+        }
+      }else if(!atBase&&u.speed>0){
+        u.x+=dir*u.speed*dt;
+      }
+      if(u.flash>0) u.flash-=dt;
+    }
+    for(const u of S.units) if(u.hp<=0) S.fx.push({kind:'poof',x0:u.x,x1:u.x,fly0:u.move==='flying',ttl:0.4});
+    S.units=S.units.filter(u=>u.hp>0);
+    for(const f of S.fx) f.ttl-=dt;
+    S.fx=S.fx.filter(f=>f.ttl>0);
+    if(S.bases[0].hp<=0||S.bases[1].hp<=0||S.t>=MATCH_S){
+      S.over=true;
+      const a=S.bases[0].hp,b=S.bases[1].hp;
+      S.tiebreak=false;
+      if(a!==b) S.winner=a>b?0:1;
+      else{
+        // Equal base health: whoever pushed further down the lane takes it.
+        const adv=side=>S.units.filter(u=>u.side===side&&u.speed>0).reduce((m,u)=>Math.max(m,side===0?u.x:LANE-u.x),0);
+        const p=adv(0),q=adv(1);
+        S.winner=Math.abs(p-q)<1?-1:(p>q?0:1); S.tiebreak=S.winner!==-1;
+      }
+    }
+  };
+  return S;
+}
+function createBot(rand){
+  rand=rand||Math.random;
+  let plan=null;
+  const pickFrom=a=>a[Math.floor(rand()*a.length)];
+  function pick(S){
+    const theirs=S.units.filter(u=>u.side===0), mine=S.units.filter(u=>u.side===1);
+    let spec;
+    if(theirs.some(u=>u.move==='flying')&&!mine.some(u=>u.atk==='ranged'||u.atk==='area'))
+      spec={movement:pickFrom(['ground','stationary']),attack:'ranged'};
+    else if(theirs.length>=3&&rand()<0.5) spec={movement:'ground',attack:'area'};
+    else spec=pickFrom([
+      {movement:'ground',attack:'melee'},{movement:'ground',attack:'melee'},{movement:'ground',attack:'ranged'},
+      {movement:'flying',attack:'melee'},{movement:'stationary',attack:'none'},{movement:'ground',attack:'area'}]);
+    const last=theirs[theirs.length-1];
+    const counter=last&&Object.keys(EL_BEATS).find(k=>EL_BEATS[k]===last.el);
+    spec.element=(counter&&rand()<0.6)?counter:pickFrom(['fire','water','plant','none']);
+    spec.name=nameFor(spec);
+    return {spec,cost:Math.round(14+rand()*26)};
+  }
+  return {
+    peek:()=>plan,
+    think(S){
+      if(!S.started||S.over) return null;
+      if(!plan) plan=pick(S);
+      if(S.ink[1]>=plan.cost){ const p=plan; S.ink[1]-=p.cost; plan=null; return p; }
+      return null;
+    }
+  };
+}
+function validSpec(o){
+  const ok=(v,list)=>list.includes(v);
+  if(!o||!ok(o.movement,['ground','flying','stationary'])||!ok(o.attack,['melee','ranged','area','none'])||!ok(o.element,['fire','water','plant','none'])) return null;
+  const name=String(o.name||'').replace(/[<>]/g,'').slice(0,28).trim();
+  return {movement:o.movement,attack:o.attack,element:o.element,name:name||null};
+}
+function localGuess(strokes){
+  // Crude stand-in when Claude is not available: colour sets the element, shape sets the rest.
+  let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9; const len={none:0,fire:0,water:0,plant:0}; let straight=false;
+  for(const s of strokes){
+    let l=0;
+    for(let i=0;i<s.pts.length;i++){
+      const p=s.pts[i]; minX=Math.min(minX,p[0]);maxX=Math.max(maxX,p[0]);minY=Math.min(minY,p[1]);maxY=Math.max(maxY,p[1]);
+      if(i) l+=Math.hypot(p[0]-s.pts[i-1][0],p[1]-s.pts[i-1][1]);
+    }
+    len[s.el]+=l;
+    const a=s.pts[0], b=s.pts[s.pts.length-1], chord=Math.hypot(b[0]-a[0],b[1]-a[1]);
+    if(l>90&&chord/l>0.93) straight=true;
+  }
+  const w=Math.max(1,maxX-minX), h=Math.max(1,maxY-minY);
+  const element=Object.keys(len).sort((a,b)=>len[b]-len[a])[0];
+  const movement=w/h>1.9?'flying':(h/w>1.5?'stationary':'ground');
+  let attack='melee';
+  if(movement==='stationary'&&strokes.length<=2) attack='none';
+  else if(strokes.length>=6) attack='area';
+  else if(straight) attack='ranged';
+  const spec={movement,attack,element}; spec.name=nameFor(spec); return spec;
+}
+function strokeLen(strokes){
+  let l=0;
+  for(const s of strokes) for(let i=1;i<s.pts.length;i++) l+=Math.hypot(s.pts[i][0]-s.pts[i-1][0],s.pts[i][1]-s.pts[i-1][1]);
+  return l;
+}
+/*SIM-END*/
+</script>
+
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+const PEN={none:'#1c2541',fire:'#e2552d',water:'#2a7fd4',plant:'#2f9e56'};
+const SIDE_COL=['#2f6fde','#d9486e'];
+const PAD_W=640, PAD_H=420;
+const laneCv=$('lane'), L=laneCv.getContext('2d');
+const X0=100, GROUND=262, SKY=120;
+
+let sim, bot, mode='bot', pending=[], pads=[], sample=null, sampleImages=false, lastT=0;
+
+/* ---------- reading a drawing ---------- */
+const PROMPT=`You are the referee of a drawing game. The attached image is a quick doodle a player drew to summon a unit.
+Decide what it is and classify it. Reply with JSON only, no other text:
+{"name":"2-3 word name of what was drawn","movement":"ground|flying|stationary","attack":"melee|ranged|area|none","element":"fire|water|plant|none"}
+Rules: movement is "flying" for anything with wings or that floats in air, "stationary" for buildings, walls, towers, traps and plants rooted in place, otherwise "ground".
+attack is "ranged" if it shoots or throws (bow, gun, wand, cannon), "area" if it explodes or splashes (bomb, wave, breath), "none" if it only blocks (wall, shield, rock), otherwise "melee".
+element is "fire" for flames, heat or lava, "water" for water or ice, "plant" for leaves, wood or vines, otherwise "none". Ink colour is a hint (red fire, blue water, green plant) but the content of the drawing decides.
+Always pick the closest fit, even for a scribble.`;
+
+if(window.claude&&typeof window.claude.use==='function'){
+  window.claude.use('sample').then(async s=>{
+    if(!s) return;
+    try{ const lim=await s.limits(); sampleImages=!!(lim&&lim.images); }catch(e){ sampleImages=false; }
+    if(sampleImages){ sample=s; $('reader').textContent='Drawings read by: Claude'; }
+  }).catch(()=>{});
+}
+function padBlob(strokes){
+  const c=document.createElement('canvas'); c.width=PAD_W; c.height=PAD_H;
+  const g=c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,PAD_W,PAD_H); drawStrokes(g,strokes,7);
+  return new Promise(res=>c.toBlob(res,'image/png'));
+}
+let serverReader=location.protocol.startsWith('http')&&!/claude/.test(location.hostname), serverInfo={};
+if(serverReader) fetch('/info').then(r=>r.json()).then(i=>{
+  serverInfo=i; $('reader').textContent='Drawings read by: '+i.reader; $('modeOnline').hidden=false;
+  const h=location.hash.match(/^#([A-Za-z]{4})$/); if(h){ setMode('online'); joinRoom(h[1]); }
+}).catch(()=>{ serverReader=false; });
+async function readDrawing(strokes){
+  if(serverReader){
+    try{
+      const blob=await padBlob(strokes);
+      const ctl=new AbortController(), timer=setTimeout(()=>ctl.abort(),9000);
+      const r=await fetch('/read',{method:'POST',headers:{'Content-Type':'image/png'},body:blob,signal:ctl.signal});
+      clearTimeout(timer);
+      const body=await r.json();
+      if(!r.ok) throw new Error(body.error||('HTTP '+r.status));
+      const spec=validSpec(body);
+      if(spec){ if(!spec.name) spec.name=nameFor(spec); return {spec,source:body.source||'OpenAI'}; }
+      throw new Error('reply did not match the unit schema');
+    }catch(e){
+      console.warn('Server read failed, using local guess:',e.message);
+    }
+  }
+  if(sample){
+    try{
+      const blob=await padBlob(strokes);
+      const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),9000));
+      const r=await Promise.race([sample(PROMPT,{images:[blob],modelTier:'quick'}),timeout]);
+      const m=r&&r.text&&r.text.match(/\{[\s\S]*\}/);
+      const spec=m&&validSpec(JSON.parse(m[0]));
+      if(spec){ if(!spec.name) spec.name=nameFor(spec); return {spec,source:'Claude'}; }
+    }catch(e){
+      if(e&&e.code==='not_granted'){ sample=null; $('reader').textContent='Drawings read by: local guess'; }
+    }
+  }
+  await new Promise(r=>setTimeout(r,500));
+  return {spec:localGuess(strokes),source:'local guess'};
+}
+
+/* ---------- drawing helpers ---------- */
+function drawStrokes(g,strokes,width,dx,dy,scale){
+  dx=dx||0;dy=dy||0;scale=scale||1;
+  g.lineCap='round'; g.lineJoin='round'; g.lineWidth=width;
+  for(const s of strokes){
+    g.strokeStyle=PEN[s.el]; g.beginPath();
+    s.pts.forEach((p,i)=>{ const x=(p[0]-dx)*scale,y=(p[1]-dy)*scale; i?g.lineTo(x,y):g.moveTo(x,y); });
+    if(s.pts.length===1){ const p=s.pts[0]; g.lineTo((p[0]-dx)*scale+0.1,(p[1]-dy)*scale); }
+    g.stroke();
+  }
+}
+function spriteFrom(strokes){
+  let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
+  for(const s of strokes) for(const p of s.pts){minX=Math.min(minX,p[0]);maxX=Math.max(maxX,p[0]);minY=Math.min(minY,p[1]);maxY=Math.max(maxY,p[1]);}
+  const pad=8, w=maxX-minX+pad*2, h=maxY-minY+pad*2, sc=Math.min(1,200/Math.max(w,h));
+  const c=document.createElement('canvas'); c.width=Math.max(8,Math.ceil(w*sc)); c.height=Math.max(8,Math.ceil(h*sc));
+  drawStrokes(c.getContext('2d'),strokes,Math.max(10,11*sc),minX-pad,minY-pad,sc);
+  return c;
+}
+const botSprites={};
+function botSprite(spec){
+  const key=spec.movement+spec.attack+spec.element;
+  if(botSprites[key]) return botSprites[key];
+  const c=document.createElement('canvas'); c.width=120; c.height=120;
+  const g=c.getContext('2d'); g.strokeStyle=PEN[spec.element]; g.lineWidth=6; g.lineCap='round'; g.lineJoin='round';
+  const line=(...p)=>{ g.beginPath(); g.moveTo(p[0],p[1]); for(let i=2;i<p.length;i+=2) g.lineTo(p[i],p[i+1]); g.stroke(); };
+  const circ=(x,y,r)=>{ g.beginPath(); g.arc(x,y,r,0,7); g.stroke(); };
+  if(spec.movement==='flying'){ line(8,40,34,22,52,58,60,40,68,58,86,22,112,40); circ(60,62,14); line(52,58,55,64); line(68,58,65,64); }
+  else if(spec.movement==='stationary'){ g.strokeRect(24,14,72,98); line(24,46,96,46); line(24,80,96,80); line(60,14,60,46); line(42,46,42,80); line(78,46,78,80); line(60,80,60,112);
+    if(spec.attack!=='none'){ line(60,30,8,30); } }
+  else if(spec.attack==='ranged'){ circ(66,24,14); line(66,38,66,82,50,112); line(66,82,84,112); line(66,52,30,58); g.beginPath(); g.arc(44,58,30,Math.PI*0.6,Math.PI*1.4); g.stroke(); line(26,32,26,84); }
+  else if(spec.attack==='area'){ circ(60,72,34); line(60,38,66,20,80,12); line(84,6,90,14); line(76,4,80,12); }
+  else if(spec.attack==='none'){ circ(74,26,13); line(74,39,74,84,62,112); line(74,84,88,112); g.strokeRect(18,36,36,56); }
+  else { g.beginPath(); g.ellipse(64,70,40,26,0,0,7); g.stroke(); circ(24,56,14); line(12,44,8,34); line(26,42,28,32); line(46,94,44,112); line(82,94,84,112); line(104,70,116,56); line(14,60,22,64,30,60); }
+  botSprites[key]=c; return c;
+}
+
+/* ---------- desks ---------- */
+function makePad(side,root){
+  root.innerHTML=`
+    <h2><span class="dot" style="background:${SIDE_COL[side]}"></span>${side===0?'Blue':'Red'} player</h2>
+    <div class="padrow">
+      <canvas class="pad" id="pad${side}" width="${PAD_W}" height="${PAD_H}" aria-label="Drawing pad"></canvas>
+      <div class="pens" role="group" aria-label="Ink colour">
+        ${Object.keys(PEN).map((el,i)=>`<button class="pen" id="pen${side}-${el}" data-el="${el}" style="background:${PEN[el]}" aria-pressed="${i===0}" aria-label="${el==='none'?'Plain':el} ink" title="${el==='none'?'Plain':el} ink"></button>`).join('')}
+      </div>
+    </div>
+    <div class="inkrow"><span>Ink</span><div class="inkbar" id="inkbar${side}"><div class="have"></div><div class="cost"></div></div><span id="inknum${side}">0</span></div>
+    <div class="actions">
+      <button class="primary" id="send${side}">Send</button>
+      <button id="clear${side}">Clear</button>
+      <span class="read" id="read${side}">Draw anything. Bigger drawings cost more ink and hit harder.</span>
+    </div>`;
+  const cv=$('pad'+side), g=cv.getContext('2d');
+  const P={side,strokes:[],len:0,el:'none',cur:null};
+  P.cost=()=>P.len*INK_PER_PX;
+  P.redraw=()=>{ g.clearRect(0,0,PAD_W,PAD_H); drawStrokes(g,P.strokes,7); };
+  P.clear=()=>{ P.strokes=[]; P.len=0; P.cur=null; P.redraw(); };
+  const pos=e=>{ const r=cv.getBoundingClientRect(); return [(e.clientX-r.left)*PAD_W/r.width,(e.clientY-r.top)*PAD_H/r.height]; };
+  cv.addEventListener('pointerdown',e=>{
+    if(sim.over) return;
+    if(P.cost()>=sim.ink[side]){ nudge(side); return; }
+    try{ cv.setPointerCapture(e.pointerId); }catch(_){}
+    P.cur={el:P.el,pts:[pos(e)]}; P.strokes.push(P.cur); P.redraw(); e.preventDefault();
+  });
+  cv.addEventListener('pointermove',e=>{
+    if(!P.cur) return;
+    const p=pos(e), q=P.cur.pts[P.cur.pts.length-1], d=Math.hypot(p[0]-q[0],p[1]-q[1]);
+    if(d<3) return;
+    if((P.len+d)*INK_PER_PX>sim.ink[side]){ P.cur=null; nudge(side); return; }
+    P.cur.pts.push(p); P.len+=d; P.redraw();
+  });
+  const end=()=>{ P.cur=null; };
+  cv.addEventListener('pointerup',end); cv.addEventListener('pointercancel',end);
+  root.querySelectorAll('.pen').forEach(b=>b.addEventListener('click',()=>{
+    P.el=b.dataset.el; root.querySelectorAll('.pen').forEach(x=>x.setAttribute('aria-pressed',x===b));
+  }));
+  $('clear'+side).addEventListener('click',P.clear);
+  $('send'+side).addEventListener('click',()=>send(P));
+  return P;
+}
+function nudge(side){ const b=$('inkbar'+side); b.classList.remove('full'); void b.offsetWidth; b.classList.add('full'); }
+function botDesk(root){
+  root.innerHTML=`
+    <h2><span class="dot" style="background:${SIDE_COL[1]}"></span>Red bot</h2>
+    <p class="botplan" id="botplan">Waiting for your first unit.</p>
+    <div class="inkrow"><span>Ink</span><div class="inkbar" id="inkbar1"><div class="have"></div><div class="cost"></div></div><span id="inknum1">0</span></div>
+    <p class="botplan">The bot gets the same ink as you, but its units are 15% weaker because it does not have to draw. It answers flying units with ranged ones and often picks the element that beats your latest unit.</p>`;
+}
+async function send(P){
+  const cost=Math.max(MIN_COST,P.cost()), side=P.side;
+  if(!P.strokes.length||sim.over) return;
+  if(cost>sim.ink[side]){ nudge(side); return; }
+  if(mode==='online'){
+    const out=P.strokes.map(s=>({el:s.el,pts:s.pts.map(p=>[Math.round(p[0]*10)/10,Math.round(p[1]*10)/10])}));
+    const blob=await padBlob(P.strokes), png=await new Promise(res=>{ const f=new FileReader(); f.onload=()=>res(String(f.result).split(',')[1]); f.readAsDataURL(blob); });
+    P.clear(); $('read'+side).textContent='Summoning...';
+    const r=await act('send',{strokes:out,png});
+    if(!r.ok){ $('read'+side).textContent=r.error||'Could not send that drawing.'; nudge(side); }
+    return;
+  }
+  const strokes=P.strokes, sprite=spriteFrom(strokes), mySim=sim;
+  sim.ink[side]-=cost; sim.started=true; hideOverlay();
+  P.clear();
+  const job={side,sprite,t:0}; pending.push(job);
+  $('read'+side).textContent='Summoning...';
+  const {spec,source}=await readDrawing(strokes);
+  pending=pending.filter(j=>j!==job);
+  if(mySim!==sim||sim.over) return;
+  const u=sim.spawn(side,spec,cost,sprite,source);
+  $('read'+side).innerHTML=`Read as <b></b>: ${spec.movement}, ${spec.attack==='none'?'no attack':spec.attack}, ${spec.element==='none'?'no element':spec.element} (${source}). ${Math.round(cost)} ink, ${u.maxHp} health.`;
+  $('read'+side).querySelector('b').textContent=u.name;
+}
+
+/* ---------- match control ---------- */
+function reset(){
+  if(mode==='online'){ if(net.on) act('reset'); return; }
+  sim=createSim(); bot=createBot(); pending=[];
+  pads=[makePad(0,$('desk0'))];
+  if(mode==='2p') pads.push(makePad(1,$('desk1'))); else botDesk($('desk1'));
+  showOverlay('Draw a unit, then press Send',
+    mode==='2p'?'Each player draws on their own pad. The clock starts when the first unit is sent.'
+               :'Your drawing walks at the red base. The clock starts when the first unit is sent.','Start the clock now');
+}
+function showOverlay(t,p,b){ $('ovTitle').textContent=t; $('ovText').textContent=p; $('ovBtn').textContent=b; $('ovBtn').hidden=!b; $('overlay').hidden=false; }
+function hideOverlay(){ $('overlay').hidden=true; }
+$('ovBtn').addEventListener('click',()=>{
+  if(mode==='online'){ act(sim.over?'reset':'start'); return; }
+  if(sim.over) reset(); else { sim.started=true; hideOverlay(); }
+});
+$('restart').addEventListener('click',reset);
+function setMode(m){
+  if(mode==='online'&&m!=='online') leaveRoom();
+  mode=m; $('modeBot').setAttribute('aria-pressed',m==='bot'); $('mode2p').setAttribute('aria-pressed',m==='2p'); $('modeOnline').setAttribute('aria-pressed',m==='online');
+  if(m==='online') buildOnline(); else reset();
+}
+$('modeOnline').addEventListener('click',()=>{ if(mode!=='online') setMode('online'); });
+
+/* ---------- online: the server runs the match, each device shows it and sends drawings ---------- */
+const net={on:false,code:null,side:-1,es:null,present:[false,false],sprites:new Map(),units:new Map(),msg:'',ovKey:''};
+const cid=(()=>{ const mk=()=>Math.random().toString(36).slice(2,12);
+  try{ let v=sessionStorage.getItem('dlb-id'); if(!v){ v=mk(); sessionStorage.setItem('dlb-id',v); } return v; }catch(e){ return mk(); } })();
+function netSim(){ return {t:0,started:false,over:false,winner:null,tiebreak:false,units:[],fx:[],events:[],bases:[{hp:BASE_HP},{hp:BASE_HP}],ink:[45,45],step(){}}; }
+async function act(type,extra){
+  try{
+    const r=await fetch('/act',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({room:net.code,id:cid,type},extra||{}))});
+    const b=await r.json().catch(()=>({})); return {ok:r.ok,error:b.error};
+  }catch(e){ return {ok:false,error:'Could not reach the game server.'}; }
+}
+async function createRoom(){
+  try{ const r=await fetch('/room',{method:'POST'}); const b=await r.json(); if(!r.ok) throw new Error(b.error||'failed'); joinRoom(b.code); }
+  catch(e){ net.msg='Could not create a room: '+e.message; buildOnline(); }
+}
+function leaveRoom(){
+  if(net.es){ net.es.close(); net.es=null; }
+  net.on=false; net.code=null; net.side=-1; net.present=[false,false]; net.sprites.clear(); net.units.clear(); net.ovKey='';
+  try{ history.replaceState(null,'',location.pathname); }catch(e){}
+}
+function joinRoom(raw){
+  const code=String(raw||'').toUpperCase().replace(/[^A-Z]/g,'').slice(0,4);
+  if(code.length!==4){ net.msg='Room codes are 4 letters.'; buildOnline(); return; }
+  leaveRoom(); net.msg='Joining '+code+'...'; net.code=code; buildOnline();
+  const es=new EventSource('/events?room='+code+'&id='+cid); net.es=es;
+  const on=(name,fn)=>es.addEventListener(name,e=>{ if(net.es===es) fn(JSON.parse(e.data)); });
+  on('hello',d=>{
+    const first=!net.on||net.side!==d.side; net.on=true; net.side=d.side; net.msg='';
+    try{ history.replaceState(null,'','#'+code); }catch(e){}
+    if(first) buildOnline();
+  });
+  on('gone',()=>{ leaveRoom(); net.msg='There is no room '+code+'. Check the code, or create a new room.'; buildOnline(); });
+  on('players',d=>{ net.present=d.present; roomStatus(); onlineOverlay(); });
+  on('pending',d=>{ pending.push({key:d.key,side:d.side,sprite:spriteFrom(d.strokes)}); });
+  on('cancel',d=>{ pending=pending.filter(j=>j.key!==d.key); });
+  on('spawn',d=>{
+    pending=pending.filter(j=>j.key!==d.key); net.sprites.set(d.id,spriteFrom(d.strokes));
+    const el=$('read'+d.side);
+    if(el&&d.side===net.side&&d.key){ const sp=d.spec;
+      el.innerHTML=`Read as <b></b>: ${sp.movement}, ${sp.attack==='none'?'no attack':sp.attack}, ${sp.element==='none'?'no element':sp.element} (${d.source==='OpenAI'?'OpenAI':'local guess'}). ${d.cost} ink, ${d.maxHp} health.`;
+      el.querySelector('b').textContent=d.name; }
+  });
+  on('reset',()=>{ pending=[]; net.sprites.clear(); net.units.clear(); if(pads[net.side]) pads[net.side].clear(); });
+  on('state',applyState);
+}
+function applyState(d){
+  if(mode!=='online'||!net.on) return;
+  sim.t=d.t; sim.started=d.started; sim.over=d.over; sim.winner=d.winner; sim.tiebreak=d.tiebreak;
+  sim.bases[0].hp=d.hp[0]; sim.bases[1].hp=d.hp[1]; sim.ink[0]=d.ink[0]; sim.ink[1]=d.ink[1];
+  const seen=new Set();
+  sim.units=d.units.map(n=>{
+    seen.add(n.id); let u=net.units.get(n.id); if(!u){ u={x:n.x}; net.units.set(n.id,u); }
+    Object.assign(u,{id:n.id,side:n.side,tx:n.x,hp:n.hp,maxHp:n.maxHp,size:n.size,move:n.move,atk:n.atk,el:n.el,name:n.name,
+      born:d.t-n.age,flash:n.flash?0.1:0,speed:n.move==='stationary'?0:1,sprite:net.sprites.get(n.id)||null});
+    return u;
+  });
+  for(const id of [...net.units.keys()]) if(!seen.has(id)){ net.units.delete(id); net.sprites.delete(id); }
+  sim.fx=d.fx;
+  for(const e of d.events) if(e.side===net.side){ try{ navigator.vibrate&&navigator.vibrate(e.el==='fire'?[20,20,20]:30); }catch(_){} }
+  onlineOverlay();
+}
+function roomStatus(){
+  const el=$('roomStatus'); if(!el) return;
+  el.textContent=net.side<0?'Two players are already in this room. You are watching.'
+    :(net.present[0]&&net.present[1]?'Both players are in.':'Waiting for the other player to join.');
+}
+function onlineOverlay(){
+  if(mode!=='online') return;
+  const both=net.present[0]&&net.present[1], key=[net.on,net.side,both,sim.started,sim.over,sim.winner].join();
+  if(key===net.ovKey) return; net.ovKey=key;
+  const canAct=net.side>=0;
+  if(!net.on) showOverlay('Play online','Create a room below, or join one with its 4-letter code.','');
+  else if(sim.over){
+    const w=sim.winner, t=w===-1?'Draw':(w===0?'Blue wins':'Red wins');
+    showOverlay(t,`Blue base ${Math.ceil(sim.bases[0].hp)}, red base ${Math.ceil(sim.bases[1].hp)}.`+(sim.tiebreak?' Bases tied, so the side that pushed further down the lane wins.':''),canAct?'Play again':'');
+  }
+  else if(sim.started) hideOverlay();
+  else if(both) showOverlay('Draw a unit, then press Send','Both players are in. The clock starts when the first unit is sent.',canAct?'Start the clock now':'');
+  else showOverlay('Room '+net.code,'Waiting for the other player. Share the code or the QR code below.','');
+}
+function roomCard(root){
+  if(!net.on){
+    root.innerHTML=`<h2>Room</h2>
+      <div class="actions"><button class="primary" id="roomCreate">Create a room</button></div>
+      <form class="actions" id="roomJoinForm"><label for="roomCode">Have a code?</label>
+        <input id="roomCode" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD"><button id="roomJoin">Join</button></form>
+      <p class="read" id="roomMsg"></p>`;
+    $('roomCreate').addEventListener('click',createRoom);
+    $('roomJoinForm').addEventListener('submit',e=>{ e.preventDefault(); joinRoom($('roomCode').value); });
+    $('roomMsg').textContent=net.msg;
+    return;
+  }
+  const other=net.side===0?1:0, local=/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  const base=local&&serverInfo.lanUrl?serverInfo.lanUrl:location.origin, url=base+'/#'+net.code;
+  root.innerHTML=`<h2>Room <span class="code">${net.code}</span></h2>
+    <p class="botplan" id="roomStatus"></p>
+    <div class="share"><div id="roomQr" class="qr" role="img" aria-label="QR code for the join link"></div>
+      <div style="flex:1;min-width:180px"><p class="botplan">Scan to join, or open this link on the other device:</p><p class="link" id="roomLink"></p>
+      <p class="botplan">Or choose Online there and type the code.${local&&!serverInfo.lanUrl?' This link only works on this computer.':''}</p></div></div>
+    ${net.side>=0?`<div class="inkrow"><span>Opponent ink</span><div class="inkbar" id="inkbar${other}"><div class="have"></div><div class="cost"></div></div><span id="inknum${other}">0</span></div>`:''}
+    <div class="actions"><button id="roomLeave">Leave room</button></div>`;
+  $('roomLink').textContent=url;
+  if(typeof qrcode==='function'){ try{ const q=qrcode(0,'M'); q.addData(url); q.make(); $('roomQr').innerHTML=q.createSvgTag({cellSize:4,margin:2,scalable:true}); }catch(e){} }
+  $('roomLeave').addEventListener('click',()=>{ leaveRoom(); net.msg=''; buildOnline(); });
+  roomStatus();
+}
+function buildOnline(){
+  sim=netSim(); pending=[]; pads=[]; net.ovKey='';
+  const d0=$('desk0');
+  if(net.on&&net.side>=0){ pads[net.side]=makePad(net.side,d0); d0.querySelector('h2').lastChild.textContent='You are '+(net.side===0?'Blue (left base)':'Red (right base)'); }
+  else if(net.on) d0.innerHTML='<h2>Watching</h2><p class="botplan">This room already has two players, so you can watch the match from here.</p>';
+  else d0.innerHTML='<h2>Play online</h2><p class="botplan">Create a room on one device, then join from the other with the code or the QR code. Each player draws on their own screen and both see the same lane.</p>';
+  roomCard($('desk1')); onlineOverlay();
+}
+$('modeBot').addEventListener('click',()=>setMode('bot'));
+$('mode2p').addEventListener('click',()=>setMode('2p'));
+
+/* ---------- render ---------- */
+function unitY(u){ return u.move==='flying'||u===true?SKY:GROUND; }
+function castle(x,col,flip){
+  L.save(); L.translate(x,GROUND); if(flip) L.scale(-1,1);
+  L.strokeStyle='#1c2541'; L.lineWidth=4; L.lineJoin='round'; L.fillStyle=col;
+  L.beginPath(); L.moveTo(-70,0); L.lineTo(-70,-120); L.lineTo(-54,-120); L.lineTo(-54,-104); L.lineTo(-38,-104); L.lineTo(-38,-120);
+  L.lineTo(-22,-120); L.lineTo(-22,-104); L.lineTo(-6,-104); L.lineTo(-6,-120); L.lineTo(10,-120); L.lineTo(10,0); L.closePath();
+  L.globalAlpha=.25; L.fill(); L.globalAlpha=1; L.stroke();
+  L.beginPath(); L.moveTo(-42,0); L.lineTo(-42,-40); L.arc(-30,-40,12,Math.PI,0); L.lineTo(-18,0); L.stroke();
+  L.beginPath(); L.moveTo(-30,-120); L.lineTo(-30,-168); L.lineTo(2,-156); L.lineTo(-30,-144); L.fillStyle=col; L.fill(); L.stroke();
+  L.restore();
+}
+function drawUnit(u,now){
+  const x=X0+u.x, fly=u.move==='flying', bob=Math.sin(now/180+u.id)*(fly?6:(u.speed?2.5:0));
+  const baseY=(fly?SKY+u.size/2:GROUND)+bob, s=u.size, sp=u.sprite;
+  if(fly){ L.fillStyle='rgba(28,37,65,.12)'; L.beginPath(); L.ellipse(x,GROUND+4,s*0.35,5,0,0,7); L.fill(); }
+  if(sp){
+    const k=Math.min(s/sp.width,s/sp.height), w=sp.width*k, h=sp.height*k;
+    L.save(); if(u.flash>0) L.globalAlpha=.45;
+    L.drawImage(sp,x-w/2,baseY-h,w,h); L.restore();
+  }else{ L.strokeStyle=PEN[u.el]; L.lineWidth=4; L.strokeRect(x-s/3,baseY-s*0.8,s*0.66,s*0.8); }
+  const top=baseY-s-8, bw=Math.max(26,s*0.6);
+  L.fillStyle='#fff'; L.fillRect(x-bw/2,top,bw,6); L.fillStyle=SIDE_COL[u.side]; L.fillRect(x-bw/2,top,bw*Math.max(0,u.hp/u.maxHp),6);
+  L.strokeStyle='#1c2541'; L.lineWidth=1.5; L.strokeRect(x-bw/2,top,bw,6);
+  if(sim.t-u.born<2.5){
+    L.font='20px "Gochi Hand", cursive'; L.textAlign='center';
+    const tw=L.measureText(u.name).width+12, tx=Math.min(1200-tw/2-4,Math.max(tw/2+4,x));
+    L.fillStyle='#ffd84a'; L.fillRect(tx-tw/2,top-26,tw,22); L.fillStyle='#1c2541'; L.fillText(u.name,tx,top-9);
+  }
+}
+function render(now){
+  L.clearRect(0,0,1200,320);
+  L.strokeStyle='#d3deee'; L.lineWidth=1;
+  for(let x=0;x<1200;x+=24){ L.beginPath(); L.moveTo(x,0); L.lineTo(x,320); L.stroke(); }
+  for(let y=0;y<320;y+=24){ L.beginPath(); L.moveTo(0,y); L.lineTo(1200,y); L.stroke(); }
+  L.strokeStyle='#1c2541'; L.lineWidth=4; L.lineCap='round';
+  L.beginPath(); L.moveTo(10,GROUND+2); for(let x=10;x<=1190;x+=40) L.lineTo(x,GROUND+2+Math.sin(x*0.05)*2); L.stroke();
+  castle(X0,SIDE_COL[0],false); castle(X0+LANE,SIDE_COL[1],true);
+  for(const j of pending){
+    const x=X0+(j.side===0?24:LANE-24), r=30;
+    L.save(); L.translate(x,GROUND-40); L.rotate(now/300); L.setLineDash([10,8]); L.strokeStyle=SIDE_COL[j.side]; L.lineWidth=4;
+    L.beginPath(); L.arc(0,0,r,0,7); L.stroke(); L.restore(); L.setLineDash([]);
+    const k=Math.min(40/j.sprite.width,40/j.sprite.height);
+    L.globalAlpha=.5; L.drawImage(j.sprite,x-j.sprite.width*k/2,GROUND-40-j.sprite.height*k/2,j.sprite.width*k,j.sprite.height*k); L.globalAlpha=1;
+  }
+  const order=sim.units.slice().sort((a,b)=>(a.move==='flying')-(b.move==='flying'));
+  for(const u of order) drawUnit(u,now);
+  for(const f of sim.fx){
+    const xa=X0+f.x0, xb=X0+f.x1, ya=(f.fly0?SKY+30:GROUND-30), yb=(f.fly1?SKY+30:GROUND-30), a=Math.max(0,f.ttl/0.25);
+    L.globalAlpha=Math.min(1,a); L.strokeStyle=PEN[f.el]||'#1c2541'; L.lineWidth=3;
+    if(f.kind==='ranged'){ L.setLineDash([8,6]); L.beginPath(); L.moveTo(xa,ya); L.lineTo(xb,yb); L.stroke(); L.setLineDash([]); }
+    else if(f.kind==='area'){ L.beginPath(); L.arc(xb,yb,55*(1-a*0.6),0,7); L.stroke(); }
+    else if(f.kind==='poof'){ for(let i=0;i<6;i++){ const an=i*1.05, r=26*(1-f.ttl/0.4)+8; L.beginPath(); L.moveTo(xa+Math.cos(an)*r,ya+Math.sin(an)*r); L.lineTo(xa+Math.cos(an)*(r+8),ya+Math.sin(an)*(r+8)); L.stroke(); } }
+    else { L.beginPath(); L.moveTo(xb-10,yb-10); L.lineTo(xb+10,yb+10); L.moveTo(xb+10,yb-10); L.lineTo(xb-10,yb+10); L.stroke(); }
+    L.globalAlpha=1;
+  }
+}
+function hud(){
+  for(let i=0;i<2;i++){
+    const hp=sim.bases[i].hp; $('hp'+i).style.width=(100*hp/BASE_HP)+'%'; $('hp'+i+'n').textContent=Math.ceil(hp);
+    const bar=$('inkbar'+i); if(!bar) continue;
+    const ink=sim.ink[i], cost=pads[i]?Math.min(ink,pads[i].cost()):0;
+    bar.querySelector('.have').style.width=ink+'%'; bar.querySelector('.cost').style.width=cost+'%';
+    $('inknum'+i).textContent=Math.floor(ink);
+    if(pads[i]){ const c=Math.max(MIN_COST,pads[i].cost()); const b=$('send'+i);
+      b.textContent=pads[i].strokes.length?`Send (${Math.round(c)} ink)`:'Send'; b.disabled=!pads[i].strokes.length||c>ink||sim.over; }
+  }
+  const left=Math.max(0,MATCH_S-sim.t), m=Math.floor(left/60), s=Math.floor(left%60);
+  $('clock').textContent=m+':'+String(s).padStart(2,'0'); $('clock').classList.toggle('rush',left<=30&&sim.started);
+  if(mode==='bot'){ const p=bot.peek(), el=$('botplan'); if(el) el.textContent=!sim.started?'Waiting for your first unit.':(p?`Saving ${p.cost} ink for its next unit.`:'Thinking...'); }
+}
+function frame(now){
+  const dt=Math.min(0.05,(now-lastT)/1000||0); lastT=now;
+  const wasOver=sim.over;
+  if(mode==='online'){ for(const u of sim.units) u.x+=(u.tx-u.x)*Math.min(1,dt*14); }
+  else{
+    sim.step(dt);
+    if(mode==='bot'){ const p=bot.think(sim); if(p) sim.spawn(1,p.spec,p.cost*0.85,botSprite(p.spec),'bot'); }
+    for(const e of sim.events){ if(e.side===0||mode==='2p'){ try{ navigator.vibrate&&navigator.vibrate(e.el==='fire'?[20,20,20]:30); }catch(_){} } }
+    sim.events.length=0;
+  }
+  if(mode!=='online'&&sim.over&&!wasOver){
+    const w=sim.winner, t=w===-1?'Draw':(w===0?'Blue wins':'Red wins');
+    showOverlay(t,`Blue base ${Math.ceil(sim.bases[0].hp)}, red base ${Math.ceil(sim.bases[1].hp)}.`+(sim.tiebreak?' Bases tied, so the side that pushed further down the lane wins.':''),'Play again');
+  }
+  render(now); hud();
+  requestAnimationFrame(frame);
+}
+window.__game={get sim(){return sim;},get pads(){return pads;},net};
+reset();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
