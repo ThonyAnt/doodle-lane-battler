@@ -88,5 +88,79 @@ test('accept key matches the RFC example',()=>W.acceptKey('dGhlIHNhbXBsZSBub25jZ
   finally{ srv.closeAllConnections&&srv.closeAllConnections(); srv.close(); }
 }
 
+/* ---------- 3. binary packing and deltas (wire.js) ---------- */
+// 600 consecutive snapshots of a bot-against-bot match with the rules from duel.html, one per 1/60 s as the server sends
+// them, starting where the fight starts (the hard part: a countdown hardly changes and would flatter the numbers).
+// Each is copied as it is taken, undefined fields and all: a snapshot shares arrays with the match, which goes on changing.
+const src=fs.readFileSync(path.join(__dirname,'..','duel.html'),'utf8').replace(/\r\n/g,'\n');
+const D=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,makeBot,stockItem};')();
+function record(seed,n,from,to){
+  const S=D.createDuel({seed}), bots=[D.makeBot(0,()=>0.55,seed+1),D.makeBot(1,()=>0.55,seed+2)], out=[];
+  [['sword','gun'],['hammer','bow']].forEach((keys,s)=>keys.forEach((key,k)=>S.setItem(s,k,D.stockItem(key,k?'fire':'none').spec,45)));
+  for(let i=0;out.length<n&&i<60*400;i++){ for(const s of [0,1]){ bots[s](S,1/60); if(S.phase==='draw'&&!S.ready[s]) S.setReady(s); } S.step(1/60); const snap=structuredClone(S.snapshot()); if(out.length||S.phase===from) out.push(snap); if(S.phase===to) break; }
+  return out;
+}
+const SNAPS=record(7,600,'fight'), Wire=require('../wire.js'), util=require('util');
+{ // pk and un are the two ends of one connection: what pk packs, un must unpack, in order (they share a dictionary of strings).
+  const C=Wire.createCodec(), U=Wire.createCodec(), pk=v=>C.pack(v), un=b=>U.unpack(b), json=v=>JSON.stringify(v), viaJson=v=>JSON.parse(JSON.stringify(v));
+  const size=v=>Wire.createCodec().pack(v).length;      // bytes on a connection that has carried nothing yet
+  test('the recording is a real fight',()=>[SNAPS.length===600&&SNAPS[0].phase==='fight'&&SNAPS.some(s=>s.pr.length>0)&&SNAPS.some(s=>s.ev.length>0)&&SNAPS.some(s=>s.f.some(f=>f.act))&&SNAPS.some(s=>s.pr.some(p=>'h' in p&&p.h===undefined)),
+    {shots:SNAPS.filter(s=>s.pr.length).length,events:SNAPS.reduce((n,s)=>n+s.ev.length,0)}]);
+  test('pack and unpack round-trip odd values',()=>[0,-1,1.5,1e21,'','é',true,null,[],{},{a:[{id:1,x:0.1}]}].every(v=>JSON.stringify(un(pk(v)))===JSON.stringify(v)));
+  test('every recorded snapshot survives a delta',()=>SNAPS.every((s,i)=>i===0||JSON.stringify(Wire.apply(SNAPS[i-1],un(pk(Wire.diff(SNAPS[i-1],s)))))===JSON.stringify(s)));
+  test('a delta against a snapshot 30 back also works',()=>JSON.stringify(Wire.apply(SNAPS[100],Wire.diff(SNAPS[100],SNAPS[130])))===JSON.stringify(SNAPS[130]));
+  test('an unknown new field is carried',()=>Wire.apply({a:1},Wire.diff({a:1},{a:1,forge:{x:[1,2]}})).forge.x[1]===2);
+  test('identical snapshots give no patch',()=>Wire.diff(SNAPS[5],JSON.parse(JSON.stringify(SNAPS[5])))===undefined);
+  // (The plan measured with pk, whose dictionary the tests above have already filled; a connection of its own is the honest count.)
+  const M=Wire.createCodec(), jsonBytes=SNAPS.reduce((n,s)=>n+JSON.stringify(s).length,0), deltaBytes=SNAPS.reduce((n,s,i)=>n+(i?M.pack(Wire.diff(SNAPS[i-1],s)||0).length:M.pack(s).length),0);
+  ok('deltas are at most 40% of the JSON',deltaBytes<=0.4*jsonBytes,{jsonBytes,deltaBytes,percent:+(100*deltaBytes/jsonBytes).toFixed(2)});
+  // Beyond the plan's list. First the packing: what comes out is what JSON would have carried, bit for bit.
+  test('every recorded snapshot packs to exactly what JSON carries, in fewer bytes',()=>{ const c=Wire.createCodec(), u=Wire.createCodec(); let packed=0;
+    for(const s of SNAPS){ const b=c.pack(s); packed+=b.length; if(!util.isDeepStrictEqual(u.unpack(b),viaJson(s))||json(u.unpack(c.pack(s)))!==json(s)) return false; } return [packed<0.5*jsonBytes,{packed,jsonBytes}]; });
+  test('numbers come back exactly, whatever their shape',()=>{ const xs=[0,-0,1,63,64,-64,127,128,255,256,65535,-65536,2**31,-(2**31),2**50,2**50+1,-(2**50)-1,2**53-1,-(2**53)+1,1e21,-1e21,0.1,-0.1,12.3,0.25,-7.77,0.125,1.005,123456.789,0.1+0.2,1/3,-1/3,1e-7,5e-324,1.7976931348623157e308,Math.PI,340.5,0.30000000000000004,99999999999.9,4503599627370496.5];
+    const bad=xs.filter(x=>{ const y=un(pk(x)); return !(y===x)||(x!==0&&1/y!==1/x); }); return [bad.length===0&&un(pk(NaN))===null&&un(pk(Infinity))===null&&un(pk(-Infinity))===null&&Object.is(un(pk(-0)),0),bad]; });
+  test('a one-decimal number takes 3 bytes, a float that is not decimal takes 9',()=>size(123.4)===3&&size(-0.5)===2&&size(40)===1&&size(Math.PI)===9);
+  test('what JSON drops is dropped, what JSON nulls is null',()=>{ const v={a:undefined,b:[undefined,()=>1,NaN],c:()=>2,d:{e:undefined},f:null}; return json(un(pk(v)))===json(v)&&util.isDeepStrictEqual(un(pk(v)),viaJson(v)); });
+  test('strings of every sort survive',()=>['','a','é','日本語','😀 ok','\u0000\n"\\','x'.repeat(300),'__proto__','constructor'].every(x=>un(pk(x))===x&&un(pk({[x]:x}))[x]===x&&un(pk([x,x,x])).every(y=>y===x)));
+  test('a key called __proto__ stays an ordinary key',()=>{ const v=JSON.parse('{"__proto__":{"evil":1},"a":1}'), y=un(pk(v)); return json(y)===json(v)&&Object.getPrototypeOf(y)===Object.prototype&&y.evil===undefined&&({}).evil===undefined; });
+  test('a string seen before costs one byte, on its own connection only',()=>{ const c=Wire.createCodec(), u=Wire.createCodec(), first=c.pack('overdrive'), again=c.pack(['overdrive','overdrive']);
+    return [first.length===11&&again.length===3&&u.unpack(first)==='overdrive'&&u.unpack(again).join()==='overdrive,overdrive'&&Wire.createCodec().pack('overdrive').length===11,[first.length,again.length]]; });
+  test('the dictionary is bounded: long strings and those past its limit are spelt out every time',()=>{ const c=Wire.createCodec(), u=Wire.createCodec(), long='y'.repeat(200); let ok=c.pack(long).length===c.pack(long).length;
+    for(let i=0;i<6000;i++){ const s='s'+i; if(u.unpack(c.pack([s,s]))[1]!==s) return [false,i]; } const late='s5999', early='s0';
+    return [ok&&c.pack(late).length===late.length+2&&c.pack(early).length<=3&&u.unpack(c.pack([early,late,'fresh'])).join()==='s0,s5999,fresh',[c.pack(late).length,c.pack(early).length]]; });
+  test('damaged or cut-off data throws instead of making something up',()=>{ const whole=Wire.createCodec().pack(SNAPS[0]), tries=[whole.subarray(0,whole.length-1),whole.subarray(0,10),Uint8Array.from([...whole,0]),Uint8Array.from([0x0f]),Uint8Array.from([0x89,0x05]),Uint8Array.from([0x0a,0xff,0xff,0xff,0x7f])];
+    return tries.every(t=>{ try{ Wire.createCodec().unpack(t); return false; }catch(e){ return /^wire:/.test(e.message); } }); });
+  // Then the deltas, on made-up values: a seeded mess of nested objects and lists, changed a little at a time.
+  const rnd=(()=>{ let a=12345; return ()=>{ a=(a+0x6D2B79F5)|0; let t=Math.imul(a^(a>>>15),1|a); t=(t+Math.imul(t^(t>>>7),61|t))^t; return ((t^(t>>>14))>>>0)/4294967296; }; })(), pick=a=>a[Math.floor(rnd()*a.length)];
+  const leaf=()=>pick([0,1,-1,2.5,rnd()*100,Math.round(rnd()*1000)/10,'a','bb',pick(['fire','water','plant']),true,false,null,undefined,[],{}]);
+  const make=d=>{ const r=rnd(); if(d<=0||r<0.3) return leaf();
+    if(r<0.5) return Array.from({length:Math.floor(rnd()*4)},()=>make(d-1));
+    if(r<0.65){ const ids=[1,2,3,4,5,6,'x','y'].filter(()=>rnd()<0.5).sort(()=>rnd()-0.5); return ids.map(id=>({id,x:leaf(),o:make(d-2)})); }
+    const o={}; for(const k of ['x','y','hp','act','pr','10','2','name']) if(rnd()<0.6) o[k]=make(d-1); return o; };
+  const change=(v,d)=>{ const r=rnd(); if(v===null||typeof v!=='object'||r<0.08) return rnd()<0.5?make(d):v;
+    if(Array.isArray(v)){ let out=v.map(x=>rnd()<0.4?change(x,d-1):x); if(rnd()<0.25) out=out.filter(()=>rnd()<0.7); if(rnd()<0.25) out.push(make(d-1)); if(rnd()<0.1) out.reverse(); if(rnd()<0.1&&out.length) out.push(out[0]); return out; }
+    const keys=Object.keys(v), out={}; if(rnd()<0.15) keys.reverse(); if(rnd()<0.2) out[pick(['x','zz','7','name'])]=make(d-1);
+    for(const k of keys){ if(rnd()<0.1) continue; out[k]=rnd()<0.4?change(v[k],d-1):v[k]; } if(rnd()<0.2) out[pick(['y','new','3'])]=make(d-1); return out; };
+  test('5000 made-up changes: the delta, packed and unpacked, rebuilds the new value exactly and leaves the old one alone',()=>{ let v=make(4)||{}, n=0, none=0;
+    for(let i=0;i<5000;i++){ let next=rnd()<0.05?structuredClone(v):change(v,4); if(next===undefined) next=null; const before=json(v), d=Wire.diff(v,next), built=Wire.apply(v,d===undefined?undefined:un(pk(d)));
+      if(json(built)!==json(next)||json(v)!==before||(d===undefined)!==(json(v)===json(next))) return [false,{i,v:String(json(v)).slice(0,300),next:String(json(next)).slice(0,300),d:String(json(d)).slice(0,300),built:String(json(built)).slice(0,300)}];
+      if(d===undefined) none++; else n++; v=rnd()<0.03?(make(4)||[]):next; } return [n>3000&&none>100,{n,none}]; });
+  test('only what changed is in the patch',()=>{ const a=SNAPS[200], b=structuredClone(a); b.f[1].hp-=3; b.t=+(b.t-0.02).toFixed(2); const d=Wire.diff(a,b), bytes=Wire.createCodec().pack(d).length;
+    return [json(Wire.apply(a,d))===json(b)&&!json(d).includes('"items"')&&!json(d).includes('"x"')&&json(d).includes('"hp"')&&bytes<40,{bytes,d:json(d)}]; });
+  test('shots are matched by id: one leaving, one arriving and one moving cost a few bytes, not the whole list',()=>{ const shot=(id,x)=>({id,k:'shot',st:'gun',side:0,slot:1,x,y:-40,vx:520,vy:0,el:'fire',o:0}), a={pr:[shot(1,10),shot(2,20),shot(3,30),shot(4,40)]}, b={pr:[shot(2,20),shot(3,35.5),shot(4,40),shot(5,0)]}, d=Wire.diff(a,b);
+    const c=Wire.createCodec(); c.pack(a); const bytes=c.pack(d).length, whole=c.pack([0,b]).length; return [json(Wire.apply(a,d))===json(b)&&bytes<whole/2&&json(d).split('"k"').length===2,{bytes,whole,d:json(d)}]; });
+  test('a list whose order changes, or whose ids repeat, still comes out right',()=>{ const a=[{id:1,v:1},{id:2,v:2},{id:3,v:3}], cases=[[a[2],a[0],a[1]],[a[0],a[0]],[{id:3,v:9},{id:1,v:1}],[],[{id:'1',v:1},{id:1,v:1}],[{v:1},{id:2}]];
+    return cases.every(b=>json(Wire.apply(a,Wire.diff(a,b)))===json(b)&&json(Wire.apply(b,Wire.diff(b,a)))===json(a)); });
+  test('a field that appears in the middle of an object comes out in its place',()=>{ const a={id:1,k:'shot',x:1,z:1}, b={id:1,k:'shot',h:1,x:2,z:1}, c={z:1,x:2}; return json(Wire.apply(a,Wire.diff(a,b)))===json(b)&&json(Wire.apply(b,Wire.diff(b,a)))===json(a)&&json(Wire.apply(b,Wire.diff(b,c)))===json(c)&&Wire.diff(a,{z:1,x:1,k:'shot',id:1})!==undefined; });
+  test('no patch means no change, and the old value is handed back',()=>{ const a={x:[1,{y:2}]}; return Wire.apply(a,undefined)===a&&Wire.apply(a,null)===a&&Wire.diff(a,a)===undefined&&Wire.diff({a:undefined,b:1},{b:1})===undefined&&Wire.diff([undefined,NaN],[null,null])===undefined; });
+  test('a copy is what JSON would carry and shares nothing with the original',()=>{ const s=SNAPS[300], c=Wire.clone(s); c.f[0].x+=1; c.ev.push({e:'x'}); c.wins[0]=9;
+    return util.isDeepStrictEqual(Wire.clone(s),viaJson(s))&&s.f[0].x!==c.f[0].x&&s.wins[0]!==9&&json(Wire.clone({a:undefined,b:[undefined,-0,NaN]}))==='{"b":[null,0,null]}'; });
+  test('a patch that does not fit the value it is applied to throws',()=>{ try{ Wire.apply({a:1},[9,1]); return false; }catch(e){ return /^wire:/.test(e.message); } });
+  // What the 40% is made of, and a whole match for comparison (countdown, every round, the waits between them).
+  { const all=record(7,60*400,'count','over'), cA=Wire.createCodec(), full=all.reduce((n,s)=>n+JSON.stringify(s).length,0), delta=all.reduce((n,s,i)=>n+(i?cA.pack(Wire.diff(all[i-1],s)||0).length:cA.pack(s).length),0);
+    console.log('     fight only, 600 snapshots: JSON '+jsonBytes+' bytes, deltas '+deltaBytes+' bytes ('+(100*deltaBytes/jsonBytes).toFixed(2)+'%), '+Math.round(jsonBytes/600)+' against '+(deltaBytes/600).toFixed(1)+' bytes a snapshot');
+    console.log('     a whole match, '+all.length+' snapshots: JSON '+full+' bytes, deltas '+delta+' bytes ('+(100*delta/full).toFixed(2)+'%)'); }
+}
+
 console.log(bad?bad+' failed':'all net tests pass'); process.exit(bad?1:0);
 })();
