@@ -388,14 +388,21 @@ function mk(replies,opts){
 
 { // 8. the server: rooms get their rules, the countdown waits, late clients are told. Child servers on port 3191.
   const cp=require('child_process'), http=require('http'), os=require('os'), fake=require('./fake-openai.js');
-  const PORT=3191, HOST='http://127.0.0.1:'+PORT, kids=new Set(); process.on('exit',()=>{ for(const k of kids) try{ k.kill('SIGKILL'); }catch(e){} });
+  const PORT=+process.env.FORGE_TEST_PORT||3191, HOST='http://127.0.0.1:'+PORT, kids=new Set(); process.on('exit',()=>{ for(const k of kids) try{ k.kill('SIGKILL'); }catch(e){} });
   const until=async(cond,ms)=>{ const t=Date.now(); while(Date.now()-t<ms){ if(cond()) return true; await sleep(20); } return !!cond(); };
   // node server.js as a child, with the stand-in for the model and no cache file unless one is named. Resolves once it answers.
-  async function serve(env){
+  // The port may be held by another run of these tests (another checkout, the same port): each start waits for it to be
+  // free, and a child that could not get it is started again, so that a test never talks to somebody else's server.
+  const busy=()=>fetch(HOST+'/info').then(()=>true,()=>false);
+  async function serve(env,tries){
+    for(let i=0;i<300&&await busy();i++) await sleep(200);
+    if(await busy()) throw new Error('port '+PORT+' is in use: set FORGE_TEST_PORT to another one');
     const e=Object.assign({},process.env,{PORT:String(PORT),OPENAI_API_KEY:'test',FORGE_CACHE:''},env); if(!env||env.FORGE===undefined) delete e.FORGE; delete e.OPENAI_FORGE_MODEL;
-    const child=cp.spawn(process.execPath,[path.join(__dirname,'..','server.js')],{env:e,stdio:'ignore'}); kids.add(child);
-    const up=await until(()=>{ fetch(HOST+'/info').then(r=>{ child.up=r.ok; },()=>{}); return child.up; },5000); if(!up) throw new Error('the server did not start on port '+PORT);
-    child.stop=()=>new Promise(done=>{ child.once('exit',()=>{ kids.delete(child); done(); }); child.kill(); });
+    const child=cp.spawn(process.execPath,[path.join(__dirname,'..','server.js')],{env:e,stdio:'ignore'}); kids.add(child); child.once('exit',()=>{ child.gone=true; kids.delete(child); });
+    await until(()=>{ if(!child.gone) fetch(HOST+'/info').then(r=>{ child.up=r.ok&&!child.gone; },()=>{}); return child.up||child.gone; },5000);
+    if(child.gone&&(tries||0)<5) return serve(env,(tries||0)+1);      // someone else took the port in between
+    if(!child.up||child.gone){ child.kill(); throw new Error('the server did not start on port '+PORT); }
+    child.stop=()=>new Promise(done=>{ if(child.gone) return done(); child.once('exit',()=>done()); child.kill(); });
     return child;
   }
   const post=async(p,body)=>{ const r=await fetch(HOST+p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})}); let data={}; try{ data=await r.json(); }catch(e){} return Object.assign(data,{status:r.status}); };

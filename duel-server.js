@@ -93,7 +93,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
         fg.rules=out.rules.map((r,i)=>({id:ids[i],name:r.name,blurb:r.blurb,a:r.a,b:r.b,on:r.on,cooldown:r.cooldown,code:r.code,source:r.source,checks:r.checks})).filter(r=>r.id>0);
         fg.state='done'; fg.ms=out.ms; S.setHold(0); room.dirty=true; broadcast(room,'forge',forgeMsg(fg));
         console.log('duel forge',out.ms+'ms',out.calls+' call(s)',fg.rules.map(r=>r.name+' ('+r.source+')').join(', ')); for(const line of out.log||[]) console.log('duel forge:',line);
-      });
+      }).catch(e=>{ console.error('duel forge: could not install the rules:',e.message); if(fg.gen===gen&&room.sim===S){ fg.state='done'; fg.rules=[]; S.clearRules(); S.setHold(0); broadcast(room,'forge',forgeMsg(fg)); } });      // never leave a countdown waiting
     },400);
   }
   // A new match in the room: its rules go with the old one.
