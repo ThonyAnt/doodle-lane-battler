@@ -946,9 +946,45 @@ function elOfColor(hex){ const m=/^#?([0-9a-f]{6})$/i.exec(hex||''); if(!m) retu
   const n=parseInt(m[1],16), r=n>>16, g=(n>>8)&255, b=n&255; return r>g*1.35&&r>b*1.35?'fire':b>r*1.25&&b>=g?'water':g>r*1.2&&g>b*1.2?'plant':'none'; }
 const RECYCLE_SECS=6;      // how long RECYCLE.exe keeps a weapon out of the fight
 const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet stage: cell size, and half the size of the banker's selection
-const COMMANDS=['setItem','tweak','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats'];   // the methods of a match that change it from outside
+// Recording and replay. A match made with createDuel({record:true}) keeps every command it is given from outside as
+// [tickN, name, args], where tickN is how many ticks had been played when it came in (commands land between ticks).
+// S.log() returns {v, seed, opts, cmds, ticks}. replayDuel(log) makes the same match again from the seed and gives it the
+// commands back at their ticks. A bot is never run in a replay: what it pressed and drew is in the log like anyone's.
+// Most commands are logged with the arguments they were given. Two are packed, because they are nearly all of a log:
+//   setInput  [side,{the buttons that differ from that side's last logged input}]; a call that changes nothing is left out
+//   stroke    [side,[[x,y],...],colour]
+// While recording, a command is carried out with its arguments as they went into the log (copied through JSON), never
+// with the caller's own objects, so the match and its replay are handed exactly the same thing.
+// Every method of a match that changes it from outside must be in COMMANDS, or replays of it will go wrong.
+const LOG_V=1, COMMANDS=['setItem','tweak','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats'];
+const INPUT_KEYS=['l','r','d','j','a','b','m','q','h','u'], viaJSON=v=>JSON.parse(JSON.stringify(v)), round1=v=>Math.round(v*10)/10;
+const packInput=i=>{ const o={}; for(const k of INPUT_KEYS){ const v=i?i[k]:undefined; o[k]=k==='l'||k==='r'||k==='d'?(v?1:0):v===undefined?null:v; } return viaJSON(o); };   // held buttons as 0 or 1, press counts as given, a missing one as null
+const unpackInput=o=>{ const i={}; for(const k of INPUT_KEYS) if(o[k]!==null&&o[k]!==undefined) i[k]=o[k]; return i; };
+const packStroke=a=>viaJSON([a[0],Array.isArray(a[1])?a[1].map(p=>[round1(p&&p.x),round1(p&&p.y)]):a[1]].concat(a.slice(2)));
+const unpackStroke=a=>{ if(Array.isArray(a[1])) a[1]=a[1].map(p=>Array.isArray(p)?{x:p[0],y:p[1]}:p); return a; };
+function replayDuel(log,o){
+  if(!log||log.v!==LOG_V) throw new Error('This replay is from a different version of the game (its log is version '+(log?log.v:'?')+', this game reads version '+LOG_V+').');
+  const S=createDuel(Object.assign({},log.opts,{seed:log.seed,record:false})), cmds=Array.isArray(log.cmds)?log.cmds:[], cur=[{},{}];
+  const total=Number.isFinite(log.ticks)?log.ticks:cmds.length?cmds[cmds.length-1][0]:0; let n=0;
+  const give=c=>{
+    let a=viaJSON(c[2]); if(!COMMANDS.includes(c[1])||!Array.isArray(a)) return;
+    if(c[1]==='setInput'){ const side=a[0]; cur[side]=Object.assign(cur[side]||{},a[1]); a=[side,unpackInput(cur[side])]; } else if(c[1]==='stroke') a=unpackStroke(a);
+    try{ S[c[1]].apply(null,a); }catch(e){}       // a command that threw in the match throws the same way here
+  };
+  // seek(tick): play on until that many ticks have been played (never past the end of the log). What came in after that
+  // tick is not given yet. seek(Infinity) plays to the end and gives everything. It only goes forward: to go back, replay again.
+  S.total=total;
+  S.seek=tick=>{
+    const all=tick===Infinity; tick=Math.max(0,Math.min(total,tick));
+    while(S.tickN<tick){ while(n<cmds.length&&cmds[n][0]<=S.tickN) give(cmds[n++]); S.ticks(1); }
+    if(all) while(n<cmds.length) give(cmds[n++]);
+    return S;
+  };
+  return S.seek(o&&Number.isFinite(o.untilTick)?o.untilTick:Infinity);
+}
 function createDuel(opts){
-  let acc=0, nextId=1; const STEP=1/120, r1=v=>Math.round(v*10)/10;
+  if(opts&&opts.record) opts=viaJSON(opts);       // a recorded match keeps its own copy of what it was made with (see S.log)
+  let acc=0, nextId=1; const STEP=1/120, r1=round1;
   let W=Math.max(600,(opts&&opts.width)||AW), PL=(opts&&opts.plats)||PLATS, BOARD=null, SOL=[];  // arena size; the default is the 960-wide stage
   const PUNCH={name:'Fists',kind:'melee',style:'fist',el:'none',cost:0,st:Object.assign(itemStats('melee','none',6),{reach:58,dmg:5})};
   // In a layout with an art board the fighters start inside it; otherwise in the middle of the arena.
@@ -1355,6 +1391,7 @@ function createDuel(opts){
   /* -- drawing pipeline (his endStroke / finalize / applyGlyph, with ink and ownership kept on the server) -- */
   S.stroke=(side,pts,color)=>{
     const f=S.f[side]; if(S.phase!=='fight'||S.ult>=0||f.hp<=0||!Array.isArray(pts)||pts.length<2) return false;
+    pts=pts.map(p=>({x:r1(p&&p.x),y:r1(p&&p.y)}));      // to a tenth of a unit (what a log keeps), and a copy the caller cannot change later
     const L=pathLen(pts), cost=L*INK_PX; if(L<8) return false;
     if(f.ink2<cost){ floatT(pts[0].x,pts[0].y,'not enough ink',side); return false; }
     f.ink2-=cost; f.od=Math.min(100,f.od+L*0.012);
@@ -1622,9 +1659,33 @@ function createDuel(opts){
   if(S.sheet) sheetReset();
   // Every way into the match from outside. Each one rolls this match's dice for as long as the call lasts (see RNG).
   // A new method that changes the match from outside must be added to this list.
-  const own=fn=>function(){ const keep=RNG; RNG=S.rand; try{ return fn.apply(null,arguments); } finally{ RNG=keep; } };
-  for(const name of COMMANDS) S[name]=own(S[name]);
+  // With record:true each command is also written to the log on its way in (see the notes above replayDuel). Only what
+  // comes from outside is logged: a command that another command sets off (a hack started by a button press) is not.
+  const REC=opts&&opts.record?[]:null, lastIn=[{},{}], KEPT={}; let depth=0;
+  for(const k of ['practice','width','plats','stage']) if(opts&&opts[k]!==undefined) KEPT[k]=opts[k];
+  // An input is logged only if it changed which buttons are held or any press count: nothing else of it can matter.
+  function recordInput(fn,side,i){
+    const now=packInput(i), inp=S.inp[side], c=S.cnt[side], look=()=>inp&&c?[inp.l,inp.r,inp.d,c.j,c.a,c.b,c.m,c.q,c.u]:[], was=look();
+    try{ return fn(side,unpackInput(now)); }
+    finally{ const is=look(); if(is.some((v,k)=>v!==was[k])){ const d={}; for(const k of INPUT_KEYS) if(now[k]!==lastIn[side][k]) d[k]=now[k]; REC.push([S.tickN,'setInput',[side,d]]); lastIn[side]=now; } }
+  }
+  const own=(fn,name)=>function(...a){
+    const keep=RNG; RNG=S.rand; depth++;
+    try{
+      if(REC&&name&&depth===1){
+        if(name==='setInput') return recordInput(fn,a[0],a[1]);
+        while(a.length&&a[a.length-1]===undefined) a.pop();
+        const args=name==='stroke'?packStroke(a):viaJSON(a); REC.push([S.tickN,name,args]);
+        a=viaJSON(args); if(name==='stroke') a=unpackStroke(a);
+      }
+      return fn.apply(null,a);
+    }finally{ depth--; RNG=keep; }
+  };
+  for(const name of COMMANDS) S[name]=own(S[name],name);
   S.step=own(S.step);
+  S.ticks=own(n=>{ for(let i=0;i<n;i++){ tick(STEP); S.tickN++; } });      // exactly n ticks, whatever the clock says: how a replay steps
+  // The recording so far (null if this match is not recorded). opts is what the match was made with, ticks how long it has run.
+  S.log=()=>REC?{v:LOG_V,seed:S.seed,opts:KEPT,cmds:REC.slice(),ticks:S.tickN}:null;
   return S;
 }
 // A simple opponent: thinks a few times a second and presses the same buttons a player would.
