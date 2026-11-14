@@ -492,4 +492,66 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
     ok('cost: bots with costs finish a match, and nobody is without an attack for over 2 s',S.phase==='over'&&worst<=2.05&&!!seen.overheat&&!!seen.reload,{worst:+worst.toFixed(2),seen:Object.keys(seen)});
     ok('cost: the recording replays to the same fingerprint',R.hash()===S.hash(),[S.hash(),R.hash()]); }
 }
+{ // summons: the customization blocks in SUMMONS (copies of the drawing that act on their own)
+  const Z=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,replayDuel,stockItem,SUMMONS,summonCustoms,summonCost,makeBot};')();
+  // a practice match on the plain stage: blue holds a stock item with the blocks in cu, the red dummy stands gap away
+  const sm=(cu,gap,key)=>{ const S=Z.createDuel({practice:true,seed:7}); S.step(0.05); S.setItem(0,0,Z.stockItem(key||'sword','none').spec,50); const a=S.f[0], b=S.f[1]; a.held=0; a.x=300; b.x=300+(gap||400); a.face=1; b.face=-1; S.summonSet(0,0,cu); return {S,a,b}; };
+  const kinds=S=>S.sm.map(s=>s.kind+':'+s.st), live=(S,k)=>S.sm.filter(s=>s.kind===k).length;
+  { const {S}=sm([]); let threw=false; const res=[];
+    try{ for(const x of [null,undefined,5,'orbiter',[null,5,'x',{id:'nope'},{id:5},{id:'orbiter',n:'abc'},{id:'orbiter',n:99},{id:'swarm',n:-4},{id:'pet'}],[{id:'__proto__'},{id:'constructor'}],{length:3}]) res.push(JSON.stringify(S.summonSet(0,0,x)));
+      res.push(S.summonSet(5,0,['pet']),S.summonSet(0,7,['pet']),S.summonSet(1,0,['pet']),S.summonSet('a','b',null)); }catch(e){ threw=e.message; }
+    ok('summonSet never throws; unknown blocks are dropped and parameters clamped',threw===false&&res[4]==='[{"id":"orbiter","n":2},{"id":"swarm","n":2}]'&&res[5]==='[]'&&res[7]===null&&res[9]===null,threw||res);
+    ok('every block has a cost, and extra copies cost more',Object.keys(Z.SUMMONS).every(k=>Z.summonCost(Z.summonCustoms([k])[0])>0)&&Z.summonCost({id:'orbiter',n:2})===Z.summonCost({id:'orbiter',n:1})+1&&Z.summonCost({id:'zz'})===0);
+    const M=Z.createDuel({seed:3}); M.setItem(0,0,Z.stockItem('sword','none').spec,50);
+    ok('a block is set while drawing',JSON.stringify(M.summonSet(0,0,[{id:'orbiter',n:2}]))==='[{"id":"orbiter","n":2}]'&&M.snapshot().items[0][0].cu[0].id==='orbiter');
+    M.tweak(0,0,{tune:1}); ok('and stays on a tweaked item',!!M.items[0][0].customs&&M.items[0][0].customs[0].id==='orbiter');
+    M.setReady(0); ok('but not once ready',M.summonSet(0,0,['pet'])===null); }
+  { const {S,a,b}=sm([{id:'orbiter',n:2}],60); run(S,0.5); ok('orbiter: two copies appear',live(S,'orbiter')===2,kinds(S));
+    let out=0; for(let i=0;i<180;i++){ S.step(1/60); if(S.sm.some(s=>s.st==='out')) out++; }
+    const hits=S.snapshot().ev.filter(e=>e.e==='hit').length; ok('orbiter: they sting a foe they touch and bounce off',hits>0&&out>0,{hits,out});
+    let broke=false; for(let n=0;n<40&&!broke;n++){ S.play(1,'fist1'); run(S,0.4); broke=live(S,'orbiter')<2; }
+    ok('orbiter: the foe\'s swings break one, and it grows back',broke&&S.smT[0]['0orbiter']>3,S.smT[0]['0orbiter']); b.x=900; run(S,7); ok('orbiter: regrown',live(S,'orbiter')===2); }
+  { const {S,a,b}=sm(['pet'],120); run(S,0.3); const od0=a.od, hp0=b.hp; let dmg=0; for(let i=0;i<240&&!dmg;i++){ S.step(1/120); if(b.hp<hp0) dmg=hp0-b.hp; }
+    ok('pet: it pounces on a near foe, and its hit fills the owner\'s overdrive at half rate',dmg>0&&Math.abs((a.od-od0)-dmg*1.3*0.5)<0.01,{dmg:+dmg.toFixed(2),od:+(a.od-od0).toFixed(2)});
+    const seq=[]; for(let i=0;i<300;i++){ S.step(1/60); const p=S.sm.find(s=>s.kind==='pet'), st=p?p.st:'gone'; if(st!==seq[seq.length-1]) seq.push(st); }
+    ok('pet: it rests, follows, winds up and pounces again',seq.join('>').includes('rest>idle>wind>jump>rest'),seq.join('>'));
+    const far=sm(['pet'],500); run(far.S,0.5); far.a.x=500; run(far.S,1); const p=far.S.sm[0]; ok('pet: it follows the holder',!!p&&p.st==='idle'&&Math.abs(p.x-(far.a.x-44))<6,p&&Math.round(p.x)); }
+  { const {S,a,b}=sm(['turret'],400); S.play(0,'blade1'); run(S,0.6); ok('turret: a plain attack plants nothing',S.sm.length===0);
+    S.play(0,'blade_up'); run(S,0.1); ok('turret: a down attack plants one',live(S,'turret')===1,kinds(S));
+    a.x=120; const seen=new Set(); let low=HP0; for(let i=0;i<420;i++){ S.step(1/60); low=Math.min(low,b.hp); for(const s of S.sm) if(s.kind==='bolt') seen.add(s.id); }
+    ok('turret: it fires about once a second, its bolts hurt, and it expires',seen.size>=4&&seen.size<=7&&low<HP0&&S.sm.length===0,{bolts:seen.size,low:+low.toFixed(1)});
+    S.play(0,'blade_up'); run(S,0.1); ok('turret: not again until the cooldown is over',S.sm.length===0); run(S,2.5); S.play(0,'blade_up'); run(S,0.1); ok('turret: then it can be planted again',live(S,'turret')===1);
+    let gone=false; b.x=S.sm[0].x+40; b.face=-1; for(let n=0;n<10&&!gone;n++){ S.play(1,'fist1'); run(S,0.45); gone=!live(S,'turret'); } ok('turret: the foe can break it',gone); }
+  { const {S,a,b}=sm(['decoy'],48); run(S,0.3); const x0=a.x; S.play(1,'fist1'); run(S,0.3); const d=S.sm.find(s=>s.kind==='decoy');
+    ok('decoy: a hit leaves a decoy and the holder blinks away',!!d&&Math.abs(d.x-x0)<8&&a.x<x0-100,{decoy:d&&Math.round(d.x),holder:Math.round(a.x)});
+    S.setItem(1,0,Z.stockItem('gun','none').spec,40); b.x=d.x+200; b.face=-1; b.act=null; run(S,0.2); const hp0=a.hp; S.play(1,'gun_shot'); run(S,0.6);
+    ok('decoy: a shot at it is absorbed',d.hp<3&&a.hp>=hp0-0.01,{hp:d.hp});
+    b.act=null; b.x=d.x+40; S.items[1][0]=null; S.play(1,'fist1'); run(S,0.3); ok('decoy: a swing pops it and inks whoever swung',!live(S,'decoy')&&b.slow>0,b.slow);
+    const e=sm(['decoy'],48); run(e.S,0.3); e.S.play(1,'fist1'); run(e.S,0.3); run(e.S,3); ok('decoy: left alone it fades',!live(e.S,'decoy')); }
+  { const {S,a,b}=sm([{id:'swarm',n:3}],300); run(S,1); ok('swarm: three copies trail the holder',S.sm.filter(s=>s.kind==='swarm'&&s.st==='idle').length===3,kinds(S));
+    S.snapshot(); S.play(0,'blade1'); run(S,0.1); ok('swarm: an attack flings exactly one',S.sm.filter(s=>s.st!=='idle').length===1,kinds(S)); run(S,0.8);
+    ok('swarm: it hits the foe and is used up',S.snapshot().ev.some(e=>e.e==='hit')&&S.sm.length===2,S.sm.length); run(S,4); ok('swarm: it grows back',S.sm.length===3); }
+  { const {S,a,b}=sm(['guardian'],400); run(S,0.5); S.setItem(1,0,Z.stockItem('gun','none').spec,40); let low=HP0;
+    const shoot=()=>{ b.act=null; S.play(1,'gun_shot'); for(let i=0;i<60;i++){ S.step(1/60); low=Math.min(low,a.hp); } };
+    shoot(); shoot(); shoot(); ok('guardian: it blocks three shots and breaks',low===HP0&&!live(S,'guardian'),{low}); shoot(); ok('guardian: the next shot gets through',low<HP0,{low:+low.toFixed(1)}); }
+  { const S=Z.createDuel({practice:true,seed:2}); S.step(0.05); for(const k of [0,1]) S.setItem(0,k,Z.stockItem(k?'gun':'sword','none').spec,40);
+    S.summonSet(0,0,[{id:'swarm',n:4},{id:'orbiter',n:2}]); S.summonSet(0,1,[{id:'swarm',n:4},'pet']); S.f[0].x=100; S.f[1].x=900; run(S,5);
+    ok('never more than six summons a fighter',S.sm.filter(s=>s.side===0).length===6&&S.sane(),kinds(S)); }
+  { const S=Z.createDuel({practice:true,seed:4}); S.step(0.05); for(const s of [0,1]) S.setItem(s,0,Z.stockItem('sword','none').spec,50); S.summonSet(0,0,[{id:'orbiter',n:2}]);
+    const a=S.f[0], b=S.f[1]; a.x=400; b.x=450; run(S,0.5); b.od=100; S.startUlt(1); const pos=JSON.stringify(S.sm.map(s=>[s.x,s.y])); run(S,0.5);
+    ok('summons hang in the air while an ultimate plays',S.ult===1&&S.sm.length===2&&JSON.stringify(S.sm.map(s=>[s.x,s.y]))===pos); }
+  { const S=Z.createDuel({seed:9}); for(const s of [0,1]) S.setItem(s,0,Z.stockItem('sword','none').spec,50); S.summonSet(0,0,['orbiter']); S.summonSet(1,0,[{id:'swarm',n:4}]); S.setReady(0); S.setReady(1);
+    run(S,5); const n1=S.sm.length; S.f[1].hp=0; run(S,0.5); const n2=S.sm.length; run(S,6);
+    ok('summons are cleared at a knockout and stay cleared while drawing',n1===6&&n2===0&&S.phase==='draw'&&S.sm.length===0&&Object.keys(S.smT[0]).length===0,{n1,n2,phase:S.phase});
+    S.setReady(0); S.setReady(1); run(S,5); const j=JSON.stringify(S.snapshot().sm); ok('and come back next round; the snapshot of them is plain data',S.sm.length===6&&JSON.stringify(JSON.parse(j))===j); }
+  { // a recorded match between two bots, every block in play, replays to the same fingerprint
+    const IDS=Object.keys(Z.SUMMONS), S=Z.createDuel({seed:12,record:true}); [['sword','gun'],['hammer','bow']].forEach((keys,s)=>keys.forEach((key,k)=>S.setItem(s,k,Z.stockItem(key,k?'fire':'none').spec,45)));
+    S.summonSet(0,0,[IDS[0],IDS[1]]); S.summonSet(0,1,[IDS[2],IDS[3]]); S.summonSet(1,0,[IDS[4],IDS[5]]); S.summonSet(1,1,[IDS[3]]);
+    const bots=[Z.makeBot(0,()=>0.6,13),Z.makeBot(1,()=>0.6,14)], seen=new Set();
+    for(let i=0;i<60*60;i++){ for(const s of [0,1]){ bots[s](S,1/60); if(S.phase==='draw'&&!S.ready[s]) S.setReady(s); } S.step(1/60); for(const q of S.sm) seen.add(q.kind); S.events.length=0; }
+    const R=Z.replayDuel(S.log()); R.seek(Infinity);
+    ok('a match with summons replays exactly',R.hash()===S.hash()&&R.tickN===S.tickN&&seen.size>=4&&S.sane(),{hash:S.hash(),replay:R.hash(),seen:[...seen]}); }
+  { const mk=cu=>{ const S=Z.createDuel({practice:true,seed:5}); S.step(0.05); S.setItem(0,0,Z.stockItem('sword','none').spec,50); S.summonSet(0,0,cu); run(S,1); return S.hash(); };
+    ok('the fingerprint covers summons',mk(['orbiter'])!==mk([])&&mk(['orbiter'])===mk(['orbiter'])); }
+}
 console.log(bad?bad+' failed':'all world rules pass'); process.exit(bad?1:0);
