@@ -443,6 +443,7 @@ body.retro .abn b,body.handheld .abn b{font:700 12px Tahoma,Verdana,"Segoe UI",s
 body.retro .absrc,body.handheld .absrc{border-radius:0;background:#000080;font:10px Tahoma,Verdana,"Segoe UI",sans-serif;padding:0 4px}
 body.retro .abw,body.handheld .abw,body.retro .abfold summary,body.handheld .abfold summary{font:11px Tahoma,Verdana,"Segoe UI",sans-serif;color:#404040}
 body.retro .abcode,body.handheld .abcode{border-radius:0;background:#000;color:#3f3;font:11px/1.35 "Courier New",monospace}
+.ready.asking{background:#e2552d!important;color:#fff!important}
 </style>
 </head>
 <body>
@@ -4568,7 +4569,10 @@ function buildDesks(){
       else if(b.dataset.tune) tweak(d,{tune:it.tn+ +b.dataset.tune});
       else if(b.dataset.kind) tweak(d,{kind:b.dataset.kind,style:b.dataset.style});
     };
-    el.querySelector('.ready').onclick=()=>{ if(sim) sim.setReady(side); else post({type:'ready'}); };
+    // Ready with fewer than two weapons drawn asks first: the button changes for a few seconds and a second tap confirms.
+    el.querySelector('.ready').onclick=ev=>{ const rb=ev.currentTarget, n=view&&view.items&&view.items[side]?view.items[side].filter(Boolean).length:2;
+      if(n<2&&!(+rb.dataset.ask>Date.now())){ rb.dataset.ask=Date.now()+4000; const again=()=>{ if(desk[side]) updateDesk(desk[side]); }; again(); setTimeout(again,4050); return; }
+      rb.dataset.ask=0; if(sim) sim.setReady(side); else post({type:'ready'}); };
     const pos=e=>{ const r=d.pad.getBoundingClientRect(); return [Math.round((e.clientX-r.left)*PAD_W/r.width),Math.round((e.clientY-r.top)*PAD_H/r.height)]; };
     // One stroke at a time, followed by the pointer that started it. A pencil takes over from a touch in progress and, for a
     // few seconds after it was last used, fingers are ignored, so a palm resting on the screen neither draws nor ends the stroke.
@@ -4614,7 +4618,7 @@ function updateDesk(d){
   d.el.querySelector('.make').disabled=!d.strokes.length||d.busy||ready;
   d.el.querySelector('.make').textContent=items[d.k]?'Redraw '+'AB'[d.k]:'Make it!';
   d.el.querySelector('.undo').disabled=d.el.querySelector('.clear').disabled=!d.strokes.length||d.busy;
-  const rb=d.el.querySelector('.ready'); rb.disabled=ready||d.busy; rb.textContent=ready?'Ready ✓':"I'm ready"; rb.hidden=!!(view&&view.practice);
+  const rb=d.el.querySelector('.ready'); rb.disabled=ready||d.busy; { const ask=!ready&&+rb.dataset.ask>Date.now()&&items.filter(Boolean).length<2; rb.textContent=ready?'Ready ✓':ask?(items.filter(Boolean).length?'Only 1 of 2 drawn. Sure?':'Nothing drawn. Sure?'):"I'm ready"; rb.classList.toggle('asking',ask); } rb.hidden=!!(view&&view.practice);
   // The card for the selected slot: its stats once they are worked out, and the choices the player still has.
   const it=items[d.k], card=d.el.querySelector('.card'), locked=ready||d.busy||!(view&&(view.phase==='draw'||view.practice));
   const info=it?abilInfo(d.side,d.k):null, akey=abilityKey(info)+(it&&it.pd?'?':''), cs=JSON.stringify([it,locked,!!d.showStock,akey]);
