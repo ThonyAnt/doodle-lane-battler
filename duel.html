@@ -1861,7 +1861,7 @@ function syncUI(){
   }
   for(const d of desk) if(d&&d.sig!==deskSig(d)) updateDesk(d);
   // The big screen shows what each player has made, with its stats, while they draw.
-  const lo=$('loadouts'), showLo=bigScreen&&(v.phase==='draw'||v.phase==='count'), ls=showLo?JSON.stringify(v.items):'';
+  const lo=$('loadouts'), showLo=bigScreen&&(v.phase==='draw'||v.phase==='count')&&v.items.some(a=>a.some(Boolean)), ls=showLo?JSON.stringify(v.items):'';
   if(ls!==loSig){ loSig=ls; lo.hidden=!showLo;
     if(showLo) lo.innerHTML=[0,1].map(s=>`<div class="lo" style="border-color:${PCOL[s]}"><h3>${NAME[s]}</h3>${v.items[s].map((it,k)=>{
       if(!it) return `<div class="loitem empty">${'AB'[k]}: nothing yet</div>`; const a=art[s][k];
