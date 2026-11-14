@@ -385,6 +385,7 @@ Window titlebars = platforms
         <button id="drawHere" aria-pressed="true" title="Draw and play on this device">Draw here</button>
         <button id="drawTablets" aria-pressed="false" title="This device becomes the big screen; two tablets or phones draw and play">Draw on tablets</button>
       </div>
+      <button id="stageBtn" title="Fight inside a banker's spreadsheet">Stage: desktop</button>
       <button id="restart">Restart</button>
       <a href="/" class="badge lanelink">Lane Battler</a>
       <button id="deskResume" hidden>Resume</button><button id="deskQuit" hidden>Quit</button>
@@ -735,6 +736,7 @@ function boardCells(b){
 const STYLE_COUNTER={blade:'wall',fist:'wall',pick:'wall',spear:'circle',bow:'circle',gun:'circle',staff:'circle',hurl:'circle',hammer:'arrow'};
 function elOfColor(hex){ const m=/^#?([0-9a-f]{6})$/i.exec(hex||''); if(!m) return ELS.includes(hex)?hex:'none';
   const n=parseInt(m[1],16), r=n>>16, g=(n>>8)&255, b=n&255; return r>g*1.35&&r>b*1.35?'fire':b>r*1.25&&b>=g?'water':g>r*1.2&&g>b*1.2?'plant':'none'; }
+const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet stage: cell size, and half the size of the banker's selection
 function createDuel(opts){
   let acc=0, nextId=1; const STEP=1/60, r1=v=>Math.round(v*10)/10;
   let W=Math.max(600,(opts&&opts.width)||AW), PL=(opts&&opts.plats)||PLATS, BOARD=null, SOL=[];  // arena size; the default is the 960-wide stage
@@ -748,6 +750,7 @@ function createDuel(opts){
     objs:[],fields:[],groups:[null,null],hack:null,effects:[],broken:null,breached:false,cells:[],time:0};
   const PICK={name:'Pick',kind:'melee',style:'pick',el:'none',cost:0,st:Object.assign(itemStats('melee','none',10),{reach:54,dmg:5})};
   const itemOf=(side,k)=>S.items[side][k]||PUNCH;
+  S.sheet=(opts&&opts.stage==='sheet')?{}:null;        // the spreadsheet stage (see sheetTick)
   S.inkLeft=side=>Math.round(INK_MAX-S.items[side].reduce((n,it)=>n+(it?it.cost:0),0));
   S.setItem=(side,k,spec,cost)=>{
     if(S.phase!=='draw'&&S.phase!=='count'&&!S.practice) return null;
@@ -775,7 +778,8 @@ function createDuel(opts){
   // Replace the platforms mid-match (the desktop overlay does this as real windows move). Platforms may carry an id and
   // wx, the left edge of the thing they belong to: a fighter standing on one is carried along when it moves, and falls
   // if it is no longer under their feet.
-  S.setPlats=list=>{
+  S.setPlats=list=>{ if(!S.sheet) applyPlats(list); };     // on the spreadsheet stage the banker owns the platforms
+  function applyPlats(list){
     const old=PL; PL=list;
     for(const f of S.f){
       if(!f.ground||f.on==null) continue;
@@ -784,7 +788,7 @@ function createDuel(opts){
       const b=list.find(p=>p.id===f.on&&nx>=p.x0-6&&nx<=p.x1+6);
       if(b){ f.x=nx; f.y=b.y; f.vy=0; }
     }
-  };
+  }
   S.clearItem=(side,k)=>{ if(S.phase==='draw') S.items[side][k]=null; };
   S.setReady=side=>{ if(S.phase==='draw') S.ready[side]=true; };
   // l, r, d are held buttons; j, a, b are running press counts so a quick tap is never lost.
@@ -996,6 +1000,7 @@ function createDuel(opts){
   // The stage each round: inside an art board, his three sketched ledges and a crate.
   function resetWorld(){
     S.objs=[]; S.fields=[]; S.groups=[null,null]; S.hack=null; S.effects=[]; S.broken=null; S.breached=false; S.cells=boardCells(BOARD); fx('clear',{});
+    if(S.sheet) sheetReset();
     if(!BOARD) return;
     const b=BOARD, w=b.x1-b.x0, fl=-b.floor;
     const sk=(x0,x1,y)=>{ const pts=INK.densify([{x:x0,y},{x:x1,y:y+rand(-2,2)}],6).map(p=>({x:p.x,y:p.y+rand(-1.2,1.2)})); addObj({kind:'platform',x:x0,y,w:x1-x0,strokes:[pts],color:'#8a8f99',life:Infinity}); };
@@ -1008,7 +1013,7 @@ function createDuel(opts){
     if(L.plats) S.setPlats(L.plats);
     if(!idle&&S.cells.length) return;                                   // the board is not rebuilt in the middle of a fight
     if(L.w) W=Math.max(600,L.w);
-    const b=L.board; BOARD=b&&b.x1-b.x0>300&&b.top-b.floor>180?{x0:rr(b.x0),x1:rr(b.x1),floor:Math.max(0,rr(b.floor)),top:rr(b.top)}:null;
+    const b=S.sheet?null:L.board; BOARD=b&&b.x1-b.x0>300&&b.top-b.floor>180?{x0:rr(b.x0),x1:rr(b.x1),floor:Math.max(0,rr(b.floor)),top:rr(b.top)}:null;
     S.f=[fresh(0),fresh(1)]; S.pr=[]; resetWorld();
   };
   const addObj=o=>{ o.id=oid++; S.objs.push(o);
@@ -1148,6 +1153,61 @@ function createDuel(opts){
     for(const e of S.effects){ e.t-=dt; if(e.t<=0&&!e.ended){ e.ended=true; e.end(); } } S.effects=S.effects.filter(e=>!e.ended);
     if(S.broken) S.broken.t=Math.max(0,S.broken.t-dt);
   }
+  /* -- Spreadsheet stage. A banker is building a valuation model and the fight happens in his sheet. It is a script, not a
+        simulation: one fixed minute of edits. Cells he fills in are platforms; he drags, pastes and deletes them; halfway
+        through he deletes everything in a rage and the errors rain down; near the end he notices the two fighters and
+        goes after them with the cursor, selecting where one stands and pressing Delete. -- */
+  let SP=[], sid=1;
+  const cellAt=(c0,c1,r,lb)=>({id:'s'+(sid++),x0:c0*SHEET_COL,x1:(c1+1)*SHEET_COL,y:r*SHEET_ROW,wx:c0*SHEET_COL,lb});
+  const sheetPush=()=>applyPlats(SP.map(p=>Object.assign({},p)));
+  const say=(h,m,c,r)=>{ h.msg=m; h.said=h.t; if(c!==undefined) h.aim={x:(c+0.5)*SHEET_COL,y:(r-0.5)*SHEET_ROW}; };
+  const SCRIPT=[
+    [0,   h=>{ SP=[cellAt(1,3,3,'Revenue'),cellAt(6,8,3,'EBITDA'),cellAt(3,6,6,'=SUM(B4:I4)')]; say(h,'=DCF(DoodleCorp)     // ok. focus.',4,6); }],
+    [4,   h=>{ SP.push(cellAt(4,5,1,'growth 40%')); say(h,'growth = 40%. forever. obviously.',4,1); }],
+    [8,   h=>{ const p=SP.find(p=>p.lb==='Revenue'); if(p) h.move={id:p.id,from:p.x0,to:p.x0+2*SHEET_COL,t0:h.t,dur:1.6}; say(h,'dragging Revenue two columns over...',4,3); }],
+    [12,  h=>{ SP.push(cellAt(6,8,5,'EBITDA (2)')); say(h,'Ctrl+C   Ctrl+V     // nobody checks',7,5); }],
+    [16,  h=>{ SP=SP.filter(p=>p.lb!=='=SUM(B4:I4)'); say(h,'delete row 7. never liked it.',5,6); }],
+    [19,  h=>{ SP.push(cellAt(0,0,2,'1'),cellAt(1,1,4,'2'),cellAt(0,0,6,'3')); say(h,'fill down. looks like a model now.',0,4); }],
+    [22,  h=>{ say(h,'why is enterprise value NEGATIVE',9,8); }],
+    [23.5,h=>{ h.all=1; say(h,'THIS MODEL IS COOKED'); }],
+    [24.5,h=>{ h.all=0; SP=[]; fx('quake',{x:rr(W/2),y:0,n:300}); for(let n=0;n<10;n++) h.rain.push({x:50+((n*223)%(W-100)),y:440+n*52,vy:-(240+(n%3)*45)}); say(h,'#REF!   #REF!   #REF!   #REF!'); }],
+    [29.5,h=>{ SP=[cellAt(1,3,3,'Revenue'),cellAt(6,8,3,'EBITDA')]; say(h,'Ctrl+Z   Ctrl+Z   Ctrl+Z   Ctrl+Z',4,3); }],
+    [32.5,h=>{ SP.push(cellAt(3,6,6,'Terminal value')); say(h,'ok. terminal value. breathe.',4,6); }],
+    [36.5,h=>{ say(h,'...are there two guys FIGHTING in my model?'); }],
+    [38.5,h=>{ h.hunt={side:S.f[0].hp>=S.f[1].hp?0:1,t:0,x:W/2,y:220,st:'aim',n:0}; say(h,'GET.   OUT.   OF.   MY.   SHEET.'); }],
+    [50,  h=>{ say(h,'select.  delete.  select.  delete.'); }]
+  ];
+  function sheetReset(){
+    sid=1; SP=[]; const h=S.sheet={t:0,i:1,msg:'',said:0,all:0,move:null,rain:[],hunt:null,cur:{x:W*0.6,y:300},aim:null};
+    SCRIPT[0][1](h); sheetPush();
+  }
+  function sheetTick(dt){
+    const h=S.sheet; h.t+=dt; if(S.practice&&h.t>=ROUND_TIME){ sheetReset(); return; }
+    let changed=false;
+    while(h.i<SCRIPT.length&&h.t>=SCRIPT[h.i][0]){ SCRIPT[h.i][1](h); h.i++; changed=true; }
+    if(h.move){ const m=h.move, p=SP.find(p=>p.id===m.id), u=Math.min(1,(h.t-m.t0)/m.dur);
+      if(p){ const w=p.x1-p.x0; p.x0=m.from+(m.to-m.from)*u; p.x1=p.x0+w; p.wx=p.x0; changed=true; h.aim={x:p.x0+w/2,y:p.y-SHEET_ROW/2}; } if(u>=1||!p) h.move=null; }
+    if(changed) sheetPush();
+    // the errors that rain down after the rage-delete
+    for(const r of h.rain){ r.y+=r.vy*dt; for(const f of S.f) if(!r.hit&&f.hp>0&&Math.abs(r.x-f.x)<30&&r.y>f.y-8&&r.y<f.y+92*f.scale){ r.hit=1; hurt(f,5,'none',0,0,null,r.x,'thud',0.12); } }
+    h.rain=h.rain.filter(r=>!r.hit&&r.y>-24);
+    // the hunt: the selection follows one fighter, locks, deletes whatever is inside it, then goes for the other one. It gets quicker.
+    if(h.hunt){
+      const q=h.hunt, f=S.f[q.side], per=Math.max(1.3,2.3-q.n*0.12), aim=per*0.55, lock=per*0.33; q.t+=dt;
+      if(q.t<aim){ const sp=640*dt; q.x+=clamp(f.x-q.x,-sp,sp); q.y+=clamp(f.y+50-q.y,-sp,sp); q.st='aim'; }
+      else if(q.t<aim+lock) q.st='lock';
+      else{
+        for(const g of S.f) if(g.hp>0&&Math.abs(g.x-q.x)<SHEET_HW+8&&Math.abs(g.y+45-q.y)<SHEET_HH+34) hurt(g,12,'none',(sgn(g.x-q.x)||1)*260,380,null,q.x,'slam');
+        fx('del',{x:rr(q.x),y:rr(q.y)}); q.t=0; q.n++; q.side=1-q.side; q.st='aim';
+      }
+      h.cur={x:q.x+SHEET_HW,y:q.y-SHEET_HH};
+    }else if(h.aim){ const sp=900*dt; h.cur.x+=clamp(h.aim.x-h.cur.x,-sp,sp); h.cur.y+=clamp(h.aim.y-h.cur.y,-sp,sp); }
+  }
+  function sheetView(){
+    const h=S.sheet; if(!h||h.t===undefined) return null;
+    return {t:r1(h.t),msg:h.msg,said:r1(h.said),all:h.all,cur:[rr(h.cur.x),rr(h.cur.y)],plats:SP.map(p=>({id:p.id,x0:rr(p.x0),x1:rr(p.x1),y:p.y,wx:rr(p.wx),lb:p.lb})),
+      rain:h.rain.map(r=>[rr(r.x),rr(r.y)]),hunt:h.hunt&&{x:rr(h.hunt.x),y:rr(h.hunt.y),st:h.hunt.st,side:h.hunt.side}};
+  }
   function tick(dt){
     if(S.phase==='over') return;
     if(S.practice){
@@ -1165,7 +1225,7 @@ function createDuel(opts){
     }
     S.time+=dt; SOL=solids();
     for(const f of S.f) control(f,dt);
-    projectiles(dt); world(dt);
+    projectiles(dt); world(dt); if(S.sheet) sheetTick(dt);
     const a=S.f[0], b=S.f[1], d0=a.hp<=0, d1=b.hp<=0;
     if(!S.practice&&(d0||d1||S.t<=0)){
       S.winner=d0&&d1?-1:d0?1:d1?0:Math.abs(a.hp-b.hp)<0.5?-1:a.hp>b.hp?0:1;
@@ -1175,7 +1235,7 @@ function createDuel(opts){
   }
   S.step=dt=>{ acc+=Math.min(0.25,dt); while(acc>=STEP){ acc-=STEP; tick(STEP); } };
   S.snapshot=()=>({phase:S.phase,t:+S.t.toFixed(2),round:S.round,wins:S.wins,ready:S.ready,winner:S.winner,champ:S.champ,ink:[S.inkLeft(0),S.inkLeft(1)],practice:S.practice,
-    w:W,board:BOARD,broken:S.broken&&{t:r1(S.broken.t),hole:S.broken.hole},breached:S.breached,cells:S.cells.filter(c=>c.hp<2&&c.side!=='c').map(c=>[c.id,c.hp]),
+    w:W,board:BOARD,sheet:sheetView(),broken:S.broken&&{t:r1(S.broken.t),hole:S.broken.hole},breached:S.breached,cells:S.cells.filter(c=>c.hp<2&&c.side!=='c').map(c=>[c.id,c.hp]),
     objs:S.objs.map(o=>[o.id,r1(o.x),r1(o.y),o.life===Infinity?-1:r1(o.life)]),fields:S.fields.map(q=>({a:q.a,b:q.b,u:q.u,life:r1(q.life),max:q.max,col:q.col})),
     hack:S.hack&&{by:S.hack.by,target:S.hack.target,name:S.hack.def.name,desc:S.hack.def.desc,t:+S.hack.t.toFixed(2),max:S.hack.max,counter:S.hack.counter},
     fxs:S.effects.map(e=>({by:e.by,target:e.target,counter:e.counter,name:e.name})),
@@ -1188,6 +1248,7 @@ function createDuel(opts){
       ink2:Math.round(f.ink2),od:Math.round(f.od),stun:f.stun>0?1:0,trap:f.trap>0?1:0,bub:f.bubble?Math.round(f.bubble.r):0,oc:f.overclock>0?1:0,sc:+f.scale.toFixed(2),fl:f.flung>0?1:0})),
     pr:S.pr.map(p=>({id:p.id,k:p.k,st:p.st,big:p.big,side:p.side,slot:p.slot,x:r1(p.x),y:r1(p.y),vx:Math.round(p.vx),vy:Math.round(p.vy),el:p.el})),
     ev:S.events.splice(0)});
+  if(S.sheet) sheetReset();
   return S;
 }
 // A simple opponent: thinks a few times a second and presses the same buttons a player would.
@@ -1288,7 +1349,9 @@ const DESK=new URLSearchParams(location.search).has('desk'), DESK_SCALE=1.15, ho
 // sketchbook, health bars and notes are draggable windows, the fighters run along the taskbar, and the windows' title
 // bars are the platforms. It shares the overlay's machinery; only the backdrop and where the window edges come from differ.
 // Tablets and phones keep the plain layout, and ?plain=1 turns it off.
-const RETRO=!DESK&&!new URLSearchParams(location.search).has('plain')&&innerWidth>=900&&!matchMedia('(pointer:coarse)').matches, TASK_H=32;
+// ?stage=sheet plays on the spreadsheet stage, which uses the plain layout so the sheet fills the arena.
+const STAGE=new URLSearchParams(location.search).get('stage')==='sheet'?'sheet':'';
+const RETRO=!DESK&&!STAGE&&!new URLSearchParams(location.search).has('plain')&&innerWidth>=900&&!matchMedia('(pointer:coarse)').matches, TASK_H=32;
 const deskLike=()=>DESK||RETRO, floorGap=()=>RETRO?TASK_H:0;
 let ARENA_W=960, ARENA_PLATS=PLATS, deskStage=true, deskEdges=null, deskSent='', deskMenu=false, deskPaused=false, deskLive=null, OY=0;
 if(deskLike()){ document.documentElement.classList.add('deskmode'); document.body.classList.add('deskmode'); }
@@ -1604,12 +1667,14 @@ function setMode(m){
   if(location.hash) history.replaceState(null,'',location.pathname);
   local=m==='2p'?[true,true]:[true,false];
   if(deskLike()){ ARENA_W=Math.round(innerWidth/DESK_SCALE); ARENA_PLATS=[]; }
-  sim=createDuel({practice:m==='practice',width:ARENA_W,plats:ARENA_PLATS});
+  sim=createDuel({practice:m==='practice',width:ARENA_W,plats:ARENA_PLATS,stage:STAGE||undefined});
   if(m==='bot'){ bot=makeBot(1,()=>RETRO?FXI.P.diff:0.55); botLoadout().forEach((b,k)=>{ const it=sim.setItem(1,k,b.spec,b.cost); setArt(1,k,b.strokes,it.ver,it.kind,it.style); }); }
   deskTerrain();
   view=sim.snapshot(); buildDesks(); buildControls();
 }
 $('modeBot').onclick=()=>setMode('bot'); $('mode2p').onclick=()=>setMode('2p'); $('modeOnline').onclick=()=>setMode('online'); $('modePractice').onclick=()=>setMode('practice');
+$('stageBtn').textContent=STAGE?'Stage: spreadsheet':'Stage: desktop'; $('stageBtn').setAttribute('aria-pressed',!!STAGE);
+$('stageBtn').onclick=()=>{ const q=new URLSearchParams(location.search); if(STAGE) q.delete('stage'); else q.set('stage','sheet'); location.href=location.pathname+(q.toString()?'?'+q:''); };
 $('restart').onclick=()=>{ if(net) post({type:'rematch'}); else setMode(mode); };
 
 function post(body){ if(!net) return; fetch('/duel/act',{method:'POST',headers:{'Content-Type':'application/json'},keepalive:true,body:JSON.stringify(Object.assign({room:net.code,id:cid},body))}).catch(()=>{}); }
@@ -1628,7 +1693,7 @@ function setPad(){
   const w=$('who'); w.hidden=!on; if(on){ w.textContent='You are '+NAME[net.side]; w.style.background=PCOL[net.side]; }
 }
 async function createRoom(watch){
-  try{ const r=await fetch('/duel/room',{method:'POST'}); const o=await r.json(); if(!r.ok) throw new Error(o.error); joinRoom(o.code,watch===true); }
+  try{ const r=await fetch('/duel/room'+(STAGE?'?stage='+STAGE:''),{method:'POST'}); const o=await r.json(); if(!r.ok) throw new Error(o.error); joinRoom(o.code,watch===true); }
   catch(e){ alert('Could not create a room: '+(e.message||'the server did not answer')); }
 }
 function joinRoom(code,watch){
@@ -1677,6 +1742,7 @@ function accept(v){
     e.t0=performance.now(); fx.push(e);
     if(e.e==='block') shake=Math.max(shake,3);
     if(e.e==='quake') shake=Math.max(shake,9);
+    if(e.e==='del'){ shake=Math.max(shake,12); sheetDels.push({x:e.x,y:e.y,t0:performance.now()}); }
     if(e.e==='hit'||e.e==='boom') shake=Math.max(shake,e.e==='boom'?(e.s?4:8):Math.min(8,3+e.n/4));
     if(e.e==='hit'&&navigator.vibrate&&local[e.side]&&navigator.userActivation&&navigator.userActivation.hasBeenActive) navigator.vibrate(30);
   }
@@ -1684,6 +1750,7 @@ function accept(v){
   const seen=new Set(); for(const [id,x,y,life] of v.objs||[]){ seen.add(id); const o=wobj.get(id); if(o){ o.x=x; o.y=y; o.life=life<0?Infinity:life; } }
   for(const id of wobj.keys()) if(!seen.has(id)) wobj.delete(id);
   if(net&&!net.watch&&v.w){ ARENA_W=v.w; }
+  if(v.sheet) ARENA_PLATS=v.sheet.plats;                 // on the spreadsheet stage the rules own the platforms
   view=v; viewAt=performance.now();
 }
 
@@ -2101,10 +2168,70 @@ function worldFront(v,now){
   L.restore();
 }
 const shadowY=f=>{ let y=0; for(const p of ARENA_PLATS) if(f.y>=p.y-1&&f.x>=p.x0-6&&f.x<=p.x1+6) y=Math.max(y,p.y); return y; };
+/* ---------- spreadsheet stage ---------- */
+// The banker's sheet: a formula bar showing what he is typing, column and row headings, faint figures that keep changing,
+// and the cells he has filled in (the platforms) in spreadsheet green.
+const sheetDels=[], SHEET_ROWS=['Revenue','COGS','Gross profit','EBITDA','D&A','CapEx','Free cash flow','WACC','Enterprise value'];
+function sheetBack(v,now){
+  const h=v.sheet, x0=-OX, x1=VW-OX, top=40, C=SHEET_COL, R=SHEET_ROW, c0=Math.floor(x0/C), c1=Math.ceil(x1/C);
+  L.save(); L.lineCap='butt';
+  // faint figures: a few change every couple of seconds, so the model looks worked on
+  L.font='11px Karla,system-ui,sans-serif'; L.textBaseline='middle';
+  for(let r=0;r<9;r++){ const y=GY-r*R-R/2;
+    for(let c=c0;c<c1;c++){
+      const n=Math.abs(Math.sin(c*12.9898+r*78.233+Math.floor((h.t+c*1.7+r*0.9)/2.5)*4.1)*43758.5453)%1;
+      if(c===c0){ L.fillStyle='#9aa3b2'; L.textAlign='left'; L.fillText(SHEET_ROWS[8-r]||'',Math.max(x0,c*C)+6,y); }
+      else if(n<0.62){ L.fillStyle=n<0.08?'#d9a3a3':'#bcc4d0'; L.textAlign='right'; L.fillText(n<0.08?'('+(n*9000|0)+')':r===1?(n*40).toFixed(1)+'%':((n*98000)|0).toLocaleString('en-US'),(c+1)*C-6,y); }
+    } }
+  // grid
+  L.strokeStyle='#e1e6ee'; L.lineWidth=1; L.beginPath();
+  for(let c=c0;c<=c1;c++){ L.moveTo(c*C,top); L.lineTo(c*C,GY); }
+  for(let r=1;r<=9;r++){ L.moveTo(x0,GY-r*R); L.lineTo(x1,GY-r*R); }
+  L.stroke();
+  if(h.all){ L.fillStyle='rgba(16,124,65,.16)'; L.fillRect(x0,top,x1-x0,GY-top); }
+  // the cells he has filled in: these are what the fighters stand on
+  for(const p of h.plats){
+    const y=GY-p.y, w=p.x1-p.x0;
+    L.fillStyle='#e6f4ea'; L.fillRect(p.x0,y,w,R); L.strokeStyle='#107c41'; L.lineWidth=2.5; L.strokeRect(p.x0,y,w,R);
+    L.fillStyle='#107c41'; L.fillRect(p.x1-4,y+R-4,7,7);
+    L.fillStyle='#0b5c30'; L.font='700 13px Karla,system-ui,sans-serif'; L.textAlign='left'; L.fillText(p.lb||'',p.x0+8,y+R/2,w-14);
+  }
+  // headings and the formula bar
+  L.fillStyle='#f1f3f6'; L.fillRect(x0,22,x1-x0,18); L.strokeStyle='#cfd6e0'; L.lineWidth=1; L.beginPath(); L.moveTo(x0,40); L.lineTo(x1,40); L.moveTo(x0,22); L.lineTo(x1,22); L.stroke();
+  L.fillStyle='#6b7486'; L.font='600 11px Karla,system-ui,sans-serif'; L.textAlign='center';
+  for(let c=c0;c<c1;c++) L.fillText(String.fromCharCode(65+(c-c0)%26),c*C+C/2,31);       // the leftmost column on screen is A
+  L.fillStyle='#fff'; L.fillRect(x0,0,x1-x0,22);
+  const typed=h.msg.slice(0,Math.max(0,Math.floor((h.t-h.said)*34))), caret=Math.floor(now/400)%2?'|':'';
+  L.textAlign='left'; L.fillStyle='#8a93a5'; L.font='italic 600 12px Georgia,serif'; L.fillText('fx',x0+10,11);
+  L.fillStyle=h.hunt||h.all?'#b0121f':'#1c2541'; L.font='600 13px Karla,system-ui,sans-serif'; L.fillText(typed+caret,x0+34,11.5);
+  L.textAlign='right'; L.fillStyle='#b4bcc9'; L.font='11px Karla,system-ui,sans-serif'; L.fillText('DoodleCorp_DCF_v7_FINAL_final(2).xlsx  ·  Granola Capital',x1-10,11.5);
+  L.restore();
+}
+// In front of the fighters: the errors raining down, the banker's pointer, and during the hunt his selection and a very large cursor.
+function sheetArrow(x,y,k){
+  L.save(); L.translate(x,y); L.scale(k,k); L.beginPath(); L.moveTo(0,0); L.lineTo(0,17); L.lineTo(4.4,13); L.lineTo(7.4,19.6); L.lineTo(10,18.4); L.lineTo(7,12); L.lineTo(12.6,12); L.closePath();
+  L.fillStyle='#111'; L.fill(); L.lineJoin='round'; L.strokeStyle='#fff'; L.lineWidth=1.6; L.stroke(); L.restore();
+}
+function sheetFront(v,now){
+  const h=v.sheet; L.save(); L.textBaseline='middle';
+  L.font='800 17px Karla,system-ui,sans-serif'; L.textAlign='center';
+  for(const [x,y] of h.rain){ L.save(); L.translate(x,GY-y); L.rotate(Math.sin(x*0.7)*0.25); L.lineWidth=4; L.strokeStyle='#fff'; L.strokeText('#REF!',0,0); L.fillStyle='#c0261d'; L.fillText('#REF!',0,0); L.restore(); }
+  for(let i=sheetDels.length-1;i>=0;i--){ const d=sheetDels[i], a=(now-d.t0)/320; if(a>=1){ sheetDels.splice(i,1); continue; }
+    L.globalAlpha=1-a; L.fillStyle='#e2241a'; L.fillRect(d.x-SHEET_HW-a*18,GY-d.y-SHEET_HH-a*18,(SHEET_HW+a*18)*2,(SHEET_HH+a*18)*2); L.globalAlpha=1; }
+  if(h.hunt){
+    const q=h.hunt, x=q.x-SHEET_HW, y=GY-q.y-SHEET_HH, w=SHEET_HW*2, hh=SHEET_HH*2, lock=q.st==='lock', blink=lock&&Math.floor(now/90)%2;
+    L.fillStyle=lock?(blink?'rgba(226,36,26,.38)':'rgba(226,36,26,.2)'):'rgba(16,124,65,.14)'; L.fillRect(x,y,w,hh);
+    L.strokeStyle=lock?'#c0261d':'#107c41'; L.lineWidth=3; L.setLineDash(lock?[]:[9,6]); L.lineDashOffset=-now/30; L.strokeRect(x,y,w,hh); L.setLineDash([]);
+    if(lock){ L.font='800 20px Karla,system-ui,sans-serif'; L.textAlign='center'; L.lineWidth=5; L.strokeStyle='#fff'; L.strokeText('DELETE',q.x,y-14); L.fillStyle='#c0261d'; L.fillText('DELETE',q.x,y-14); }
+    sheetArrow(q.x+SHEET_HW-18,GY-q.y-SHEET_HH+6,4.2);       // a very large pointer, tip in the selection's corner
+  }else sheetArrow(h.cur[0],GY-h.cur[1],1.25);
+  L.restore();
+}
 function render(now){
   const v=view, age=net?Math.min(0.08,(now-viewAt)/1000):0, dt=Math.max(0,Math.min(0.05,(now-(lastRender||now))/1000)); lastRender=now;
   fitCanvas(); L.setTransform(1,0,0,1,0,0); L.clearRect(0,0,cv.width,cv.height); L.setTransform(VS,0,0,VS,OX*VS,OY);
   if(!deskLike()){ L.fillStyle='#fff'; L.fillRect(-OX,0,VW,440); }
+  if(v.sheet) sheetBack(v,now);
   shake*=Math.exp(-dt*22); if(shake>0.1) L.translate(Math.sin(now*0.112)*shake,Math.cos(now*0.091)*shake*0.35); else shake=0;
   // ground and platforms: plain ink lines, no scenery
   L.strokeStyle='#111'; L.lineCap='round'; L.lineWidth=DESK?3:4; if(RETRO) L.globalAlpha=0; L.beginPath(); L.moveTo(-OX-10,GY+2); L.lineTo(ARENA_W+10+OX,GY+2); L.stroke(); L.globalAlpha=1;
@@ -2112,7 +2239,7 @@ function render(now){
   if(OX>12) for(const px of [0,ARENA_W]){ L.lineWidth=5; L.beginPath(); L.moveTo(px,GY+2); L.lineTo(px,GY-58); L.stroke(); L.lineWidth=3; L.beginPath(); L.moveTo(px,GY-58); L.lineTo(px+(px?-22:22),GY-48); L.lineTo(px,GY-38); L.stroke(); }
   const terrain=deskLike()&&deskEdges&&!(net&&!net.watch);
   if(terrain){ L.strokeStyle='#ffd84a'; L.globalAlpha=RETRO?0:.85; L.lineWidth=3; }else L.lineWidth=5;
-  for(const p of ARENA_PLATS){ L.beginPath(); L.moveTo(p.x0+(terrain?3:0),GY-p.y+(terrain?0:2)); L.lineTo(p.x1-(terrain?3:0),GY-p.y+(terrain?0:2)); L.stroke(); }
+  if(!v.sheet) for(const p of ARENA_PLATS){ L.beginPath(); L.moveTo(p.x0+(terrain?3:0),GY-p.y+(terrain?0:2)); L.lineTo(p.x1-(terrain?3:0),GY-p.y+(terrain?0:2)); L.stroke(); }
   L.globalAlpha=1; L.strokeStyle='#111';
   worldBack(v,now);
   // projectiles
@@ -2131,6 +2258,7 @@ function render(now){
   }
   drawFighter(v,1,now,age,dt); drawFighter(v,0,now,age,dt);
   worldFront(v,now);
+  if(v.sheet) sheetFront(v,now);
   // effects
   fx=fx.filter(e=>now-e.t0<700);
   for(const e of fx){

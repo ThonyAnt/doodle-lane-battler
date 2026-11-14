@@ -42,6 +42,10 @@ The fighters can play on top of your real desktop instead of in a browser tab. T
 - **Your windows are the terrain.** The top edge of every visible, un-maximised window is a platform, marked with a thin yellow line. Drag a window and whoever is standing on it rides along; move it out from under them and they fall. A maximised window in front hides everything behind it, so restore a few windows to a smaller size to build a stage. Only window positions are read, never titles or contents.
 - With **Draw on tablets**, the overlay sends that terrain to the room, so it works for tablet players too.
 
+## Spreadsheet stage
+
+Press **Stage** in the header (or open `/duel?stage=sheet`) to fight inside a banker's spreadsheet while he builds a valuation model. The cells he fills in are the platforms. He drags one across, pastes another, deletes a row, then loses his temper and deletes everything, and the `#REF!` errors rain down. Near the end he notices the two of you and comes after you with the cursor: get out of the selection before he presses Delete. It is the same minute every round, so you can learn it. A room made from that page uses the stage for everyone in it.
+
 ## Run
 
 Needs Node 18 or newer. No dependencies.

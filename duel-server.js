@@ -39,9 +39,9 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
 
   /* ---------- rooms ---------- */
   const rooms=new Map(), LETTERS='ABCDEFGHJKLMNPQRSTUVWXYZ';
-  function newRoom(){
+  function newRoom(stage){
     let code; do{ code=Array.from({length:4},()=>LETTERS[Math.floor(Math.random()*LETTERS.length)]).join(''); }while(rooms.has(code));
-    const now=Date.now(), room={code,sim:D.createDuel(),art:[[null,null],[null,null]],players:new Map(),watchers:new Set(),clients:new Set(),last:now,sent:0,seen:now,dirty:true};
+    const now=Date.now(), room={code,stage:stage==='sheet'?'sheet':'',sim:D.createDuel(stage==='sheet'?{stage:'sheet'}:undefined),art:[[null,null],[null,null]],players:new Map(),watchers:new Set(),clients:new Set(),last:now,sent:0,seen:now,dirty:true};
     rooms.set(code,room); return room;
   }
   const sse=(res,event,data)=>res.write('event: '+event+'\ndata: '+JSON.stringify(data)+'\n\n');
@@ -122,7 +122,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       out?send(200,Object.assign({source:out.source},out.spec)):send(502,{error:'OpenAI could not read the drawing'}); return true;
     }
     if(req.method==='POST'&&p==='/duel/room'){
-      if(rooms.size>=500) send(503,{error:'Too many rooms are open right now.'}); else send(200,{code:newRoom().code});
+      if(rooms.size>=500) send(503,{error:'Too many rooms are open right now.'}); else send(200,{code:newRoom(url.searchParams.get('stage')).code});      // ?stage=sheet: the spreadsheet stage
       return true;
     }
     if(req.method==='GET'&&p==='/duel/events'){
@@ -209,7 +209,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       }
       if(body.type==='ready'){ S.setReady(side); room.dirty=true; send(200,{}); return true; }
       if(body.type==='rematch'){
-        room.sim=D.createDuel(); if(room.layout) room.sim.setLayout(room.layout); else if(room.plats) room.sim.setPlats(room.plats); room.art=[[null,null],[null,null]]; room.dirty=true; broadcast(room,'reset',{}); send(200,{}); return true;
+        room.sim=D.createDuel(room.stage?{stage:room.stage}:undefined); if(room.layout) room.sim.setLayout(room.layout); else if(room.plats) room.sim.setPlats(room.plats); room.art=[[null,null],[null,null]]; room.dirty=true; broadcast(room,'reset',{}); send(200,{}); return true;
       }
       send(400,{error:'Unknown action.'}); return true;
     }
