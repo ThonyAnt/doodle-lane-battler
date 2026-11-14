@@ -14,14 +14,15 @@ Keys: A/D move, W jump, S down, J and K use your two drawings. Tap a blade repea
 
 ## Desktop overlay (experimental, Windows)
 
-The fighters can play on top of your real desktop instead of in a browser tab. This needs Electron, which is a development dependency: run `npm install` once, then `npm run overlay`.
+The fighters can play on top of your real desktop instead of in a browser tab. This needs two development dependencies (Electron, and koffi for reading window positions): run `npm install` once, then `npm run overlay`. If npm says it skipped install scripts and the overlay will not start, run `npm run overlay:setup` once to fetch the Electron runtime.
 
 - The fight runs along the top edge of the taskbar, across the whole screen. Clicks pass through to whatever is underneath; only the menu and sketchbook cards take the mouse.
 - **Esc** or **Ctrl+Alt+D** opens the menu (mode, restart, sketchbook, quit) and pauses. **Ctrl+Alt+Q** quits.
 - The fight pauses whenever another app has the keyboard; press Ctrl+Alt+D to come back.
 - **Draw here** (the default): vs bot, two players on one keyboard, or practice, with the sketchbook on the computer and a screen-wide arena.
 - **Draw on tablets**: the overlay becomes the big screen of a new room. It shows the join code, two tablets or phones draw and play, and the fight runs on the desktop on the standard stage. The tablets must be able to reach this computer (same Wi-Fi, firewall allowing Node).
-- The fighters do not know about your windows yet.
+- **Your windows are the terrain.** The top edge of every visible, un-maximised window is a platform, marked with a thin yellow line. Drag a window and whoever is standing on it rides along; move it out from under them and they fall. A maximised window in front hides everything behind it, so restore a few windows to a smaller size to build a stage. Only window positions are read, never titles or contents.
+- With **Draw on tablets**, the overlay sends that terrain to the room, so it works for tablet players too.
 
 ## Run
 

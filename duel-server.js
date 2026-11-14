@@ -58,6 +58,17 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   },33);
   setInterval(()=>{ for(const room of rooms.values()) for(const c of room.clients) c.res.write(': ping\n\n'); },15000);
 
+  function cleanPlats(a){
+    if(!Array.isArray(a)||a.length>32) return null;
+    const out=[];
+    for(const p of a){
+      if(!p||![p.x0,p.x1,p.y].every(Number.isFinite)) return null;
+      const x0=Math.max(0,Math.min(960,Math.round(p.x0))), x1=Math.max(0,Math.min(960,Math.round(p.x1))), y=Math.round(p.y);
+      if(x1-x0<30||y<26||y>3000) continue;
+      out.push({id:String(p.id||'').slice(0,24),wx:Number.isFinite(p.wx)?Math.round(p.wx):x0,x0,x1,y});
+    }
+    return out;
+  }
   function cleanStrokes(a){
     if(!Array.isArray(a)||!a.length||a.length>80) return null;
     let n=0; const out=[];
@@ -127,6 +138,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       sse(res,'hello',{side,code:room.code,watch});
       room.art.forEach((a,s)=>a.forEach((x,slot)=>{ if(x) sse(res,'item',{side:s,slot,strokes:x.strokes,ver:x.ver,kind:x.kind,style:x.style}); }));
       broadcast(room,'players',roster(room));
+      if(room.plats) sse(res,'plats',{plats:room.plats});
       sse(res,'state',room.sim.snapshot());
       req.on('close',()=>{
         room.clients.delete(client); broadcast(room,'players',roster(room));
@@ -139,8 +151,15 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       const room=rooms.get(String(body.room||'').toUpperCase());
       if(!room){ send(404,{error:'That room has closed.'}); return true; }
       const id=String(body.id||''), side=room.players.get(id);
-      if((side===undefined||side<0)&&!(body.type==='rematch'&&room.watchers.has(id))){ send(403,{error:'You are not a player in this room.'}); return true; }
+      const screen=room.watchers.has(id);
+      if((side===undefined||side<0)&&!(screen&&(body.type==='rematch'||body.type==='plats'))){ send(403,{error:'You are not a player in this room.'}); return true; }
       const S=room.sim;
+      if(body.type==='plats'){
+        // Terrain from the big screen (the desktop overlay sends the tops of real windows). Only the screen may set it.
+        if(!screen){ send(403,{error:'Only the big screen sets the terrain.'}); return true; }
+        const plats=cleanPlats(body.plats); if(!plats){ send(400,{error:'Bad terrain.'}); return true; }
+        room.plats=plats; S.setPlats(plats); broadcast(room,'plats',{plats}); send(200,{}); return true;
+      }
       if(body.type==='input'){
         // Requests can arrive out of order, so only the newest one counts.
         const seq=+body.seq||0; let c=null; for(const x of room.clients) if(x.id===id) c=x;
@@ -161,7 +180,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       }
       if(body.type==='ready'){ S.setReady(side); room.dirty=true; send(200,{}); return true; }
       if(body.type==='rematch'){
-        room.sim=D.createDuel(); room.art=[[null,null],[null,null]]; room.dirty=true; broadcast(room,'reset',{}); send(200,{}); return true;
+        room.sim=D.createDuel(); if(room.plats) room.sim.setPlats(room.plats); room.art=[[null,null],[null,null]]; room.dirty=true; broadcast(room,'reset',{}); send(200,{}); return true;
       }
       send(400,{error:'Unknown action.'}); return true;
     }

@@ -346,7 +346,7 @@ const styleOf=(kind,style)=>kind==='melee'?(MELEE_STYLES.includes(style)?style:'
 const ALT=['blade1','blade2','bow_shot','bow_quick','gun_shot','gun_rapid','spear1','spear2','hammer1','hammer2','fist1','fist3','staff_shot','staff_quick','hurl_shot','hurl_quick'];   // moves with a second animation, name + '_b'
 function createDuel(opts){
   let acc=0, nextId=1; const STEP=1/60, r1=v=>Math.round(v*10)/10;
-  const W=Math.max(600,(opts&&opts.width)||AW), PL=(opts&&opts.plats)||PLATS;      // arena size; the default is the 960-wide stage
+  const W=Math.max(600,(opts&&opts.width)||AW); let PL=(opts&&opts.plats)||PLATS;  // arena size; the default is the 960-wide stage
   const PUNCH={name:'Fists',kind:'melee',style:'fist',el:'none',cost:0,st:Object.assign(itemStats('melee','none',6),{reach:58,dmg:5})};
   const fresh=side=>({side,x:W/2+(side?260:-260),y:0,vx:0,vy:0,face:side?-1:1,hp:HP,ground:true,jumps:0,jq:0,buf:[0,0],cd:[0,0],cdMax:[1,1],
     act:null,shield:0,hurt:0,burn:0,burnDps:0,slow:0,dash:0,dashHit:false,dashItem:null,drop:0,uses:[3,3],held:0});
@@ -359,6 +359,19 @@ function createDuel(opts){
     const other=S.items[side][1-k]; cost=Math.min(cost,INK_MAX-(other?other.cost:0)); if(cost<MIN_COST-0.5) return null;
     const style=styleOf(spec.kind,spec.style);
     return S.items[side][k]={name:spec.name||nameFor(spec),kind:spec.kind,style,el:spec.element,cost,st:itemStats(spec.kind,spec.element,cost),ver:++S.ver};
+  };
+  // Replace the platforms mid-match (the desktop overlay does this as real windows move). Platforms may carry an id and
+  // wx, the left edge of the thing they belong to: a fighter standing on one is carried along when it moves, and falls
+  // if it is no longer under their feet.
+  S.setPlats=list=>{
+    const old=PL; PL=list;
+    for(const f of S.f){
+      if(!f.ground||f.on==null) continue;
+      const a=old.find(p=>p.id===f.on&&f.x>=p.x0-6&&f.x<=p.x1+6&&Math.abs(f.y-p.y)<3); if(!a) continue;
+      const dx=((list.find(p=>p.id===f.on)||a).wx||0)-(a.wx||0), nx=Math.max(18,Math.min(W-18,f.x+dx));
+      const b=list.find(p=>p.id===f.on&&nx>=p.x0-6&&nx<=p.x1+6);
+      if(b){ f.x=nx; f.y=b.y; f.vy=0; }
+    }
   };
   S.clearItem=(side,k)=>{ if(S.phase==='draw') S.items[side][k]=null; };
   S.setReady=side=>{ if(S.phase==='draw') S.ready[side]=true; };
@@ -460,8 +473,8 @@ function createDuel(opts){
       f.vy-=1750*dt;
     }
     const py=f.y; f.x+=f.vx*dt; f.y+=f.vy*dt; let land=false;
-    if(f.y<=0){ f.y=0; land=true; }
-    else if(f.vy<=0&&f.drop<=0) for(const p of PL) if(py>=p.y&&f.y<=p.y&&f.x>=p.x0-6&&f.x<=p.x1+6){ f.y=p.y; land=true; break; }
+    if(f.y<=0){ f.y=0; f.on=null; land=true; }
+    else if(f.vy<=0&&f.drop<=0) for(const p of PL) if(py>=p.y&&f.y<=p.y&&f.x>=p.x0-6&&f.x<=p.x1+6){ f.y=p.y; f.on=p.id; land=true; break; }
     if(land){ f.vy=0; f.jumps=0; } f.ground=land;
     if(f.x<18){ f.x=18; f.vx=Math.max(0,f.vx); } if(f.x>W-18){ f.x=W-18; f.vx=Math.min(0,f.vx); }
   }
@@ -586,8 +599,24 @@ const GY=392, cv=$('arena'), L=cv.getContext('2d');
 // Match the canvas backing store to the screen's real pixels so lines stay sharp on high-density displays.
 // Desktop mode: set by the overlay app (overlay/main.js), which loads this page with ?desk=1 in a transparent window.
 const DESK=new URLSearchParams(location.search).has('desk'), DESK_SCALE=1.15, host=window.overlayHost||null;
-let ARENA_W=960, ARENA_PLATS=PLATS, deskMenu=false, deskPaused=false, deskLive=null, OY=0;
+let ARENA_W=960, ARENA_PLATS=PLATS, deskStage=true, deskEdges=null, deskSent='', deskMenu=false, deskPaused=false, deskLive=null, OY=0;
 if(DESK){ document.documentElement.classList.add('deskmode'); document.body.classList.add('deskmode'); }
+// One game unit in screen pixels: fixed for a match on this computer, and stretched to the screen for the standard stage.
+const deskSc=()=>deskStage?Math.min(1.6,innerWidth/960):DESK_SCALE;
+// Real windows as terrain. The overlay app reports the visible top edges of the other apps' windows in screen pixels;
+// here they become platforms in game units. They replace the stage's fixed platforms.
+function deskTerrain(){
+  if(!DESK||!deskEdges) return;
+  fitCanvas(); const sc=deskSc(), out=[];
+  for(const e of deskEdges){
+    const y=Math.round((innerHeight-e.y)/sc-6), x0=Math.max(0,Math.round(e.x0/sc-OX)), x1=Math.min(ARENA_W,Math.round(e.x1/sc-OX));
+    if(y>=26&&x1-x0>=30) out.push({id:e.id,wx:Math.round(e.wx/sc-OX),x0,x1,y});
+  }
+  ARENA_PLATS=out;
+  if(typeof sim!=='undefined'&&sim) sim.setPlats(out);
+  // As the big screen of a room, pass the terrain to the server, which runs that match.
+  else if(typeof net!=='undefined'&&net&&net.watch){ const j=JSON.stringify(out); if(j!==deskSent){ deskSent=j; post({type:'plats',plats:out}); } }
+}
 // During a fight the arena fills the window's width. If that would make it taller than the screen allows, the height is
 // capped and the view simply shows more floor either side of the arena (OX), so nothing is stretched and the rules do not change.
 let VS=1, OX=0, VW=960, playing=false, bigScreen=false, padView=false;
@@ -599,7 +628,7 @@ function fitCanvas(){
     if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
     // A local match uses a screen-wide arena at a fixed size. An online room uses the standard 960-wide stage with its
     // platforms, enlarged to fill the screen's width (within reason) and centred.
-    const sc=ARENA_PLATS.length?Math.min(1.6,innerWidth/960):DESK_SCALE;
+    const sc=deskSc();
     VS=sc*r; VW=innerWidth/sc; OX=Math.max(0,(VW-ARENA_W)/2); OY=h-(GY+6)*VS; return;
   }
   const r=Math.min(3,window.devicePixelRatio||1), cw=cv.clientWidth||960, full=cw*440/960;
@@ -814,12 +843,14 @@ function setMode(m){
   deskMenu=false;
   mode=m; for(const b of ['Bot','2p','Online','Practice']) $('mode'+b).setAttribute('aria-pressed',m===b.toLowerCase());
   if(net){ net.es.close(); net=null; } setScreen(false); setPad(); sim=null; bot=null; resetLocal(); lastPhase=''; overlayKey='';
+  deskStage=m==='online'; deskSent='';
   if(m==='online'){ local=[false,false]; ARENA_W=960; ARENA_PLATS=PLATS; view=createDuel().snapshot(); buildDesks(); buildControls(); const code=(location.hash||'').slice(1).toUpperCase(); if(/^[A-Z]{4}$/.test(code)) joinRoom(code,watched()===code); return; }
   if(location.hash) history.replaceState(null,'',location.pathname);
   local=m==='2p'?[true,true]:[true,false];
   if(DESK){ ARENA_W=Math.round(innerWidth/DESK_SCALE); ARENA_PLATS=[]; }
   sim=createDuel({practice:m==='practice',width:ARENA_W,plats:ARENA_PLATS});
   if(m==='bot'){ bot=makeBot(1); botLoadout().forEach((b,k)=>{ const it=sim.setItem(1,k,b.spec,b.cost); setArt(1,k,b.strokes,it.ver,it.kind,it.style); }); }
+  deskTerrain();
   view=sim.snapshot(); buildDesks(); buildControls();
 }
 $('modeBot').onclick=()=>setMode('bot'); $('mode2p').onclick=()=>setMode('2p'); $('modeOnline').onclick=()=>setMode('online'); $('modePractice').onclick=()=>setMode('practice');
@@ -857,6 +888,8 @@ function joinRoom(code,watch){
   on('state',accept);
   on('item',d=>{ setArt(d.side,d.slot,d.strokes,d.ver,d.kind,d.style); if(desk[d.side]) updateDesk(desk[d.side]); });
   on('reset',()=>{ for(const s of [0,1]) art[s]=[null,null]; fx=[]; for(const d of desk) if(d){ d.strokes=[]; d.k=0; } });
+  on('plats',d=>{ if(!(DESK&&deskEdges)) ARENA_PLATS=d.plats||PLATS; });
+  on('hello',()=>{ deskSent=''; deskTerrain(); });
   on('gone',()=>{ net.gone=true; es.close(); });
 }
 function accept(v){
@@ -895,6 +928,7 @@ if(DESK){
   $('deskResume').onclick=()=>{ deskMenu=false; if(host) host.focus(); };
   $('deskQuit').onclick=()=>{ if(host) host.quit(); };
   addEventListener('keydown',e=>{ if(e.code==='Escape'&&view&&view.phase!=='draw'&&view.phase!=='over'){ deskMenu=!deskMenu; e.preventDefault(); } });
+  if(host&&host.onWindows) host.onWindows(edges=>{ deskEdges=edges; deskTerrain(); });
   if(host) host.onMenu(()=>{ deskMenu=!(deskMenu||document.body.classList.contains('menu'))?true:false; });
 }
 function syncUI(){
@@ -1090,7 +1124,10 @@ function render(now){
   L.strokeStyle='#111'; L.lineCap='round'; L.lineWidth=DESK?3:4; L.beginPath(); L.moveTo(-OX-10,GY+2); L.lineTo(ARENA_W+10+OX,GY+2); L.stroke();
   // corner posts mark where the arena ends when the view is wider than it
   if(OX>12) for(const px of [0,ARENA_W]){ L.lineWidth=5; L.beginPath(); L.moveTo(px,GY+2); L.lineTo(px,GY-58); L.stroke(); L.lineWidth=3; L.beginPath(); L.moveTo(px,GY-58); L.lineTo(px+(px?-22:22),GY-48); L.lineTo(px,GY-38); L.stroke(); }
-  L.lineWidth=5; for(const p of ARENA_PLATS){ L.beginPath(); L.moveTo(p.x0,GY-p.y+2); L.lineTo(p.x1,GY-p.y+2); L.stroke(); }
+  const terrain=DESK&&deskEdges;
+  if(terrain){ L.strokeStyle='#ffd84a'; L.globalAlpha=.85; L.lineWidth=3; }else L.lineWidth=5;
+  for(const p of ARENA_PLATS){ L.beginPath(); L.moveTo(p.x0+(terrain?3:0),GY-p.y+(terrain?0:2)); L.lineTo(p.x1-(terrain?3:0),GY-p.y+(terrain?0:2)); L.stroke(); }
+  L.globalAlpha=1; L.strokeStyle='#111';
   // projectiles
   for(const p of v.pr){
     const x=p.x+p.vx*age, y=GY-(p.y+p.vy*age), it=v.items[p.side][p.slot];

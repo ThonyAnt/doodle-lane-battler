@@ -1,6 +1,8 @@
 // Doodle Duel desktop overlay: the fighters play on top of your real desktop.
 // Run from the project folder:  npm run overlay
 //
+// The fighters can stand on the top edges of your other windows (overlay/windows.js reads their positions).
+//
 // A transparent, frameless, always-on-top window covers the screen's work area (everything above the taskbar) and
 // shows the game page in desktop mode (duel.html?desk=1). While a fight is on, the window lets every click through to
 // whatever is underneath; it only takes the mouse while the menu or the sketchbook is showing.
@@ -8,6 +10,7 @@
 //   Ctrl+Alt+Q  quit
 const {app,BrowserWindow,globalShortcut,ipcMain,screen}=require('electron');
 const path=require('path'), http=require('http'), fs=require('fs');
+const windows=require('./windows.js');
 const PORT=+process.env.PORT||3000;
 // --selftest=out.png renders one frame of a practice fight off-screen, saves it and quits (used to check the build).
 const selftest=(process.argv.find(a=>a.startsWith('--selftest='))||'').slice(11);
@@ -60,6 +63,17 @@ app.whenReady().then(async()=>{
   }
 
   win.show(); win.focus();
+  // Window terrain: about ten times a second, find the visible top edges of the other apps' windows and tell the page
+  // when they change. Positions only; titles and contents are never read.
+  let sentEdges='';
+  const pollWindows=()=>{
+    if(win.isDestroyed()) return;
+    const list=windows.listWindows(process.pid); if(!list) return;
+    const display=screen.getPrimaryDisplay(), b=win.getBounds();
+    const edges=windows.topEdges(list,display.scaleFactor,{x:b.x,y:b.y,width:b.width,height:b.height}), j=JSON.stringify(edges);
+    if(j!==sentEdges){ sentEdges=j; win.webContents.send('desk-windows',edges); }
+  };
+  if(windows.load()){ pollWindows(); const timer=setInterval(pollWindows,100); win.on('closed',()=>clearInterval(timer)); win.webContents.on('did-finish-load',()=>{ sentEdges=''; }); }
   globalShortcut.register('Control+Alt+D',()=>{ if(win.isDestroyed()) return; win.show(); win.focus(); win.webContents.send('desk-menu'); });
   globalShortcut.register('Control+Alt+Q',()=>app.quit());
   win.on('closed',()=>app.quit());
