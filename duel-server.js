@@ -337,6 +337,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
         if(typeof body.name==='string') ch.name=body.name;
         if(typeof body.trait==='string') ch.trait=body.trait;
         if(Number.isFinite(body.tune)) ch.tune=body.tune;
+        if(Array.isArray(body.customs)) ch.customs=body.customs;      // transform: the item's customization (cleaned by the rules, see transformValid)
         const it=a&&S.tweak(side,slot,ch);
         if(!it){ send(409,{error:'That cannot be changed now.'}); return true; }
         Object.assign(a,{ver:it.ver,kind:it.kind,style:it.style}); noteArt(room,side,slot); room.dirty=true;

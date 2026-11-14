@@ -2,7 +2,7 @@
 // Run: node tools/test-world.js
 const fs=require('fs'), path=require('path');
 const src=fs.readFileSync(path.join(__dirname,'..','duel.html'),'utf8').replace(/\r\n/g,'\n');
-const D=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,INK,boardCells,MOVES};')();
+const D=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,INK,boardCells,MOVES,replayDuel};')();
 const T=D.INK.T, toPts=D.INK.toPts;
 const HP0=D.createDuel({practice:true}).f[0].hp;   // full health, whatever the rules set it to
 let bad=0; const ok=(name,cond,info)=>{ if(!cond) bad++; console.log((cond?'ok   ':'FAIL ')+name+(info!==undefined?'  '+JSON.stringify(info):'')); };
@@ -160,5 +160,52 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
   ok('fire hits a plant holder 30% harder and a water holder 20% softer',Math.abs(sup.d/base-1.3)<0.03&&Math.abs(weak.d/base-0.8)<0.03&&sup.tag==='sup'&&weak.tag==='weak',[base,sup.d,weak.d].map(v=>+v.toFixed(1)));
   ok('fire on a soaked fighter bursts into steam and dries them',Math.abs(steam.d/base-1.25)<0.03&&steam.tag==='steam'&&steam.b.slow===0,+steam.d.toFixed(1));
   const g=hit('plant','plant',b=>{ b.slow=2; }); ok('a plant hit on a soaked fighter is tagged overgrown',g.tag==='grow');
+}
+{ // transform: weapons that change during the fight (TRANSFORMS; it.customs set through setItem or tweak)
+  const mk=(spec,customs)=>{ const S=fresh(); S.setItem(0,0,Object.assign({element:'none',name:'W',customs},spec),50); S.f[0].held=0; return S; };
+  const it0=S=>S.items[0][0], near=(S,d)=>{ const a=S.f[0], b=S.f[1]; a.x=500; b.x=500+d; a.y=b.y=BOARD.floor; a.vx=b.vx=0; a.face=1; b.face=-1; b.hurt=0; };
+  const dtap=S=>{ inp(S,0,{d:1}); run(S,0.05); inp(S,0,{d:0}); run(S,0.05); inp(S,0,{d:1}); run(S,0.05); inp(S,0,{d:0}); };
+  { const S=mk({kind:'melee',style:'blade'},[{id:'nope'},{id:'evolve',hits:99},{id:'giant'}]); let threw=false;
+    ok('transform: one known customization is kept, its numbers in range',JSON.stringify(it0(S).customs)==='[{"id":"evolve","hits":6}]',it0(S).customs);
+    try{ for(const c of [null,7,'x',[1],[{}],[{id:'split',secs:NaN}],{id:'giant'}]){ S.tweak(0,0,{customs:c}); run(S,0.1); S.snapshot(); } }catch(e){ threw=e.message; }
+    ok('transform: bad customizations never throw',threw===false,threw);
+    S.tweak(0,0,{customs:[{id:'giant'}]}); S.tweak(0,0,{trait:'heavy'}); ok('transform: tweaking something else keeps it',it0(S).customs[0].id==='giant');
+    S.tweak(0,0,{kind:'bomb'}); ok('transform: only weapons carry one',it0(S).customs.length===0);
+    const N=D.createDuel({plats:[]}); N.setItem(0,0,{kind:'melee',style:'blade',element:'none',name:'W'},50); N.tweak(0,0,{customs:[{id:'split'}]});
+    ok('transform: set by tweak while drawing; forcing one is practice only',N.items[0][0].customs[0].id==='split'&&N.morph(0,0)===false); }
+  { const S=mk({kind:'melee',style:'blade'},[{id:'twoform',alt:'bow'}]), f=S.f[0], p0=it0(S).st.p; near(S,300); dtap(S); run(S,0.1);
+    ok('two forms: a double tap of down turns the blade into a bow of the same ink',it0(S).style==='bow'&&it0(S).kind==='ranged'&&it0(S).st.p===p0,[it0(S).kind,it0(S).style]);
+    const v=S.snapshot().items[0][0]; ok('two forms: the snapshot shows the form and the moment of change',v.style==='bow'&&v.tf.f===1&&v.tf.m<0.5,v.tf);
+    run(S,0.6); inp(S,0,{a:1}); run(S,0.05); const m=f.act&&f.act.m; dtap(S);
+    ok('two forms: a move in progress is finished in the form it began in',/^bow_/.test(m)&&!!f.act&&it0(S).style==='bow',m);
+    run(S,1.2); inp(S,0,{a:2}); run(S,0.05); ok('two forms: then it changes, and the next move is the blade\'s',it0(S).style==='blade'&&!!f.act&&/^blade/.test(f.act.m),f.act&&f.act.m); }
+  { const S=mk({kind:'melee',style:'blade'},[{id:'split',secs:3}]), f=S.f[0], e=S.f[1]; near(S,60); const hp=e.hp;
+    S.play(0,'blade3'); run(S,0.4); ok('split: the finisher lands and the move goes on as a blade',e.hp<hp&&it0(S).style==='blade'&&!!f.act,it0(S).style);
+    run(S,0.6); ok('split: after it the weapon is a pair',it0(S).style==='dual'); run(S,3.2); ok('split: and rejoins in time',it0(S).style==='blade'); }
+  { const S=mk({kind:'melee',style:'hammer'},[{id:'giant',every:3}]), f=S.f[0], r0=it0(S).st.reach; near(S,400);
+    S.play(0,'hammer1'); run(S,0.1); const early=it0(S).st.reach; run(S,3.2); S.play(0,'hammer1'); run(S,0.05);
+    ok('giant: once charged the next move has twice the reach',early===r0&&it0(S).st.reach===r0*2&&S.snapshot().items[0][0].tf.on===1,[r0,it0(S).st.reach]);
+    run(S,1.2); ok('giant: and the weapon shrinks back after it',it0(S).st.reach===r0&&!f.act); }
+  { const S=mk({kind:'melee',style:'blade'},[{id:'evolve',hits:2}]), z0=it0(S).st.size, d0=it0(S).st.dmg, hit=()=>{ near(S,50); S.play(0,'blade1'); run(S,0.5); };
+    hit(); const one=S.f[0].tf[0].s; hit(); ok('evolve: a stage every two hits, bigger and stronger',one===0&&S.f[0].tf[0].s===1&&it0(S).st.size>z0&&it0(S).st.dmg>d0);
+    hit(); hit(); hit(); hit(); ok('evolve: three stages at most',S.f[0].tf[0].s===2); }
+  { const S=mk({kind:'melee',style:'blade'},[{id:'thrown'}]); near(S,80); run(S,0.7); const a=it0(S).style; near(S,420); run(S,0.7); const b=it0(S).style;
+    inp(S,0,{a:1}); run(S,0.2); ok('thrown: a blade up close, thrown at a far foe, and the throw comes back',a==='blade'&&b==='hurl'&&S.pr.length>0&&S.pr[0].tr==='boomerang',[a,b,S.pr.map(p=>p.tr)]); }
+  { const S=mk({kind:'melee',style:'spear'},[{id:'overgrown',secs:10}]); near(S,400); const r0=it0(S).st.reach; run(S,5); const r1=it0(S).st.reach;
+    near(S,50); S.play(1,'fist1'); run(S,0.3); ok('overgrown: it grows, and a blow taken cuts it back',r1>r0*1.4&&it0(S).st.reach<r1,[r0,r1,it0(S).st.reach]); }
+  { const S=mk({kind:'melee',style:'blade'},[{id:'twoform',alt:'spear'}]), f=S.f[0]; near(S,300); run(S,0.2); f.od=100; S.startUlt(0); run(S,0.1); dtap(S); run(S,0.5);
+    const mid=it0(S).style, cast=f.act&&f.act.m; let n=0; while(S.ult>=0&&n++<600) run(S,1/60);
+    ok('transform: nothing changes while an ultimate plays',mid==='blade'&&cast==='fleet'&&n<600,[mid,cast,n]); }
+  { const S=D.createDuel({plats:[],seed:5}); S.setItem(0,0,{kind:'melee',style:'blade',element:'none',name:'W',customs:[{id:'evolve',hits:2}]},50); S.setItem(1,0,{kind:'melee',style:'blade',element:'none',name:'V',customs:[{id:'twoform'}]},50);
+    S.setReady(0); S.setReady(1); run(S,3.5); const f=S.f[0], e=S.f[1];
+    for(let i=0;i<6;i++){ e.x=f.x+50; e.y=0; f.face=1; e.hurt=0; inp(S,0,{a:i+1}); run(S,0.5); }
+    inp(S,1,{d:1}); run(S,0.05); inp(S,1,{d:0}); run(S,0.05); inp(S,1,{d:1}); run(S,0.05); inp(S,1,{d:0}); run(S,0.5);
+    const st=S.f[0].tf[0].s, alt=S.items[1][0].style; e.hp=-1; run(S,6);
+    ok('transform: stage and form start afresh each round',st>0&&alt==='spear'&&S.phase==='draw'&&S.items[1][0].style==='blade'&&!S.f[0].tf,[st,alt,S.phase,S.items[1][0].style]); }
+  { const S=D.createDuel({seed:77,record:true}); S.setItem(0,0,{kind:'melee',style:'blade',element:'none',name:'A',customs:[{id:'twoform',alt:'bow'}]},50); S.setItem(1,0,{kind:'ranged',style:'gun',element:'none',name:'B',customs:[{id:'split'}]},50);
+    S.setReady(0); S.setReady(1); let n=0;
+    for(let i=0;i<60*20&&S.phase!=='over';i++){ inp(S,0,{r:i%90<40?1:0,d:i%45<3||(i%45>5&&i%45<9)?1:0,a:Math.floor(i/25)}); inp(S,1,{l:i%120<30?1:0,d:i%70<20?1:0,a:Math.floor(i/40)}); S.ticks(2); for(const e of S.snapshot().ev) if(e.e==='tf') n++; }
+    const R=D.replayDuel?D.replayDuel(S.log()):null;
+    ok('transform: a match with transforming weapons replays to the same state',n>0&&S.sane()&&(!R||R.hash()===S.hash()),{changes:n,replayed:!!R}); }
 }
 console.log(bad?bad+' failed':'all world rules pass'); process.exit(bad?1:0);

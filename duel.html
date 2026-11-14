@@ -821,6 +821,50 @@ const STYLE={pick:{reach:1,dmg:1,kb:1},blade:{reach:1,dmg:1.18,kb:1},spear:{reac
   dual:{reach:0.8,dmg:0.95,kb:0.85},akimbo:{reach:1,dmg:1.39,kb:0.9}};
 const MUZZLE={bow:[40,72],gun:[48,71],staff:[66,70],hurl:[46,68],akimbo:[48,72]};
 const styleOf=(kind,style)=>kind==='melee'?(MELEE_STYLES.includes(style)?style:'blade'):kind==='ranged'?(RANGED_STYLES.includes(style)?style:'gun'):'';
+/* ---------- transform: weapons that change during the fight (the table; the rules are in createDuel, "transform") ----------
+   A melee or ranged item may carry one transformation in it.customs=[{id,...params}] (see transformValid). Each one changes
+   the SHAPE of the item's power, never its amount: the form in use is always built by itemStats from the item's own ink
+   and stats, and what a form gains in one way it pays for in another. cost is the block's price in customization points
+   (first guesses, not measured). Every change shows on the weapon itself and takes a moment (see tfDraw in the page).
+     twoform    double-tap down: the weapon turns into its other style (alt) and back. Each form has its own moves and ultimate.
+     split      a finisher that lands splits the weapon into a pair (blade -> twin blades, gun -> twin pistols) for secs seconds:
+                faster, shorter. A drawing that is already a pair joins into one big weapon instead: slower, harder, longer.
+     giant      every `every` seconds the weapon glows; the next move is made at twice the size and reach, hitting harder
+                but a quarter slower, and then it shrinks back.
+     evolve     every `hits` blows landed in a round the weapon gains a stage (three stages): it starts a little small and
+                weak, and ends bigger and stronger. Back to the first stage each round.
+     thrown     the weapon reads the distance: a melee weapon throws itself when the foe is beyond `far` (and comes back),
+                a ranged one is swung as a melee weapon when the foe is inside it. The form that is not its own hits softer.
+     overgrown  the weapon starts small and grows all round (to full size in secs seconds): longer but slower. Every blow
+                its holder takes cuts it back sharply. */
+const TRANSFORMS={
+  twoform:  {label:'Two forms', cost:3,text:'Double-tap down to change it into its other form.'},
+  split:    {label:'Splitter',  cost:3,text:'A finisher that lands splits it in two for a while.'},
+  giant:    {label:'Giant',     cost:3,text:'Every few seconds the next move is made twice the size.'},
+  evolve:   {label:'Evolving',  cost:2,text:'Grows a stage every few hits landed. Starts small.'},
+  thrown:   {label:'Far and near',cost:3,text:'Throws itself at a far foe, swings at a near one.'},
+  overgrown:{label:'Overgrown', cost:2,text:'Keeps growing. Shrinks when you are hit.'}
+};
+const TF_ALT={blade:'spear',spear:'blade',hammer:'fist',fist:'hammer',dual:'spear',bow:'gun',gun:'bow',staff:'hurl',hurl:'staff',akimbo:'bow'};   // twoform: the other form when none is asked for
+const TF_PAIR={melee:'dual',ranged:'akimbo'}, TF_ONE={dual:'blade',akimbo:'gun'};       // split: what a single weapon splits into, what a pair joins into
+const TF_NEAR={bow:'blade',gun:'hammer',staff:'spear',hurl:'fist',akimbo:'dual'};      // thrown: what a ranged weapon is swung as up close
+const TF_STAGE=[{g:0.9,dm:0.92},{g:1.05,dm:1},{g:1.2,dm:1.08}];                          // evolve: size and damage at each stage
+const tfNum=(v,lo,hi,d)=>{ v=+v; return Number.isFinite(v)?Math.max(lo,Math.min(hi,v)):d; };
+// The transformation an item of this kind and style may carry, cleaned: [] or one {id, ...params} with every parameter in
+// range. Anything unknown or out of place is dropped, never thrown at. (Only the first known transformation is kept.)
+function transformValid(kind,style,list){
+  if(!Array.isArray(list)||(kind!=='melee'&&kind!=='ranged')) return [];
+  const c=list.find(c=>c&&typeof c==='object'&&typeof c.id==='string'&&Object.prototype.hasOwnProperty.call(TRANSFORMS,c.id)); if(!c) return [];
+  const all=MELEE_STYLES.concat(RANGED_STYLES), other=kind==='melee'?RANGED_STYLES:MELEE_STYLES;
+  switch(c.id){
+    case 'twoform': return [{id:c.id,alt:all.includes(c.alt)&&c.alt!==style?c.alt:TF_ALT[style]}];
+    case 'split':   return [{id:c.id,secs:tfNum(c.secs,3,8,5)}];
+    case 'giant':   return [{id:c.id,every:tfNum(c.every,3,12,6)}];
+    case 'evolve':  return [{id:c.id,hits:Math.round(tfNum(c.hits,2,6,3))}];
+    case 'thrown':  return [{id:c.id,alt:other.includes(c.alt)?c.alt:kind==='melee'?'hurl':TF_NEAR[style],far:tfNum(c.far,160,400,240)}];
+    default:        return [{id:c.id,secs:tfNum(c.secs,10,60,30)}];
+  }
+}
 const ALT=['blade1','blade2','bow_shot','bow_quick','gun_shot','gun_rapid','spear1','spear2','hammer1','hammer2','fist1','fist3','staff_shot','staff_quick','hurl_shot','hurl_quick'];   // moves with a second animation, name + '_b'
 // Dice. Every random choice in a match comes from a generator that belongs to that match (S.rand, started from S.seed),
 // so the same seed and the same commands give the same match again; each bot and each bot loadout has its own generator.
@@ -975,7 +1019,7 @@ const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet s
 // A recording holds about LOG_ROOM characters of commands (some forty long matches' worth). When it is full it stops:
 // the match goes on, the log is marked full, and it replays up to the tick it stopped at.
 const LOG_ROOM=2e6;
-const LOG_V=1, COMMANDS=['setItem','tweak','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold'];
+const LOG_V=1, COMMANDS=['setItem','tweak','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold','morph'];
 const INPUT_KEYS=['l','r','d','j','a','b','m','q','h','u'], viaJSON=v=>JSON.parse(JSON.stringify(v)), round1=v=>Math.round(v*10)/10;
 const packInput=i=>{ const o={}; for(const k of INPUT_KEYS){ const v=i?i[k]:undefined; o[k]=k==='l'||k==='r'||k==='d'?(v?1:0):v===undefined?null:v; } return viaJSON(o); };   // held buttons as 0 or 1, press counts as given, a missing one as null
 const unpackInput=o=>{ const i={}; for(const k of INPUT_KEYS) if(o[k]!==null&&o[k]!==undefined) i[k]=o[k]; return i; };
@@ -1217,18 +1261,132 @@ function createDuel(opts){
     const style=styleOf(spec.kind,spec.style), tune=Math.max(-2,Math.min(2,Math.round(+spec.tune||0)));
     const raw={power:clampStat(spec.power),range:clampStat(spec.range),speed:clampStat(spec.speed)}, stats=balanceStats(raw,tune);
     const traits=traitChoices(spec.kind,spec.traits,spec.name), trait=traits.includes(spec.trait)?spec.trait:traits[0];
-    return {name:spec.name||nameFor(spec),kind:spec.kind,style,el:spec.element,cost,raw,tune,stats,trait,traits,ammo:AMMO.includes(spec.ammo)?spec.ammo:undefined,st:itemStats(spec.kind,spec.element,cost,stats),ver:++S.ver};
+    return tfBuild({name:spec.name||nameFor(spec),kind:spec.kind,style,el:spec.element,cost,raw,tune,stats,trait,traits,ammo:AMMO.includes(spec.ammo)?spec.ammo:undefined,st:itemStats(spec.kind,spec.element,cost,stats),ver:++S.ver},spec);
   }
   // Change an item that is already made, while still drawing: what it is, which of its two traits it uses, or its tuning.
   S.tweak=(side,k,ch)=>{
     const it=S.items[side][k]; if(!it||!ch||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
     const spec={name:it.name,kind:it.kind,style:it.style,element:it.el,power:it.raw.power,range:it.raw.range,speed:it.raw.speed,traits:it.traits,trait:it.trait,tune:it.tune};
+    tfSpec(it,spec,ch);      // transform: rebuilt as what it was made as, customization kept
     if(ch.kind!==undefined){ if(!KINDS.includes(ch.kind)) return null; spec.kind=ch.kind; spec.style=String(ch.style||''); }
     if(typeof ch.name==='string'){ const nm=ch.name.replace(/[<>&"']/g,'').trim().slice(0,22); if(nm) spec.name=nm; }
     if(ch.trait!==undefined) spec.trait=String(ch.trait);
     if(ch.tune!==undefined) spec.tune=ch.tune;
     return S.setItem(side,k,spec,it.cost);
   };
+  /* ---------- transform: the rules (see TRANSFORMS) ----------
+     Where things live. The item keeps what it was made as (it.k0, it.s0) and its customization (it.customs); its kind,
+     style and st are always the form in use, so the moves, the bots, the ultimate and the picture follow it without
+     knowing about any of this. What changes during a round is kept on the fighter, f.tf[slot] (so a new round starts it
+     afresh and S.hash covers it): ver = the item it belongs to, form 0/1, g = size, t = the block's clock, n = hits
+     counted, s = stage, on = a giant move is playing, q = a change is waiting, m = seconds since the last change (for the
+     picture); f.tfd / f.tft = the down button and the time since it was last pressed, for the double tap.
+     When a change may happen. A change of move set (twoform, split, thrown) waits until the fighter is in no move at all:
+     the move in progress is finished first, with the form it began in. A giant move is decided as the move begins and
+     ends when that move does. Stages and growth only change numbers, so they apply at once. Nothing whatever changes
+     while an ultimate is playing, the caster's weapon included, and an ultimate's own blows count for nothing here. */
+  const tfNew=it=>({ver:it?it.ver:0,form:0,g:it&&it.customs[0]&&it.customs[0].id==='overgrown'?0.8:1,t:0,n:0,s:0,on:0,q:0,m:9});
+  const tfOf=it=>it&&it.customs&&it.customs[0];
+  // Give the item the shape its state calls for. The ink (cost) and the stats are the item's own, whatever the form.
+  function tfShape(it,s){
+    const c=it.customs[0]; let kind=it.k0, style=it.s0, g=1, dm=1, rm=1;
+    if(c.id==='twoform'||c.id==='thrown'){ if(s.form){ style=c.alt; kind=MELEE_STYLES.includes(style)?'melee':'ranged'; if(c.id==='thrown') dm=0.85; } }
+    else if(c.id==='split'){ if(s.form){ if(TF_ONE[it.s0]){ style=TF_ONE[it.s0]; g=1.3; dm=1.1; rm=0.88; } else{ style=TF_PAIR[it.k0]; rm=1.15; } } }
+    else if(c.id==='giant'){ if(s.on){ g=2; dm=kind==='melee'?1.3:1.5; rm=0.75; } }
+    else if(c.id==='evolve'){ g=TF_STAGE[s.s].g; dm=TF_STAGE[s.s].dm; }
+    else{ g=s.g; rm=1/Math.sqrt(g); if(kind==='ranged') dm=Math.sqrt(g); }
+    const st=itemStats(kind,it.el,it.cost,it.stats), own=itemStats(it.k0,it.el,it.cost,it.stats);
+    if(c.id==='thrown') st.size=kind==='melee'&&it.k0!=='melee'?own.size*1.4:own.size;      // it is the same thing in either hand: keep its size
+    st.size*=g; if(st.reach) st.reach*=g; st.dmg*=dm; st.rate*=rm;
+    it.kind=kind; it.style=style; it.st=st;
+  }
+  // Every item passes through here as it is made (buildItem).
+  function tfBuild(it,spec){ it.k0=it.kind; it.s0=it.style; it.customs=transformValid(it.kind,it.style,spec&&spec.customs); if(it.customs.length) tfShape(it,tfNew(it)); return it; }
+  // S.tweak rebuilds an item from a spec: the spec is of what the item was made as, and keeps its customization unless a new one is given.
+  function tfSpec(it,spec,ch){ spec.kind=it.k0||it.kind; spec.style=it.s0===undefined?it.style:it.s0; spec.customs=ch.customs!==undefined?ch.customs:it.customs; }
+  // A new round (resetWorld): every transforming item is back in the shape it starts a round in. (The fighters' f.tf are new with the fighters.)
+  function tfReset(){ for(const row of S.items) for(const it of row) if(tfOf(it)) tfShape(it,tfNew(it)); }
+  const tfState=(f,k)=>{ const tf=f.tf||(f.tf=[tfNew(),tfNew()]), it=S.items[f.side][k], s=tf[k]; if(tfOf(it)&&s.ver!==it.ver){ Object.assign(s,tfNew(it)); tfShape(it,s); } return s; };
+  // The moment of change: the picture morphs for a moment (s.m), and if the weapon is in hand there is a ring and a word.
+  function tfChange(f,k,s,it,text){
+    s.m=0; tfShape(it,s); fx('tf',{side:f.side,slot:k,id:it.customs[0].id,form:s.form});
+    if(f.held===k||s.on){ ring(f.x,-(f.y+58),PCOLS[f.side]); if(text) floatT(f.x,-(f.y+118),text,f.side); }
+  }
+  const TF_WORD={blade:'BLADE',spear:'SPEAR',hammer:'HAMMER',fist:'FIST',dual:'TWIN',bow:'BOW',gun:'GUN',staff:'STAFF',hurl:'THROWN',akimbo:'TWIN GUN'};
+  // Once per fighter per tick, after their move has advanced (control).
+  function tfStep(f,dt){
+    const d=S.inp[f.side].d?1:0; if(!f.tf) f.tf=[tfNew(),tfNew()];
+    if(S.ult>=0||f.hp<=0){ f.tfd=d; return; }
+    // the double tap of down: two presses within 0.3 s ask the held weapon to change form
+    f.tft=Math.min(9,(f.tft===undefined?9:f.tft)+dt);
+    if(d&&!f.tfd){ if(f.tft<0.3){ f.tft=9; const it=S.items[f.side][f.held]; if(tfOf(it)&&it.customs[0].id==='twoform') tfState(f,f.held).q=1; } else f.tft=0; }
+    f.tfd=d;
+    const e=S.f[1-f.side];
+    for(const k of [0,1]){
+      const it=S.items[f.side][k], c=tfOf(it); if(!c) continue;
+      const s=tfState(f,k), free=!f.act;
+      s.m=Math.min(9,s.m+dt);
+      if(c.id==='twoform'){
+        s.t=Math.max(0,s.t-dt);
+        if(s.q&&free&&s.t<=0){ s.q=0; s.form=1-s.form; s.t=0.5; if(f.cd[k]<0.2) f.cd[k]=f.cdMax[k]=0.2; tfChange(f,k,s,it,TF_WORD[s.form?c.alt:it.s0]+' FORM'); }
+      }else if(c.id==='split'){
+        if(s.form){ s.t-=dt; if(s.t<=0&&free){ s.form=0; s.t=0; tfChange(f,k,s,it,TF_ONE[it.s0]?'APART AGAIN':'REJOINED'); } }
+        else if(s.q&&free){ s.q=0; s.form=1; s.t=c.secs; if(f.cd[k]<0.2) f.cd[k]=f.cdMax[k]=0.2; tfChange(f,k,s,it,TF_ONE[it.s0]?'JOINED!':'SPLIT!'); }
+      }else if(c.id==='giant'){
+        if(s.on){ if(!f.act||f.act.k!==k){ s.on=0; tfChange(f,k,s,it,''); } }
+        else s.t=Math.min(c.every,s.t+dt);
+      }else if(c.id==='thrown'){
+        s.t=Math.max(0,s.t-dt);
+        if(free&&s.t<=0){ const out=(it.k0==='melee')===!!s.form, far=Math.abs(e.x-f.x)>(out?c.far-50:c.far), form=(it.k0==='melee')===far?1:0;
+          if(form!==s.form){ s.form=form; s.t=0.5; tfChange(f,k,s,it,far?'THROWN':'IN HAND'); } }
+      }else if(c.id==='overgrown'){
+        s.t=Math.min(c.secs,s.t+dt); const g=Math.round((0.8+0.9*s.t/c.secs)*20)/20;
+        if(g!==s.g){ s.g=g; tfShape(it,s); }
+      }
+      // shots just fired by this item: a giant's are bigger, and a thrown weapon comes back (as a boomerang does)
+      if(c.id==='giant'||c.id==='thrown') for(const p of S.pr){ if(p.tfd||p.side!==f.side||p.slot!==k||p.k!=='shot'||p.tr==='fleet'||p.os!==undefined) continue;
+        p.tfd=1; if(s.on) p.big=(p.big||0)+1; if(c.id==='thrown'&&it.k0==='melee'&&s.form) p.tr='boomerang'; }
+    }
+  }
+  // A move of slot k is beginning (startMove): a charged giant weapon makes it a giant one.
+  function tfStart(f,k,m){
+    const it=S.items[f.side][k], c=tfOf(it); if(!c||c.id!=='giant'||S.ult>=0) return;
+    const s=tfState(f,k), M=MOVES[m];
+    if(s.on){ s.on=0; tfChange(f,k,s,it,''); }                                        // the next move of a chain is its ordinary size again
+    else if(s.t>=c.every&&M&&!M.ult&&!M.mine&&(M.hits||M.shots)){ s.on=1; s.t=0; tfChange(f,k,s,it,'GIANT!'); }
+  }
+  // A blow has landed (hurt): by's item in `slot` hit t. Blocked blows and an ultimate's do nothing here.
+  function tfHurt(t,by,slot,fin,tr,blocked){
+    if(blocked||tr==='fleet'||S.ult>=0) return;
+    const it=by&&by!==t&&slot>=0?S.items[by.side][slot]:null, c=tfOf(it);
+    if(c&&c.id==='evolve'){ const s=tfState(by,slot); if(s.s<2&&++s.n>=c.hits){ s.n=0; s.s++; tfChange(by,slot,s,it,s.s>1?'FINAL STAGE':'STAGE 2'); } }
+    if(c&&c.id==='split'&&fin){ const s=tfState(by,slot); if(!s.form) s.q=1; }
+    for(const k of [0,1]){ const o=S.items[t.side][k], oc=tfOf(o); if(!oc||oc.id!=='overgrown') continue;
+      const s=tfState(t,k), was=s.g; s.t=Math.max(0,s.t-oc.secs*0.4); s.g=Math.round((0.8+0.9*s.t/oc.secs)*20)/20; if(s.g<was) tfChange(t,k,s,o,'CUT BACK'); }
+  }
+  // What the picture needs of an item's transformation (in the snapshot as items[][].tf): id, f form, s stage, g size,
+  // on = giant now, c = how far along the block's clock is (0 to 1: charge, time left split, hits toward the next
+  // stage, growth), m = seconds since the last change, up to 0.5, k0 / s0 = what the item was made as.
+  function tfView(it){
+    const c=tfOf(it); if(!c) return undefined;
+    let s=null; for(const f of S.f) for(const k of [0,1]) if(S.items[f.side][k]===it&&f.tf&&f.tf[k].ver===it.ver) s=f.tf[k];
+    if(!s) s=tfNew(it);
+    const cl=c.id==='giant'?s.t/c.every:c.id==='split'?(s.form?s.t/c.secs:0):c.id==='evolve'?(s.s>1?1:s.n/c.hits):c.id==='overgrown'?s.t/c.secs:0;
+    return {id:c.id,f:s.form,s:s.s,g:s.on?2:c.id==='evolve'?TF_STAGE[s.s].g:s.g,on:s.on,c:Math.round(Math.max(0,Math.min(1,cl))*10)/10,m:Math.round(Math.min(0.5,s.m)*50)/50,k0:it.k0,s0:it.s0};
+  }
+  // For the move tester (/moves): make the transformation happen now. Practice only. back: undo it instead (shrink, first stage).
+  S.morph=(side,k,back)=>{
+    k=k===1?1:0; const f=S.f[side===1?1:0], it=S.items[f.side][k], c=tfOf(it); if(!S.practice||!c||S.ult>=0) return false;
+    const s=tfState(f,k);
+    if(c.id==='twoform') s.q=1;
+    else if(c.id==='split'){ if(s.form) s.t=0; else if(!back) s.q=1; }
+    else if(c.id==='giant') s.t=back?0:c.every;
+    else if(c.id==='evolve'){ s.n=0; s.s=back?0:(s.s+1)%3; tfChange(f,k,s,it,'STAGE '+(s.s+1)); }
+    else if(c.id==='thrown'){ if(f.act) return false; s.form=1-s.form; s.t=1.5; tfChange(f,k,s,it,(it.k0==='melee')===!!s.form?'THROWN':'IN HAND'); }
+    else{ s.t=back?Math.max(0,s.t-c.secs*0.4):Math.min(c.secs,s.t+c.secs/3); const g=Math.round((0.8+0.9*s.t/c.secs)*20)/20; if(g!==s.g){ const was=s.g; s.g=g; tfChange(f,k,s,it,g<was?'CUT BACK':''); } }
+    return true;
+  };
+  /* ---------- transform: end ---------- */
   const usesFor=side=>[0,1].map(k=>{ const it=S.items[side][k]; return it&&it.kind==='heal'?it.st.uses+(it.trait==='feast'?1:0):3; });
   const carries=(side,tr)=>S.items[side].some(it=>it&&it.trait===tr);
   // Replace the platforms mid-match (the desktop overlay does this as real windows move). Platforms may carry an id and
@@ -1326,10 +1484,12 @@ function createDuel(opts){
     if(tr==='flurry'&&!blocked) for(const dy of [44,66]) S.events.push({e:'hit',x:Math.round(t.x),y:Math.round(t.y+dy),n:Math.max(1,Math.round(dmg/2)),el,side:t.side,hap:hap||'thud',dir:kx<0?'L':'R'});
     else S.events.push({e:blocked?'block':'hit',x:Math.round(t.x),y:Math.round(t.y+52),n:Math.max(1,Math.round(dmg)),el,side:t.side,hap:hap||'thud',dir:kx<0?'L':'R',tag:tag||undefined,w:+w.toFixed(2),fin:fin&&!blocked?1:0,ult:tr==='fleet'?1:0,d:tr==='fleet'?+dmg.toFixed(2):undefined});
     if(tr==='blast'&&!blocked) S.events.push({e:'boom',x:Math.round(t.x),y:Math.round(t.y+45),n:26,el,s:1});
+    tfHurt(t,by,slot,fin,tr,blocked);      // transform: stages, splitting, cutting back
     if(pushes){ const q=pushes; pushes=null; for(const go of q) go(); }
   }
   // Begin a move: the fighter is committed until it ends or chains.
   function startMove(f,k,m){
+    if(m!=='mine') tfStart(f,k,m);      // transform: a charged giant weapon swells as the move begins
     const it=m==='mine'?PICK:itemOf(f.side,k), M=MOVES[m], p=it.st.p;
     f.act={k,m,v:ALT.includes(m)&&S.rand()<0.5?1:0,t:0,dur:M.dur,rate:(f.overclock>0?1/0.7:1)*(it.st.rate||1)/(it.kind==='ranged'?0.75+0.25*p:0.85+0.15*p),done:0,lunged:false};
     f.buf[k]=0; f.held=k;
@@ -1440,6 +1600,7 @@ function createDuel(opts){
     if(f.bubble){ f.bubble.t-=dt; if(f.bubble.t<=0) f.bubble=null; }
     f.scale+=(f.scaleGoal-f.scale)*Math.min(1,dt*8); f.ink2=Math.min(100,f.ink2+7*dt);
     if(f.act) act(f,dt);
+    tfStep(f,dt);      // transform
     if(f.dash>0){
       f.dash-=dt; f.vy=0;
       if(!f.dashHit&&Math.abs(e.x-f.x)<36&&Math.abs(e.y-f.y)<70){ f.dashHit=true; hurt(e,f.dashItem.st.dmg,f.dashItem.el,f.face*f.dashItem.st.kb,200,f,f.x,undefined,f.dashItem.trait,undefined,undefined,S.items[f.side].indexOf(f.dashItem)); }
@@ -1572,7 +1733,7 @@ function createDuel(opts){
   }
   function resetWorld(){
     if(S.bins) for(const b of S.bins.slice()) unbin(b);
-    S.bins=[];
+    S.bins=[]; tfReset();      // transform: weapons start the round in their first shape
     S.objs=[]; S.fields=[]; S.groups=[null,null]; S.hack=null; S.effects=[]; S.broken=null; S.breached=false; S.cells=boardCells(BOARD); fx('clear',{});
     if(S.sheet) sheetReset();
     if(!BOARD) return;
@@ -1844,7 +2005,7 @@ function createDuel(opts){
     hack:S.hack&&{by:S.hack.by,target:S.hack.target,name:S.hack.def.name,desc:S.hack.def.desc,t:+S.hack.t.toFixed(2),max:S.hack.max,counter:S.hack.counter},
     fxs:S.effects.map(e=>({by:e.by,target:e.target,counter:e.counter,name:e.name})),
     items:S.items.map(a=>a.map(it=>it&&{name:it.name,kind:it.kind,style:it.style,el:it.el,cost:Math.round(it.cost),ver:it.ver,sz:Math.round(it.st.size),
-      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune,am:it.ammo})),
+      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune,am:it.ammo,tf:tfView(it)})),
     f:S.f.map(f=>({x:r1(f.x),y:r1(f.y),vx:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vx),vy:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vy),face:f.face,hp:Math.max(0,r1(f.hp)),g:f.ground?1:0,
       act:f.act?{k:f.act.k,m:f.act.m+(f.act.v?'_b':''),t:+f.act.t.toFixed(3),r:+f.act.rate.toFixed(2)}:null,
       sh:f.shield>0?1:0,hurt:f.hurt>0?1:0,burn:f.burn>0?1:0,slow:f.slow>0?1:0,dash:f.dash>0?1:0,held:f.held,
@@ -2566,9 +2727,53 @@ function setArt(side,k,strokes,ver,kind,style){
 }
 // hand: 1 or 2 picks the sprite for the front or back hand of a paired style; otherwise the whole drawing.
 function sprite(side,k,size,grip,hand){
-  const a=art[side][k]; if(!a) return false; const sp=hand&&a.hands?a.hands[hand-1]:a.sprite, sc=size/Math.max(sp.w,sp.h);
-  L.drawImage(sp.cv,grip?-14*sc:-sp.w*sc/2,-sp.h*sc/2,sp.w*sc,sp.h*sc); return true;
+  const a=art[side][k]; if(!a) return false; const sp=hand&&a.hands?a.hands[hand-1]:a.sprite, T=tfD[side][k].tf?tfD[side][k]:null, sc=size*(T?T.k:1)/Math.max(sp.w,sp.h);
+  if(T) tfDraw(T,sp,grip?-14*sc:-sp.w*sc/2,-sp.h*sc/2,sc,0);      // transform: outline layers and glow under the drawing
+  L.drawImage(sp.cv,grip?-14*sc:-sp.w*sc/2,-sp.h*sc/2,sp.w*sc,sp.h*sc);
+  if(T&&T.tf.m<TF_MORPH) tfDraw(T,sp,grip?-14*sc:-sp.w*sc/2,-sp.h*sc/2,sc,1);      // transform: the flash of a change over it
+  return true;
 }
+/* ---------- transform: how a changing weapon is drawn (rules: TRANSFORMS) ----------
+   The rules change the item itself (kind, style, sz in the snapshot), so the pose, the smear and the shots already follow.
+   Here: tfSync, once a frame, rebuilds a weapon's sprites when its style changes (a pair gets a sprite for each hand, a
+   blade is turned grip-first) and eases its size so it grows and shrinks instead of jumping; tfDraw, from sprite(), adds
+   what marks the weapon as special wherever it is drawn (in hand, on the back, thrown, in an ultimate):
+     the morph   for TF_MORPH seconds after any change the weapon swells and flashes yellow, fading
+     evolve      one outline layer in the owner's colour at stage 2, a second in gold with a glow at stage 3
+     giant       a gold glow that pulses once it is charged; a heavy outline in the owner's colour while it is giant
+     split       both halves outlined in the owner's colour; the outline blinks in the last second and a half
+     twoform     the second form carries a thin outline in the owner's colour
+     overgrown   a green outline that thickens as it grows */
+const TF_MORPH=0.4, tfD=[[{},{}],[{},{}]];
+function tfSync(v,dt){
+  const now=performance.now();
+  for(const side of [0,1]) for(const k of [0,1]){
+    const it=v.items[side][k], T=tfD[side][k]; if(!it||!it.tf){ T.tf=null; continue; }
+    // the sprites were built for another style (or by someone who did not know the form): build them for this one
+    if(artStrokes[side][k]&&(T.art!==art[side][k]||T.style!==it.style)){ setArt(side,k,artStrokes[side][k],it.ver,it.kind,it.style); T.art=art[side][k]; if(T.style!==it.style) T.sz=it.sz; T.style=it.style; }
+    if(!T.tf||!(T.sz>0)) T.sz=it.sz;
+    T.sz+=(it.sz-T.sz)*Math.min(1,dt*11); T.tf=it.tf; T.side=side; T.now=now;
+    const u=it.tf.m<TF_MORPH?it.tf.m/TF_MORPH:1;
+    T.k=T.sz/it.sz*(1+0.4*Math.sin(Math.PI*u)*(1-u));
+  }
+}
+function tfTint(sp,col){
+  const t=sp.tint||(sp.tint={}); if(t[col]) return t[col];
+  const c=document.createElement('canvas'); c.width=sp.w; c.height=sp.h; const g=c.getContext('2d'); g.drawImage(sp.cv,0,0); g.globalCompositeOperation='source-in'; g.fillStyle=col; g.fillRect(0,0,sp.w,sp.h);
+  return t[col]=c;
+}
+function tfDraw(T,sp,x,y,sc,over){
+  const tf=T.tf, w=sp.w*sc, h=sp.h*sc, o=Math.max(w,h)*0.03, own=PCOL[T.side], GOLD='#f2a900', al=L.globalAlpha;
+  const ring=(col,r,a)=>{ const c=tfTint(sp,col); L.globalAlpha=al*a; for(let n=0;n<8;n++) L.drawImage(c,x+Math.cos(n*Math.PI/4)*r,y+Math.sin(n*Math.PI/4)*r,w,h); L.globalAlpha=al; };
+  const glow=(col,a,blur)=>{ L.save(); L.globalAlpha=al*a; L.shadowColor=col; L.shadowBlur=blur; L.drawImage(tfTint(sp,col),x,y,w,h); L.restore(); };
+  if(over){ const u=tf.m/TF_MORPH; glow('#ffd84a',Math.min(1,1.25*(1-u)),26); return; }
+  if(tf.id==='evolve'){ if(tf.s>1){ glow(GOLD,0.9,18); ring(GOLD,o*2.3,1); } if(tf.s>0) ring(own,o*1.15,1); }
+  else if(tf.id==='giant'){ if(tf.on){ glow(own,0.9,22); ring(own,o*0.8,1); } else if(tf.c>=1){ const q=0.5+0.5*Math.sin(T.now/90); glow(GOLD,0.45+0.5*q,10+14*q); ring(GOLD,o*(1+0.6*q),0.9); } }
+  else if(tf.id==='split'){ if(tf.f&&(tf.c>0.3||Math.sin(T.now/55)>0)) ring(own,o*1.4,0.85); }
+  else if(tf.id==='twoform'){ if(tf.f) ring(own,o*1.1,0.8); }
+  else if(tf.id==='overgrown'){ if(tf.c>0.05) ring('#2f9e56',o*(0.5+1.6*tf.c),0.9); }
+}
+/* ---------- transform: end ---------- */
 
 /* ---------- drawing desks ---------- */
 function buildDesks(){
@@ -3874,6 +4079,7 @@ function render(now){
   worldBack(v,now);
   // an ultimate is playing: the stage goes dark around its caster (see ultBack)
   ultBack(v,now);
+  tfSync(v,dt);      // transform: weapons that have changed form or size
   // projectiles
   for(const p of v.pr){
     const pa=p.z?0:age, x=p.x+p.vx*pa, y=GY-(p.y+p.vy*pa), ps=shotOwner(p), it=v.items[ps][p.slot];      // ps: whose drawing it is, also once it has been sent back
@@ -3985,7 +4191,8 @@ if(RETRO) retroBuild();
 const LAB_STOCK={blade:'sword',spear:'spear',hammer:'hammer',fist:'gloves',dual:'twins',bow:'bow',gun:'gun',akimbo:'pistols',staff:'staff',hurl:'star'};
 const LAB_NAME={blade:'Sword',spear:'Spear',hammer:'Hammer',fist:'Fists',dual:'Twin blades',bow:'Bow',gun:'Gun',akimbo:'Twin pistols',staff:'Staff',hurl:'Thrown'};
 const lab={style:'blade',el:'none',speed:1,loop:false,gap:220,last:null,idle:0};
-function labEquip(){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,st.spec,50); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0; if(desk[0]) updateDesk(desk[0]); }
+const LAB_TF={twoform:{id:'twoform'},split:{id:'split',secs:4},giant:{id:'giant',every:3},evolve:{id:'evolve',hits:2},thrown:{id:'thrown'},overgrown:{id:'overgrown',secs:12}};      // transform: quick settings for trying each one
+function labEquip(){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,Object.assign({},st.spec,{customs:lab.tf?[Object.assign({},LAB_TF[lab.tf],lab.tf==='twoform'&&lab.alt?{alt:lab.alt}:null)]:undefined}),50); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0; if(desk[0]) updateDesk(desk[0]); }
 function labPlace(gap){ const a=sim.f[0], b=sim.f[1], g=gap||lab.gap, x0=Math.max(60,Math.min(ARENA_W-60-g,ARENA_W/2-g/2-60));
   for(const f of [a,b]){ f.y=0; f.vx=f.vy=0; f.ground=true; f.act=null; f.hurt=0; f.stun=0; f.dash=0; f.burn=0; f.slow=0; f.shield=0; f.hp=HP; }
   a.x=x0; b.x=x0+g; a.face=1; b.face=-1; sim.pr.length=0; }
@@ -3996,9 +4203,19 @@ function labPlay(m,alt){
   labPlace(); const f=sim.f[0];
   if(m==='ult'){ f.od=100; sim.startUlt(0); } else sim.play(0,m,alt);
 }
-function labTick(dt){ const f=sim.f[0], e=sim.f[1]; lab.idle=f.act||e.act||sim.pr.length||f.hurt>0||e.hurt>0||!f.ground||!e.ground?0:lab.idle+dt; if(lab.loop&&lab.last&&lab.idle>0.6) labPlay(lab.last[0],lab.last[1]); }
+// transform: the weapon under test has changed form: list the moves of the form it is in now, and say where its transformation stands
+function labForm(){
+  const it=sim.items[0][0], v=view&&view.items[0][0], tf=v&&v.tf, cur=it?it.style:lab.style; if(cur!==lab.cur){ lab.cur=cur; labMoves(); }
+  const note=!tf?'':tf.id==='twoform'?'in its '+(tf.f?'second':'first')+' form ('+LAB_NAME[cur]+'). Double-tap S or press Transform now.'
+    :tf.id==='split'?(tf.f?'changed for another '+Math.round(tf.c*100)+'% of its time':'whole. Land a finisher (the last hit of a combo, or a charged shot), or press Transform now.')
+    :tf.id==='giant'?(tf.on?'GIANT':tf.c>=1?'charged: the next move is giant':'charging '+Math.round(tf.c*100)+'%')
+    :tf.id==='evolve'?'stage '+(tf.s+1)+' of 3'+(tf.s<2?', '+Math.round(tf.c*100)+'% to the next. Land hits, or press Transform now.':'')
+    :tf.id==='thrown'?'as '+LAB_NAME[cur]+'. It follows the Distance slider (changes at 240).':'grown '+Math.round(tf.c*100)+'%. Take a hit to cut it back.';
+  const el=$('labTfNote'); if(el&&el.textContent!==note) el.textContent=note;
+}
+function labTick(dt){ labForm(); const f=sim.f[0], e=sim.f[1]; lab.idle=f.act||e.act||sim.pr.length||f.hurt>0||e.hurt>0||!f.ground||!e.ground?0:lab.idle+dt; if(lab.loop&&lab.last&&lab.idle>0.6) labPlay(lab.last[0],lab.last[1]); }
 function labMoves(){
-  const st=lab.style, re=new RegExp('^'+st+'(\\d|_)'), box=$('labMoves'), label=m=>m.replace(st+'_','').replace(st,'hit ').replace('_',' ');
+  const st=lab.cur||lab.style, re=new RegExp('^'+st+'(\\d|_)'), box=$('labMoves'), label=m=>m.replace(st+'_','').replace(st,'hit ').replace('_',' ');
   const list=Object.keys(MOVES).filter(m=>re.test(m)), btn=(m,text,alt,cls)=>`<button data-m="${m}" data-alt="${alt===undefined?'':alt}" class="${cls||''}">${text}</button>`;
   box.innerHTML=list.map(m=>btn(m,label(m),ALT.includes(m)?0:undefined)+(ALT.includes(m)?btn(m,label(m)+' (alt)',1):'')).join('')
     +btn('ult','Ultimate: '+ULTS[st].name,undefined,'ult')+btn('hit','Take a hit')+btn('bighit','Take a big hit');
@@ -4018,6 +4235,7 @@ function labBuild(){
   el.innerHTML=`<h2>Move tester</h2><p>Pick a weapon, then a move. The blue fighter does it on the red dummy, which never dies. Keys still work (A D move, W jump, J attack, U ultimate), so combos and running attacks can be tried by hand. <a href="/duel">Back to the game</a></p>
     <div class="row"><b>Weapon</b><span id="labStyles" class="row" style="margin:0"></span></div>
     <div class="row"><b>Move</b><span id="labMoves" class="row" style="margin:0"></span></div>
+    <div class="row"><b>Transform</b><span id="labTf" class="row" style="margin:0"></span><label style="margin-left:8px">second form <select id="labAlt"></select></label><button id="labTfGo">Transform now</button><button id="labTfBack">Undo</button><span id="labTfNote" style="font-size:13px;color:var(--muted)"></span></div>
     <div class="row"><b>Ink</b><span id="labEls" class="row" style="margin:0 14px 0 0"></span>
       <label>Speed <input type="range" id="labSpeed" min="0.1" max="1" step="0.05" value="1"><span id="labSpeedV">1.00×</span></label>
       <label>Distance <input type="range" id="labGap" min="40" max="520" step="10" value="220"></label>
@@ -4025,7 +4243,7 @@ function labBuild(){
   document.querySelector('.arenawrap').after(el);
   const styles=$('labStyles'), els=$('labEls');
   styles.innerHTML=Object.keys(LAB_STOCK).map(s=>`<button data-s="${s}">${LAB_NAME[s]}</button>`).join('');
-  const pickStyle=s=>{ lab.style=s; lab.last=null; styles.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.s===s)); labEquip(); labMoves(); labPlace(); };
+  const pickStyle=s=>{ lab.style=s; lab.cur=s; lab.last=null; styles.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.s===s)); labEquip(); labMoves(); labPlace(); };
   styles.querySelectorAll('button').forEach(b=>b.onclick=()=>{ b.blur(); pickStyle(b.dataset.s); });
   els.innerHTML=ELS.map(e=>`<button class="pen" data-e="${e}" style="background:${PEN[e]}" title="${e==='none'?'plain':e} ink" aria-label="${e==='none'?'plain':e} ink"></button>`).join('');
   const pickEl=e=>{ lab.el=e; els.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.e===e)); labEquip(); };
@@ -4033,6 +4251,14 @@ function labBuild(){
   $('labSpeed').oninput=e=>{ lab.speed=+e.target.value; $('labSpeedV').textContent=lab.speed.toFixed(2)+'×'; };
   $('labGap').oninput=e=>{ lab.gap=+e.target.value; labPlace(); };
   $('labLoop').onchange=e=>{ lab.loop=e.target.checked; };
+  // transform: switch one of the blocks on for the weapon under test, and make it happen
+  const tfs=$('labTf'), pickTf=id=>{ lab.tf=id; tfs.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.t===id)); lab.cur=lab.style; labEquip(); labMoves(); };
+  tfs.innerHTML='<button data-t="">None</button>'+Object.keys(TRANSFORMS).map(id=>`<button data-t="${id}" title="${TRANSFORMS[id].text} (${TRANSFORMS[id].cost} points)">${TRANSFORMS[id].label}</button>`).join('');
+  tfs.querySelectorAll('button').forEach(b=>b.onclick=()=>{ b.blur(); pickTf(b.dataset.t); });
+  $('labAlt').innerHTML='<option value="">(usual)</option>'+Object.keys(LAB_STOCK).map(s=>`<option value="${s}">${LAB_NAME[s]}</option>`).join('');
+  $('labAlt').onchange=e=>{ lab.alt=e.target.value; e.target.blur(); if(lab.tf==='twoform') pickTf('twoform'); };
+  $('labTfGo').onclick=e=>{ e.target.blur(); sim.morph(0,0); }; $('labTfBack').onclick=e=>{ e.target.blur(); sim.morph(0,0,true); };
+  lab.tf=''; tfs.querySelector('button').classList.add('on');
   sim.step(0.05); pickEl('none'); pickStyle('blade');
 }
 if(REPLAY) setReplay(REPLAY);      // duel?replay=CODE: watch that room's match again
