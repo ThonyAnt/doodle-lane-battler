@@ -1,0 +1,17 @@
+# Render blueprint: one free web service running node server.js.
+# Rooms live in memory, so keep this at a single instance.
+services:
+  - type: web
+    name: doodle-lane-battler
+    runtime: node
+    plan: free
+    branch: deploy/render
+    buildCommand: "true"
+    startCommand: node server.js
+    healthCheckPath: /info
+    numInstances: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: OPENAI_API_KEY
+        sync: false

@@ -1,0 +1,12 @@
+{
+  "name": "doodle-lane-battler",
+  "version": "0.1.0",
+  "private": true,
+  "description": "One-lane battler where every unit is something you draw.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
