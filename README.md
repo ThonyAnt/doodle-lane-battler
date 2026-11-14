@@ -14,7 +14,7 @@ Keys: A/D move, W jump, S down, J and K use your two drawings. Tap a blade repea
 
 ## InkShop: the merged game
 
-On a computer,  is Alex's InkShop prototype (repo ) running on this game's engine. His interface, shape recogniser, hack table and effects are in the page as he wrote them; his mechanics run in this game's server-side rules, so they work for tablet rooms too.
+On a computer, `/duel` is Alex's InkShop prototype (repo `al371160/hackprinceton-brainstorming-alex`) running on this game's engine. His interface, shape recogniser, hack table and effects are in the page as he wrote them; his mechanics run in this game's server-side rules, so they work for tablet rooms too.
 
 - **The fight starts inside the paint program.** The arena is the art board of the InkShop window, with his three sketched ledges and a crate. His Fighters panel shows health, ink and overdrive; the AI Read Log shows what each drawing was read as.
 - **Weapons before the round, quick shapes during it.** You still draw two weapons in the Sketchbook before each round (read by the vision model). During the fight you draw glyphs that take effect at once, read by his recogniser: a flat line is a platform, a steep line a wall, a box a crate, a circle around yourself a shield, a circle around the foe a trap, an arrow from yourself a dash, an arrow from the foe a fling, a zig-zag a lightning bolt, an X erases or disarms, and a weapon shape (sword, spear, hammer, bow) replaces the weapon in your hand. Drawing costs ink, which refills.
@@ -22,9 +22,9 @@ On a computer,  is Alex's InkShop prototype (repo ) running on this game's engin
 - **Hacks.** Dealing and taking damage fills Overdrive. At 100, Q runs the selected hack (1-5 pick): BREAKOUT, RECYCLE, TRANSFORM, POPUPSTORM, OVERCLOCK. Each shows a warning dialog first; the target cancels it by drawing the counter glyph shown, which stuns the hacker.
 - **Getting out.** The art board's walls and floor can be mined: L swings the built-in pick, and S + L digs down. Two hits break a piece. Or run BREAKOUT.exe to open the whole board for 15 seconds. Outside, the desktop's window title bars are platforms.
 - **The bot** is his animator.bot on top of this game's fighting bot: it draws glyphs with a ghost cursor, runs hacks, and counters yours. His CPU skill slider sets how good it is; Time scale slows a local match.
-- Tablets and phones keep Benjamin's layout (with the draw strip and two new buttons, mine and hack); add  for the plain layout on a computer.
+- Tablets and phones keep Benjamin's layout (with the draw strip and two new buttons, mine and hack); add `?plain=1` for the plain layout on a computer.
 
-What comes from where is marked in the code: ,  and the  block in  hold his code between BEGIN/END verbatim markers. Not merged: his fighter movement and springy animation rig (his Rig Properties sliders are shown but disabled), his pick-up weapon items, and cursor grabs.
+What comes from where is marked in the code: `inkshop.js`, `inkshop.css` and the `INK` block in `duel.html` hold his code between BEGIN/END verbatim markers. Not merged: his fighter movement and springy animation rig (his Rig Properties sliders are shown but disabled), his pick-up weapon items, and cursor grabs.
 
 ## Desktop overlay (experimental, Windows)
 
