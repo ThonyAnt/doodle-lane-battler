@@ -885,7 +885,7 @@ function createDuel(opts){
       if(el==='plant'&&by&&by.hp>0) by.hp=Math.min(HP,by.hp+dmg*0.3);
     }
     if(tr==='flurry'&&!blocked) for(const dy of [44,66]) S.events.push({e:'hit',x:Math.round(t.x),y:Math.round(t.y+dy),n:Math.max(1,Math.round(dmg/2)),el,side:t.side,hap:hap||'thud',dir:kx<0?'L':'R'});
-    else S.events.push({e:blocked?'block':'hit',x:Math.round(t.x),y:Math.round(t.y+52),n:Math.max(1,Math.round(dmg)),el,side:t.side,hap:hap||'thud',dir:kx<0?'L':'R',w:+w.toFixed(2),fin:fin&&!blocked?1:0});
+    else S.events.push({e:blocked?'block':'hit',x:Math.round(t.x),y:Math.round(t.y+52),n:Math.max(1,Math.round(dmg)),el,side:t.side,hap:hap||'thud',dir:kx<0?'L':'R',w:+w.toFixed(2),fin:fin&&!blocked?1:0,ult:tr==='fleet'?1:0});
     if(tr==='blast'&&!blocked) S.events.push({e:'boom',x:Math.round(t.x),y:Math.round(t.y+45),n:26,el,s:1});
   }
   // Begin a move: the fighter is committed until it ends or chains.
@@ -1777,11 +1777,11 @@ function accept(v){
     if(e.e==='hit'&&ANIM.rig&&anim[e.side]&&anim[e.side].rig) ANIM.rig.kick(anim[e.side].rig,(e.dir==='L'?-1:1)*(view?view.f[e.side].face:1),e.n);
     const now=e.t0, soft=CALM?0.3:1;
     if(e.e==='boom') shake=Math.max(shake,(e.s?4:8)*soft);
-    // A hit shakes the screen by its weight. The last hit of a finisher, a charged shot or a knockout also gets an impact
-    // frame: for a few frames the picture is inverted (on a white stage a plain white flash would not show). Never more
-    // than one in 400 ms.
-    if(e.e==='hit'){ shake=Math.max(shake,(2.5+9*(e.w||0))*soft); if(e.fin&&now-impactAt>400){ impactAt=now; impactUntil=now+70; } }
-    if(e.e==='ko'&&now-impactAt>150){ impactAt=now; impactUntil=now+110; shake=Math.max(shake,14*soft); }
+    // A hit shakes the screen by its weight. Only the ultimate gets an impact frame: when its last copy lands, the picture
+    // is inverted for a few frames (on a white stage a plain white flash would not show). Ordinary attacks and knockouts
+    // never black the screen out.
+    if(e.e==='hit'){ shake=Math.max(shake,(2.5+9*(e.w||0))*soft); if(e.fin&&e.ult&&now-impactAt>400){ impactAt=now; impactUntil=now+70; } }
+    if(e.e==='ko') shake=Math.max(shake,14*soft);
     if(e.e==='ult'){ shake=Math.max(shake,7*soft); FXI.ring(e.x,-(e.y+60),PCOL[e.side]); FXI.burst(e.x,-(e.y+60),PCOL[e.side],22); }
     if(e.e==='zip') FXI.spark(e.x,-e.y,PCOL[e.side]);
     if(e.e==='hit'&&navigator.vibrate&&local[e.side]&&navigator.userActivation&&navigator.userActivation.hasBeenActive) navigator.vibrate(30);
