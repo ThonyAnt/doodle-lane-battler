@@ -11,7 +11,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   // How closely the reader looks at a drawing: "high" sees thin lines better and costs a little more time; "low" is quicker.
   const DETAIL=['low','high','auto'].includes(process.env.OPENAI_DETAIL)?process.env.OPENAI_DETAIL:'high';
   const page=path.join(__dirname,'duel.html'), src=fs.readFileSync(page,'utf8'), block=src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0];
-  const D=new Function(block+';return {createDuel,replayDuel,fnv1a,validItem,localGuess,nameFor,inkCost,stockItem,makeBot,botLoadout,makeNetBot,botFeatures,netForward,NET_SHAPE,INK_MAX,PAD_W,PAD_H,MOVES,KINDS,ELS,ABILITY_API,ABILITY_LIMITS,abilityAllowance,abilityClean,abilitiesFit,builtinAbilities,customCatalog,templateOf,templateCall,TEMPLATE_AXES,TEMPLATE_TIPS,abText,HP,MODS,WORLD_TIER};')();
+  const D=new Function(block+';return {createDuel,replayDuel,fnv1a,validItem,localGuess,nameFor,inkCost,stockItem,makeBot,botLoadout,makeNetBot,botFeatures,netForward,NET_SHAPE,INK_MAX,PAD_W,PAD_H,MOVES,KINDS,ELS,ABILITY_API,ABILITY_LIMITS,abilityAllowance,abilityClean,abilitiesFit,builtinAbilities,customCatalog,templateOf,templateCall,TEMPLATE_AXES,TEMPLATE_TIPS,abText,HP,MODS,WORLD_TIER,specOf};')();
   // A stamp of the rules this server is running: a replay only plays back right under the very same rules, and the page
   // works out the same stamp from its own copy to check (rulesOf in duel.html).
   const RULES=D.fnv1a(block.replace(/\r\n/g,'\n'));
@@ -127,6 +127,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
     res.writeHead(200,{'Content-Type':'application/x-ndjson','Cache-Control':'no-cache'});
     const line=o=>{ if(!res.writableEnded) res.write(JSON.stringify(o)+'\n'); };
     if(!text){ line({type:'error',message:'Type what you want changed.'}); res.end(); return; }
+    { const m=/^(?:name|i am|i'm|im|my name is)\s+(.{1,24})$/i.exec(text); if(m){ const nm=nemName(m[1]); if(room) room.player=nm; line({type:'name',player:nm}); line({type:'say',text:'Noted, '+nm+'. I keep files.'}); line({type:'done',ok:true,ms:0}); res.end(); return; } }
     if(/^(reset|uninstall|undo|restore|default|defaults|normal)$/i.test(text)){
       if(room){ room.patch=null; osSync(room); } line({type:'uninstall'}); line({type:'say',text:'Update removed. Factory settings restored.'}); line({type:'done',ok:true,ms:0}); res.end(); return; }
     const S=room&&room.sim, items=S?S.items.map(a=>a.map(it=>it&&{name:it.name,kind:it.kind})):Array.isArray(body.items)?body.items:[];
@@ -149,6 +150,50 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
     free(); if(!res.writableEnded) res.end();
   }
 
+  /* ---- Nemesis: in a bot room the machine plays Red, studies Blue between rounds and rebuilds its weapons to beat them ----
+     The thinking is the OS agent's (os-agent/nemesis.mjs: a scout, an armorer and a sparring partner); the numbers it studies are
+     the match's own (S.scout), and every build it sends is checked here again (nemesis.js) before Red is given it. */
+  const NEM=require('./nemesis.js')({D,A:AB});
+  const nemName=v=>String(v===undefined||v===null?'':v).replace(/[^A-Za-z0-9 _-]+/g,'').trim().slice(0,16)||'stranger';
+  const nemItems=(S,side)=>[0,1].map(k=>S.items[side][k]&&{spec:D.specOf(S.items[side][k]),cost:S.items[side][k].cost}).filter(Boolean);
+  // Ask for a build. hear gets every line of the agent's work; the answer is {build, arms} or null (nothing to go on, or no agent).
+  async function nemAsk(ctx,hear){
+    let got=null, up;
+    try{ up=await fetch(OS_URL+'/nemesis',{method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.timeout(50000),body:JSON.stringify(ctx)}); }catch(e){ return null; }
+    let buf=''; const dec=new TextDecoder();
+    try{ for await(const chunk of up.body){ buf+=dec.decode(chunk,{stream:true}); let k;
+      while((k=buf.indexOf('\n'))>=0){ const raw=buf.slice(0,k); buf=buf.slice(k+1); if(!raw.trim()) continue; let ev; try{ ev=JSON.parse(raw); }catch(e){ continue; }
+        if(ev.type==='deploy'){ const c=NEM.clean(ev.build,ctx.abilities); if(c.errors.length){ hear({type:'error',message:'The game refused the build: '+c.errors[0]}); continue; }
+          got={build:c.build,arms:NEM.arm(c.build)}; hear({type:'deploy',player:ctx.player,name:c.build.name,taunt:c.build.taunt,winPct:ev.winPct,was:ev.was,items:c.build.items.map(it=>({name:it.name,base:it.base,abilities:it.abilities.map(a=>a.name)}))}); }
+        else if(ev.type==='keep') hear({type:'keep',player:ctx.player,taunt:String(ev.taunt||'').slice(0,90),winPct:ev.winPct,was:ev.was});
+        else hear(ev);
+      } } }catch(e){}
+    return got;
+  }
+  function nemStart(room){
+    const S=room.sim; room.hunt=Date.now(); S.setWait(true);
+    const ctx={player:room.player||'stranger',round:S.round,wins:S.wins,reports:S.scout[0],mine:S.scout[1],playerItems:nemItems(S,0),current:nemItems(S,1),skill:room.skill,abilities:S.wins[1]<S.wins[0]?2:1};
+    nemAsk(ctx,ev=>broadcast(room,'nemesis',ev)).then(got=>{
+      if(room.sim!==S||!got||(S.phase!=='draw'&&S.phase!=='count')) return;
+      if(S.phase==='draw'){ S.clearItem(1,0); S.clearItem(1,1); }
+      got.arms.forEach((b,k)=>{ const it=S.setItem(1,k,b.spec,b.cost); if(!it) return;
+        room.art[1][k]=Object.assign({strokes:b.strokes,ver:it.ver,kind:it.kind,style:it.style},earned(it)); noteArt(room,1,k); broadcast(room,'item',Object.assign({side:1,slot:k},room.art[1][k])); });
+      room.dirty=true; console.log('duel nemesis:',JSON.stringify(got.build.name),'against',JSON.stringify(ctx.player),'in',room.code);
+    }).catch(e=>console.error('duel nemesis failed:',e&&e.message)).then(()=>{ if(room.sim===S) S.setWait(false); room.hunt=0; });
+  }
+  // Each round's drawing break (once): the machine goes to work, and Red is not ready until it is done.
+  function nemWatch(room){
+    const S=room.sim; if(room.hunt&&Date.now()-room.hunt>55000){ room.hunt=0; S.setWait(false); }
+    if(S.phase!=='draw'||room.hunt||(room.nemSim===S&&room.nemRound===S.round)) return;
+    room.nemSim=S; room.nemRound=S.round; nemStart(room);
+  }
+  // A match played in one page asks for itself: the same work, and the page puts the items into its own match.
+  async function nemRun(req,res,body){
+    res.writeHead(200,{'Content-Type':'application/x-ndjson','Cache-Control':'no-cache'});
+    const line=o=>{ if(!res.writableEnded) res.write(JSON.stringify(o)+'\n'); }, arr=(v,n)=>Array.isArray(v)?v.slice(0,n):[];
+    const ctx={player:nemName(body.player),round:body.round|0,wins:arr(body.wins,2).map(n=>n|0),reports:arr(body.reports,6),mine:arr(body.mine,6),playerItems:arr(body.playerItems,2),current:arr(body.current,2),skill:Math.max(0,Math.min(1,+body.skill||0.55)),abilities:body.abilities===2?2:1};
+    const got=await nemAsk(ctx,line); if(got) line({type:'arms',arms:got.arms}); line({type:'end'}); res.end();
+  }
   const rooms=new Map(), LETTERS='ABCDEFGHJKLMNPQRSTUVWXYZ';
   // Replays. Every room records its match (createDuel({record:true})) and notes each drawing it shows, by item version, so
   // a replay can show the same pictures. When a match is replaced by a rematch, or its room closes, the recording goes on
@@ -160,10 +205,10 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   const noteArt=(room,side,slot)=>{ room.shown.push(Object.assign({side,slot},room.art[side][slot])); if(room.shown.length>400) room.shown.shift(); };
   // bot: Red is played by the game's bot on the server, so one person with a controller can play. skill is its 0 to 1 setting.
   // brain: 'net' asks for the trained CPU; without weights for it the room quietly gets the classic bot.
-  function newRoom(stage,bot,skill,brain){
+  function newRoom(stage,bot,skill,brain,nemesis,player){
     let code; do{ code=Array.from({length:4},()=>LETTERS[Math.floor(Math.random()*LETTERS.length)]).join(''); }while(rooms.has(code));
     const now=Date.now(), room={code,stage:stage==='sheet'||stage==='deck'?stage:'',sim:D.createDuel(duelOpts(stage==='sheet'||stage==='deck'?stage:'')),art:[[null,null],[null,null]],shown:[],players:new Map(),watchers:new Set(),clients:new Set(),last:now,sent:0,seen:now,dirty:true,bot:null,brain:brain==='net'&&NET?'net':'classic',skill:Number.isFinite(skill)?Math.max(0,Math.min(1,skill)):0.55};
-    if(bot){ room.players.set('(bot)',1); room.bot=makeCpu(room); armBot(room); }
+    if(bot){ room.players.set('(bot)',1); room.bot=makeCpu(room); armBot(room); room.nemesis=nemesis!==false; room.player=nemName(player); }      // nemesis: Red studies Blue between rounds and rebuilds (see nemStart)
     rooms.set(code,room); return room;
   }
   // The one place an event leaves for a device, whichever way the device is connected. On the event stream (c.res) it
@@ -230,7 +275,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
         S.setInput(s,{l:false,r:false,d:false,j:+b.j||0,a:+b.a||0,b:+b.b||0,m:+b.m||0,q:+b.q||0,u:+b.u||0,h:Math.max(0,Math.min(4,b.h|0))}); }
       osSync(room);
       osSync(room);
-      if(both){ if(room.bot){ room.bot(S,dt); if(S.phase==='draw'&&!S.ready[1]) S.setReady(1); } S.step(dt); }
+      if(both){ if(room.bot){ if(room.nemesis) nemWatch(room); room.bot(S,dt); if(S.phase==='draw'&&!S.ready[1]&&!room.hunt) S.setReady(1); } S.step(dt); }
       const live=both&&(S.phase==='count'||S.phase==='fight'||S.phase==='end'||(S.phase==='over'&&(S.overT||0)<4.2));      // the ended state is sent at full rate while the fighters come to rest
       if(room.clients.size&&((live&&now-room.sent>=15)||room.dirty||now-room.sent>=250)){ broadcast(room,'state',S.snapshot()); room.sent=now; room.dirty=false; }
       if(room.clients.size) room.seen=now; else if(now-room.seen>10*60e3){ shelve(room); rooms.delete(room.code); }
@@ -336,9 +381,10 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       if(!out||!out.log) send(404,{error:'There is no replay for that room.'}); else send(200,Object.assign({rules:RULES},out));
       return true;
     }
+    if(req.method==='POST'&&p==='/duel/nemesis'){ let body={}; try{ body=JSON.parse((await readBody(req,60000)).toString('utf8')); }catch(e){} await nemRun(req,res,body); return true; }
     if(req.method==='POST'&&p==='/duel/os'){ let body={}; try{ body=JSON.parse((await readBody(req,8000)).toString('utf8')); }catch(e){} await osRun(req,res,body); return true; }
     if(req.method==='POST'&&p==='/duel/room'){
-      if(rooms.size>=500) send(503,{error:'Too many rooms are open right now.'}); else send(200,{code:newRoom(url.searchParams.get('stage'),url.searchParams.get('bot')==='1',parseFloat(url.searchParams.get('skill')),url.searchParams.get('brain')).code});      // ?stage=sheet: the spreadsheet stage; ?bot=1&brain=net: the trained CPU
+      if(rooms.size>=500) send(503,{error:'Too many rooms are open right now.'}); else send(200,{code:newRoom(url.searchParams.get('stage'),url.searchParams.get('bot')==='1',parseFloat(url.searchParams.get('skill')),url.searchParams.get('brain'),url.searchParams.get('nemesis')!=='0',url.searchParams.get('player')).code});      // ?stage=sheet: the spreadsheet stage; ?bot=1&brain=net: the trained CPU
       return true;
     }
     if(req.method==='GET'&&p==='/duel/events'){

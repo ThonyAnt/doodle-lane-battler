@@ -140,7 +140,7 @@ Not yet tried: a real browser. This was written and tested without one. The near
 
 ## INK-OS: the machine rewrites the game (LangChain deepagents)
 
-The fight happens inside an old computer, and that computer is a deep agent. Type a request into the `INK-OS` terminal on the desktop ("make the floor lava", "low gravity", "a storm that zaps everyone") and the machine ships it as an update for the next round, in about 30 to 45 seconds.
+The fight happens inside an old computer, and that computer is a deep agent. Type a request into the `INK-OS` terminal on the desktop ("make the floor lava", "low gravity", "a storm that zaps everyone") and the machine ships it as an update, live at once, in about 20 seconds.
 
 - **Who does the work:** one deep agent, `ink-os`, plans the job with a to-do list and runs three sub-agents. The **designer** turns the request into `/design.md`. The **engineer** writes `/update.json` and fixes it until `check_update` passes. The **tester** plays it in headless matches of the real game with `playtest` and writes `/qa-report.md` with a PASS or FAIL. A FAIL goes back to the engineer. Only a play-tested update can be installed.
 - **What an update is:** data, never JavaScript. Match settings (`gravity`, `speed`, `jump`, `damage`, `knockback`, `shotSpeed`, `size`, `health`, `overdrive`, each in a fixed range) and up to three world rules written in the game's own small rule language, which the game interprets itself. `MODS` in `duel.html` and `osforge.js` hold the tables; the manual the agents read is generated from them.
@@ -148,6 +148,17 @@ The fight happens inside an old computer, and that computer is a deep agent. Typ
 - **Watching it work:** the terminal shows the plan ticking off, each hand-over, each file written, the check, and the play-test numbers beside the normal game's. Every run keeps its files in `os-agent/work/<run>/`.
 - **Run it:** `cd os-agent && npm install && node server.mjs` (port 3130, needs `OPENAI_API_KEY`; `OS_AGENT_MODEL` picks the model, default `gpt-6-luna`). The game server finds it at `OS_AGENT_URL` (default `http://127.0.0.1:3130`). Type `reset` in the terminal to remove the installed update.
 - **Not tested:** nobody outside the team has typed into it, and it has only been run with `gpt-6-luna`.
+
+## Nemesis: the machine is the opponent (LangChain deepagents)
+
+Against the bot, Red is played by INK-OS itself. Between rounds it studies how you played and comes back with weapons built to counter you, and it remembers you by name the next time you play.
+
+- **What you see:** during the drawing break the `INK-OS` terminal shows the machine at work (your habits in numbers, the build it forged, its win rate in practice). The round opens with the build's name and a taunt that quotes your own numbers. When the match is over, its notes on you open as a text file.
+- **Who does the work:** one deep agent plans the job and runs three sub-agents. The **scout** reads the round's numbers (`S.scout` in the rules: distance kept, time in the air, jumps, which weapon did the damage) and writes `/dossier.md`. The **armorer** forges `/build.json`: two weapons and an ability it writes in the game's ability language. The **sparring** partner plays the build in about 40 practice rounds of the real game against a copy of you (the game's bot with your weapons, your skill and your habits) and reports the win rate. A build that loses goes back to the armorer once.
+- **Memory:** the scout adds a line to `os-agent/memory/<name>.md` after every round, and reads it before the first round of your next match. Tell it who you are by typing `name ben` into the terminal.
+- **Fair play:** the machine gets what a player gets. Two of the ready-made items, 80 ink between them, one ability (two when it is behind), all checked by the same code that checks a player's (`nemesis.js`), by the agent's tools and again by the game server.
+- **Where it runs:** in a Player vs Bot room the server runs it and tells every device; in "On this device: vs Bot" the page asks for itself. Without the agent service the bot simply keeps its ready-made weapons. A room made with `?nemesis=0` turns it off.
+- **Not tested:** real people playing it. The copy of the player is a bot tuned to a handful of numbers, so its practice win rate is only a rough guide to how it does against you.
 
 ## Run
 

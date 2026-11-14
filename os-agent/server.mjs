@@ -23,6 +23,7 @@ import { ChatOpenAI } from '@langchain/openai';
 import { todoListMiddleware } from 'langchain';
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
+import { makeHunt } from './nemesis.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url)), root=path.join(here,'..'), require=createRequire(import.meta.url);
 try{ for(const line of fs.readFileSync(path.join(root,'.env'),'utf8').split(/\r?\n/)){ const m=/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/.exec(line); if(m&&process.env[m[1]]===undefined) process.env[m[1]]=m[2].trim().replace(/^["']|["']$/g,''); } }catch(e){}
@@ -34,6 +35,10 @@ const page=fs.readFileSync(path.join(root,'duel.html'),'utf8').replace(/\r\n/g,'
 const D=new Function(page.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,makeBot,botLoadout,stockItem,MODS,WORLD_TIER,ABILITY_API,ABILITY_LIMITS,HP};')();
 const OS=require(path.join(root,'osforge.js'))({D,InkScript:require(path.join(root,'inkscript.js'))});
 const MANUAL=OS.manual();
+// Nemesis (the machine as the opponent) needs the whole rules block, as the game server loads it: its export list is read from duel-server.js so the two never drift apart.
+const DX=new Function(page.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';'+fs.readFileSync(path.join(root,'duel-server.js'),'utf8').match(/return \{createDuel[^}]*\}/)[0])();
+const NEM=require(path.join(root,'nemesis.js'))({D:DX,A:require(path.join(root,'abilities.js'))({D:DX,InkScript:require(path.join(root,'inkscript.js'))})});
+const {hunt,known}=makeHunt({NEM,MODEL,here});
 
 const KERNEL=`You are INK-OS, the operating system of the old computer that the fighting game Doodle Duel runs inside. Players fight on your desktop. One of them has typed a request into your terminal: they want the game changed. You ship that change as an update, fast.
 
@@ -159,13 +164,21 @@ async function run(body,emit,shipped){
 
 http.createServer((req,res)=>{
   if(req.method==='GET'&&req.url==='/health'){ res.writeHead(200,{'Content-Type':'application/json'}); res.end(JSON.stringify({ok:true,model:MODEL,busy})); return; }
-  if(req.method!=='POST'||req.url!=='/run'){ res.writeHead(404); res.end(); return; }
+  if(req.method==='GET'&&req.url.startsWith('/known?')){ res.writeHead(200,{'Content-Type':'application/json'}); res.end(JSON.stringify({known:!!known(new URL(req.url,'http://x').searchParams.get('player')||'')})); return; }
+  const nem=req.url==='/nemesis';
+  if(req.method!=='POST'||(req.url!=='/run'&&!nem)){ res.writeHead(404); res.end(); return; }
   const chunks=[]; req.on('data',c=>chunks.push(c)); req.on('end',async()=>{
     res.writeHead(200,{'Content-Type':'application/x-ndjson','Cache-Control':'no-cache'});
     const began=Date.now(), emit=o=>{ if(!res.writableEnded) res.write(JSON.stringify(Object.assign(o,{at:Date.now()-began}))+'\n'); };      // at: ms since the request came in
+    let body={}; try{ body=JSON.parse(Buffer.concat(chunks).toString('utf8')||'{}'); }catch(e){}
+    if(nem){ const t0=Date.now(), fin=r=>{ if(!res.writableEnded){ emit({type:'done',ok:!!r.ok,skip:!!r.skip,ms:Date.now()-t0,steps:r.steps}); res.end(); } };      // the machine as the opponent: its own runs, one per room, beside the updates
+      try{ const r=await hunt(body,emit,fin); console.log('nemesis',JSON.stringify(String(body.player||'')),r.skip?'nothing to go on':r.ok?'built':'nothing built',Date.now()-t0+'ms',(r.steps||0)+' steps'); fin(r); }
+      catch(e){ console.error('nemesis failed:',e&&e.message);
+        try{ if(!/flagged|Invalid prompt|timed out|timeout/i.test(String(e&&e.message))) throw e; const r=await hunt(Object.assign(body,{again:true}),emit,fin); console.log('nemesis (second try)',r.ok?'built':'nothing built',Date.now()-t0+'ms'); fin(r); }      // a refused or hung first call: once more
+        catch(e2){ emit({type:'error',message:short(e2&&e2.message||'something went wrong',200)}); fin({ok:false}); } }
+      return; }
     if(busy){ emit({type:'error',message:'INK-OS is still installing the last update. Try again in a moment.'}); res.end(); return; }
-    busy=true; const t0=Date.now(); let body={};
-    try{ body=JSON.parse(Buffer.concat(chunks).toString('utf8')||'{}'); }catch(e){}
+    busy=true; const t0=Date.now();
     const timer=setTimeout(()=>{ emit({type:'error',message:'INK-OS took too long and gave up.'}); emit({type:'done',ok:false,ms:Date.now()-t0}); res.end(); },240000);
     const shipped=r=>{ emit({type:'done',ok:r.ok,ms:Date.now()-t0,steps:r.steps}); clearTimeout(timer); busy=false; res.end(); };
     try{ const r=await run(body,emit,shipped); if(!res.writableEnded) emit({type:'done',ok:r.ok,ms:Date.now()-t0,steps:r.steps}); console.log('ink-os',JSON.stringify(String(body.request||'').slice(0,60)),r.ok?'installed':'nothing installed',Date.now()-t0+'ms',r.steps+' steps',path.basename(r.dir)); }

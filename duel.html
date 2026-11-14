@@ -601,7 +601,7 @@ Q     hack</div>
   <div id="hackMenu" hidden></div>
   <div id="stripbar" hidden><button id="hackPick" aria-haspopup="true" aria-expanded="false">Hack: <b id="hackName"></b> ▾</button><span id="stripInk"></span></div>
   <section class="tcs" id="tcs" hidden></section>
-  <section class="oswin" id="oswin"><div class="oslog" id="osLog"><div class="osl dim">INK-OS 2.0 ready. Type what the machine should change, like: make the floor lava</div></div>
+  <section class="oswin" id="oswin"><div class="oslog" id="osLog"><div class="osl dim">INK-OS 2.0 ready. Type what the machine should change, like: make the floor lava. Against the bot it studies you; tell it who you are: name ben</div></div>
     <form class="osrow" id="osForm"><span>C:\&gt;</span><input id="osIn" maxlength="140" autocomplete="off" spellcheck="false" placeholder="low gravity   |   reset" aria-label="Tell the machine what to change"><button id="osGo">Run</button></form></section>
   <section class="desks" id="desks"></section>
 
@@ -2176,6 +2176,28 @@ function createDuel(opts){
   S.sheet=(opts&&opts.stage==='sheet')?{}:null;        // the spreadsheet stage (see sheetTick)
   S.deck=(opts&&opts.stage==='deck')?{}:null;          // the slideshow stage (see deckTick)
   S.inkLeft=side=>Math.round(INK_MAX-S.items[side].reduce((n,it)=>n+(it?it.cost:0),0));
+  // Scouting: what each fighter did in each round, in numbers (S.scout[side], one report per finished round). The machine
+  // that plays Red studies Blue's reports between rounds and builds against them (nemesis.js).
+  const SC=[null,null]; S.scout=[[],[]];
+  function scoutStep(dt){
+    const x0=BOARD?BOARD.x0:0, x1=BOARD?BOARD.x1:W;
+    for(const f of S.f){ const e=S.f[1-f.side]; let c=SC[f.side];
+      if(!c) c=SC[f.side]={secs:0,far:0,mid:0,near:0,air:0,back:0,corner:0,block:0,still:0,jumps:0,uses:[0,0],dealt:[0,0],taken:0,g:true,act:null,k:0,hp:[f.hp,e.hp]};
+      const dist=Math.abs(e.x-f.x), dir=Math.sign(e.x-f.x)||1;
+      c.secs+=dt; if(dist>300) c.far+=dt; else if(dist>130) c.mid+=dt; else c.near+=dt;
+      if(!f.ground) c.air+=dt; if(c.g&&!f.ground&&f.vy>0) c.jumps++; c.g=f.ground;
+      if(Math.abs(f.vx)>60&&Math.sign(f.vx)===-dir) c.back+=dt; else if(Math.abs(f.vx)<25&&f.ground) c.still+=dt;
+      if(f.x<x0+150||f.x>x1-150) c.corner+=dt;
+      if(f.shield>0) c.block+=dt;
+      if(f.act&&f.act!==c.act&&(f.act.k===0||f.act.k===1)){ c.uses[f.act.k]++; c.k=f.act.k; } c.act=f.act;
+      if(e.hp<c.hp[1]) c.dealt[c.k]+=c.hp[1]-e.hp; if(f.hp<c.hp[0]) c.taken+=c.hp[0]-f.hp; c.hp=[f.hp,e.hp]; }
+  }
+  function scoutClose(){
+    for(const f of S.f){ const c=SC[f.side]; SC[f.side]=null; if(!c) continue; const p=v=>Math.round(100*v/Math.max(0.01,c.secs));
+      S.scout[f.side].push({round:S.round,won:S.winner===f.side,secs:Math.round(c.secs),hpLeft:Math.round(100*Math.max(0,f.hp)/HP),far:p(c.far),mid:p(c.mid),near:p(c.near),air:p(c.air),back:p(c.back),still:p(c.still),corner:p(c.corner),block:p(c.block),
+        jumpsPerMin:Math.round(c.jumps*60/Math.max(1,c.secs)),taken:Math.round(c.taken),
+        items:[0,1].map(k=>{ const it=S.items[f.side][k]; return it?{name:it.name,kind:it.kind,style:it.style,uses:c.uses[k],dealt:Math.round(c.dealt[k])}:null; })}); }
+  }
   S.width=()=>W; S.board=()=>BOARD;      // where the walls are: read by the trained opponent (botFeatures)
   S.setItem=(side,k,spec,cost)=>{
     if(S.phase!=='draw'&&S.phase!=='count'&&!S.practice) return null;
@@ -3778,11 +3800,12 @@ function createDuel(opts){
       targetStep(dt);      // target: statuses run down (not while an ultimate plays: their clocks stop with the round's)
       arenaStep(dt); if(S.deck) deckTick(dt);
     }
+    if(!S.practice) scoutStep(dt);
     const a=S.f[0], b=S.f[1], d0=a.hp<=0, d1=b.hp<=0;
     if(!S.practice&&(d0||d1||S.t<=0)){
       S.winner=d0&&d1?-1:d0?1:d1?0:Math.abs(a.hp-b.hp)<0.5?-1:a.hp>b.hp?0:1;
       if(S.winner>=0) S.wins[S.winner]++;
-      S.phase='end'; S.t=4.4; S.events.push({e:'ko',side:S.winner});
+      S.phase='end'; S.t=4.4; S.events.push({e:'ko',side:S.winner}); scoutClose();
     }
   }
   S.step=dt=>{ acc+=Math.min(0.25,dt); while(acc>=STEP){ acc-=STEP; tick(STEP); S.tickN++; } };
@@ -3863,9 +3886,11 @@ function createDuel(opts){
 // his AI.decide(), AI.onHack() and Drawer: the same rules and odds, and a ghost cursor that really traces each glyph
 // stroke by stroke and submits it through S.stroke, exactly as a player's drawing is. skillOf() is his CPU skill, 0..1.
 const BOT={cdBack:1,jumpBack:0,antiAir:1,predict:1,backPlan:1,leap:0,flee:0,swap:170};   // switches for the bot's habits, so tools/balance.js can try them one at a time
-function makeBot(side,skillOf,seed){
+// habit (optional): how a particular person plays, laid over the bot's own judgement: {far, near: share of the time they keep
+// away or press in, jumps: jumps a second}. Used for the copy of a player the machine practises against.
+function makeBot(side,skillOf,seed,habit){
   const R=mulberry32(seedFrom(seed));      // the bot's own dice: what it decides never uses up the match's numbers
-  let think=0, react=null, hadHack=false, now=0, idle=0, seenAct=null, seenAt=0, rolled=false, plan='', planFor=null, flee=false, stuck=0;
+  let think=0, react=null, hadHack=false, now=0, idle=0, seenAct=null, seenAt=0, rolled=false, plan='', planFor=null, flee=false, stuck=0; const hb={t:0,far:false,rush:false};
   const i={l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0,u:0}, last={a:-9,b:-9,j:-9,u:-9}, seenShot=new Map();
   const {T,toPts,densify,rand,pick,GLYPH_ICON}=INK, COL=['#1d3fbf','#b0121f'][side];
   const dr={task:null,cur:{x:0,y:-200},vis:false,
@@ -3964,6 +3989,9 @@ function makeBot(side,skillOf,seed){
       if(dy<-60&&f.ground&&f.y>0&&!pressed&&!f.act) down=1;                                                 // drop through the platform
       if(mending&&!threat&&shotIn>1) mv=0;                                                                  // cost: stand still to mend
     }
+    if(habit&&can&&!threat){ hb.t-=dt; if(hb.t<=0){ hb.t=0.7; hb.far=R()<(habit.far||0); hb.rush=!hb.far&&R()<(habit.near||0); }
+      if(hb.far&&dist<300&&!pressed) mv=-1; else if(hb.rush&&dist>110) mv=1;
+      if(habit.jumps>0&&f.ground&&!f.act&&R()<dt*habit.jumps) tap('j'); }
     stuck=mv===-1&&Math.abs(f.vx)<30?stuck+dt:0;
     if(mv<0&&f.act&&MOVES[f.act.m]&&MOVES[f.act.m].shots) mv=0;     // backing off mid-volley would turn it around and fire the wrong way
     i.r=mv*dir>0?1:0; i.l=mv*dir<0?1:0; i.d=down;
@@ -4165,6 +4193,8 @@ const STOCK=(()=>{
       pts:[ring(200,150,70,112,-T/4,T/4),seg(200,38,200,262,10),[[150,150],[214,142],[200,158],[262,150],[248,166],[318,150]],[[318,150],[300,138]],[[318,150],[304,164]],ring(118,96,20,14,0,T),ring(142,84,22,16,0,T),ring(98,112,14,10,0,T)]}
   };
 })();
+// A made item as the spec that makes it again in another match (the machine spars against a copy of the player's own weapons).
+function specOf(it){ return it?{name:it.name,kind:it.k0||it.kind,style:it.s0===undefined?it.style:it.s0,element:it.el,power:it.raw.power,range:it.raw.range,speed:it.raw.speed,traits:it.traits,trait:it.trait,tune:it.tune,ammo:it.ammo,customs:it.own,creativity:it.creativity,why:it.why,abilities:it.abilities}:null; }
 function stockItem(key,element){
   const s=STOCK[key]; if(!s) return null; element=ELS.includes(element)&&element!=='none'?element:(s.el||'none');      // a special made with the plain pen comes in its own ink
   const spec={kind:s.kind,style:s.style||'',element,name:(element==='none'?'':{fire:'Fire ',water:'Water ',plant:'Leafy '}[element])+s.label,
@@ -4214,6 +4244,7 @@ function osShow(e){
   else if(e.type==='playtest'){ const w=e.withUpdate, b=e.without; osLine('  play-test: '+w.rounds+' rounds, '+(e.ok?'no problems':esc(e.problems[0]))+'. Rounds last '+w.roundSeconds+' s (normally '+b.roundSeconds+'), in the air '+w.airbornePct+'% (normally '+b.airbornePct+'%)',e.ok?'ok':'bad'); }
   else if(e.type==='install'){ osLine('UPDATE INSTALLED: '+esc(e.patch.name),'big'); for(const n of e.patch.notes||[]) osLine('  - '+esc(n),'ok'); if(!net) osPatch=e.patch; }
   else if(e.type==='uninstall'){ if(!net) osPatch={name:'',notes:[],mods:{},rules:[]}; }
+  else if(e.type==='name'){ try{ localStorage.setItem('duelName',e.player); }catch(err){} }
   else if(e.type==='say') osLine('INK-OS&gt; '+esc(e.text),'say');
   else if(e.type==='error') osLine('ERROR: '+esc(e.message),'bad');
   else if(e.type==='done') osLine(e.ok?'done in '+Math.round((e.ms||0)/1000)+' s':'nothing was installed','dim');
@@ -4237,7 +4268,54 @@ function osTick(now){
     sim.setMods(osPatch.mods||{}); sim.setWorld(osPatch.rules||[]);
     sim._os=osPatch; osLive=osPatch.name?osPatch:null; osToast=osLive?{name:osPatch.name,notes:osPatch.notes||[],until:sim.phase==='fight'?now+4200:0}:null;
   }
-  const ph=view?view.phase:''; if(ph!==osPhase){ osPhase=ph; if(ph==='count'&&osToast) osToast.until=now+4200; }      // the round opens with what is installed
+  const ph=view?view.phase:''; if(ph!==osPhase){ osPhase=ph; if(ph==='count'&&osToast) osToast.until=now+4200; if(ph==='count'&&nemToast) nemToast.until=now+4600; }      // the round opens with what is installed
+}
+/* ---- Nemesis: against the bot, the machine itself plays Red. Between rounds it studies how Blue played (S.scout), forges
+   a build against them, spars it against a copy of them and comes back with it (nemesis.js, os-agent/nemesis.mjs). In a
+   room the server runs this and tells every device as it goes (event `nemesis`); a match in this page asks for itself. */
+let nemLive=null, nemToast=null, nemBusy=false, nemHold=false, nemAsked=null, nemFile=null;      // nemFile: what the machine has on this player, shown as a text file when the match is over
+const nemPlayer=()=>{ try{ return localStorage.getItem('duelName')||''; }catch(e){ return ''; } };
+function nemHear(e){
+  if(e.type==='read'){ nemBusy=true; osPlanEl=null; if(!nemFile||nemFile.player!==e.player) nemFile={player:e.player,lines:[],notes:[],builds:[]}; if(e.lines.length) nemFile.lines=e.lines;
+    if(typeof rwin!=='undefined'&&rwin.os){ rwin.os.min=false; rwin.os.w.style.zIndex=++rTop; }      // the terminal comes to the front: the machine is at work
+    osLine('INK-OS is studying '+esc(e.player)+(e.known?' (on file)':'')+' before round '+e.round,'big'); for(const l of e.lines.slice(0,4)) osLine('  '+esc(l),'ok'); }
+  else if(e.type==='remember'){ if(nemFile) nemFile.notes.push(e.note); osLine('  filed for next time: '+esc(e.note),'dim'); }
+  else if(e.type==='build') osLine(e.ok?'  forged: '+esc(e.name)+' = '+e.items.map(it=>esc(it.name)+(it.abilities.length?' ['+it.abilities.map(esc).join(', ')+']':'')).join(' + '):'  forge refused: '+esc((e.errors||[]).slice(0,1).join('')),e.ok?'ok':'bad');
+  else if(e.type==='spar') osLine('  sparring against a copy of you: wins '+e.winPct+'% of '+e.rounds+' rounds (its old weapons: '+e.was+'%)',e.winPct>=50?'ok':'bad');
+  else if(e.type==='deploy'||e.type==='keep'){ const name=e.type==='deploy'?e.name:'No change needed';
+    if(nemFile) nemFile.builds.push((e.type==='deploy'?'Built '+e.name:'Kept my weapons')+' ('+e.winPct+'% in practice against a copy of you)\n  "'+e.taunt+'"');
+    nemLive={name,taunt:e.taunt,winPct:e.winPct}; nemToast={name,taunt:e.taunt,until:view&&view.phase!=='draw'?performance.now()+4600:0};
+    osLine(e.type==='deploy'?'RED IS NOW ARMED WITH: '+esc(e.name):'INK-OS keeps its weapons.','big'); osLine('INK-OS&gt; '+esc(e.taunt),'say'); }
+  else if(e.type==='done'||e.type==='end') nemBusy=false;
+  else if(e.type==='error'){ console.warn('nemesis:',e.message); osLine('INK-OS lost its train of thought and keeps its weapons.','dim'); }
+  else if(e.type==='plan'||e.type==='delegate'||e.type==='file') osShow(e);
+}
+// A match against the bot in this page: once per drawing break, ask for a build and put it in Red's hands. Red is not ready until it is done.
+function nemFileText(v){
+  const f=nemFile, w=v&&v.wins?v.wins:[0,0]; if(!f) return '';
+  return ['SUBJECT: '+f.player.toUpperCase(),'RESULT:  '+(w[1]>w[0]?'beaten '+w[1]+'-'+w[0]:w[0]>w[1]?'got away '+w[0]+'-'+w[1]+' (this time)':'undecided'),'',
+    'OBSERVED',...(f.lines.length?f.lines:['nothing new']).map(l=>'- '+l),'','WHAT I DID ABOUT IT',...(f.builds.length?f.builds:['nothing yet']).map(l=>'- '+l),'',
+    'FILED FOR NEXT TIME',...(f.notes.length?f.notes:['nothing']).map(l=>'- '+l)].join('\n');
+}
+function nemLocal(){
+  const S=sim; if(mode!=='bot'||!S||S.phase!=='draw'||!canRead||(nemAsked&&nemAsked.sim===S&&nemAsked.round===S.round)) return;
+  nemAsked={sim:S,round:S.round}; if(!S.scout[0].length&&!nemPlayer()) return;      // nothing seen yet and nobody it could know
+  const items=side=>[0,1].map(k=>S.items[side][k]&&{spec:specOf(S.items[side][k]),cost:S.items[side][k].cost}).filter(Boolean);
+  nemHold=true; S.setWait(true);
+  (async()=>{
+    try{
+      const r=await fetch('/duel/nemesis',{method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.timeout(55000),
+        body:JSON.stringify({player:nemPlayer(),round:S.round,wins:S.wins,reports:S.scout[0],mine:S.scout[1],playerItems:items(0),current:items(1),skill:RETRO?FXI.P.diff:0.55,abilities:S.wins[1]<S.wins[0]?2:1})});
+      const rd=r.body.getReader(), dec=new TextDecoder(); let buf='';
+      for(;;){ const {value,done}=await rd.read(); if(done) break; buf+=dec.decode(value,{stream:true}); let k;
+        while((k=buf.indexOf('\n'))>=0){ const raw=buf.slice(0,k); buf=buf.slice(k+1); if(!raw.trim()) continue; let e; try{ e=JSON.parse(raw); }catch(err){ continue; }
+          if(e.type!=='arms'){ nemHear(e); continue; }
+          if(sim!==S||(S.phase!=='draw'&&S.phase!=='count')) continue;
+          if(S.phase==='draw'){ S.clearItem(1,0); S.clearItem(1,1); }
+          e.arms.forEach((b,slot)=>{ const it=S.setItem(1,slot,b.spec,b.cost); if(it) setArt(1,slot,b.strokes,it.ver,it.kind,it.style); }); } }
+    }catch(err){}
+    nemHold=false; nemBusy=false; if(sim===S) S.setWait(false);
+  })();
 }
 const abilityCompiler=(code,on)=>{ if(typeof InkScript==='undefined'||!Object.prototype.hasOwnProperty.call(ABILITY_API,on)) return null; const p=InkScript.parse(code); return p.ok&&!InkScript.check(p.ast,ABILITY_API[on]).length?InkScript.compile(p.ast):null; };
 function replayAt(log,tick){
@@ -4885,7 +4963,7 @@ function buildControls(){
 }
 
 /* ---------- modes ---------- */
-function resetLocal(){
+function resetLocal(){ nemLive=nemToast=null; nemAsked=null; if(nemFile) nemFile.builds=[];
   for(const s of [0,1]){ art[s]=[null,null]; Object.assign(inp[s],{l:0,r:0,d:0}); } fx=[]; view=null; resetAnim(); ko.ring=[]; ko.koMs=-1; koView=null; abilNet[0]=[null,null]; abilNet[1]=[null,null];
 }
 function setMode(m){
@@ -5019,7 +5097,7 @@ function startMatch(bot){
   history.replaceState(null,'',location.pathname+location.search); createRoom(true);
 }
 async function createRoom(watch){
-  const q=new URLSearchParams(); if(STAGE) q.set('stage',STAGE); if(wantBot){ q.set('bot','1'); const sk=document.querySelector('#s-diff'); if(sk) q.set('skill',sk.value); if(cpuBrain==='net') q.set('brain','net'); }
+  const q=new URLSearchParams(); if(STAGE) q.set('stage',STAGE); if(wantBot){ q.set('bot','1'); const sk=document.querySelector('#s-diff'); if(sk) q.set('skill',sk.value); if(cpuBrain==='net') q.set('brain','net'); if(nemPlayer()) q.set('player',nemPlayer()); }
   try{ const r=await fetch('/duel/room'+(q.toString()?'?'+q:''),{method:'POST'}); const o=await r.json(); if(!r.ok) throw new Error(o.error); joinRoom(o.code,watch===true); }
   catch(e){ alert('Could not create a room: '+(e.message||'the server did not answer')); }
 }
@@ -5035,7 +5113,7 @@ function joinRoom(code,watch){
   // Once a big screen has been seen the player view stays, so the screen reloading does not flip the layout mid-fight.
   on('players',d=>{ net.present=d.present; net.bot=!!d.bot; net.screen=net.screen||!!d.screen; setPad(); });
   on('state',accept);
-  on('os',osHear);      // the machine's update for this room (INK-OS)
+  on('os',osHear); on('nemesis',nemHear);      // the machine's update for this room (INK-OS)
   on('item',d=>{ if(window.SFX&&!(padView&&net.screen)) SFX.play('made'); setArt(d.side,d.slot,d.strokes,d.ver,d.kind,d.style);
     abilNet[d.side][d.slot]={ver:d.ver,creativity:d.creativity,why:typeof d.why==='string'?d.why:'',abilities:Array.isArray(d.abilities)?d.abilities.filter(a=>a&&typeof a==='object'):[]};      // what the drawing earned, code and all: sent once, with the drawing
     if(desk[d.side]) updateDesk(desk[d.side]); });
@@ -5309,6 +5387,8 @@ function retroBuild(){
   retroWindow('net','NetLink \u2014 join',$('overlay'),{left:'calc(50% - 60px)',top:'120px',transform:'translateX(-50%)',minWidth:'360px'},true);
   rwin.net.w.hidden=true;
   // on a big screen, what each player has made (with its stats) is a window too
+  { const pre=document.createElement('pre'); pre.id='nemFile'; pre.style.cssText='margin:0;font:12px/1.45 "Courier New",monospace;white-space:pre-wrap;color:#000;max-height:300px;overflow:auto';
+    retroWindow('file','subject.txt \u2014 Notepad',pre,{left:'74px',top:'150px',width:'400px'},true); }
   retroWindow('os','INK-OS \u2014 talk to the machine',$('oswin'),{right:'8px',bottom:'40px',top:'auto',left:'auto',height:'auto',width:'372px'});
   retroWindow('load','Loadouts \u2014 what each player has made',$('loadouts'),{left:'calc(50% - 60px)',top:'196px',transform:'translateX(-50%)',width:'min(760px,80vw)'},true);
   rwin.load.w.hidden=true;
@@ -5357,6 +5437,7 @@ function retroSync(menu){
   const v=view, Q=s=>document.querySelector(s), side=mySide1();
   $('cpuSkill').hidden=net?!net.bot:mode==='2p'||mode==='practice';
   $('playBot').setAttribute('aria-pressed',!!(net&&net.bot)); $('playPvp').setAttribute('aria-pressed',!!(net&&!net.bot));
+  { const show=!!nemFile&&view.phase==='over'&&(nemFile.builds.length>0||nemFile.notes.length>0); rwin.file.want=show; if(show){ const t=nemFileText(view), el=$('nemFile'); if(el.textContent!==t){ el.textContent=t; rwin.file.w.querySelector('.rname').textContent=nemFile.player.toLowerCase().replace(/[^a-z0-9]+/g,'_')+'.txt \u2014 Notepad'; rwin.file.w.style.zIndex=++rTop; } } }
   rwin.os.want=menu; rwin.game.want=menu; rwin.sketch.want=menu&&side>=0; rwin.net.want=!$('overlay').hidden; rwin.load.want=!$('loadouts').hidden;
   for(const id in rwin){ const o=rwin[id], show=o.want&&!o.min; if(o.w.hidden===show){ o.w.hidden=!show; if(show) o.w.style.zIndex=++rTop; } o.task.hidden=!o.want; o.task.classList.toggle('on',show&&+o.w.style.zIndex===rTop); if(!o.want) o.min=false; }
   rwin.net.w.querySelector('.rname').textContent=net?'NetLink \u2014 room '+net.code:'NetLink \u2014 join';
@@ -6731,6 +6812,17 @@ function osChip(v,now){
     L.fillStyle='#fff'; L.font='700 40px Karla,system-ui,sans-serif'; L.fillText(osLive.name.toUpperCase(),cx,y+18); L.fillStyle='#bfb'; L.font='600 15px Karla,system-ui,sans-serif'; if(osToast.notes[0]) L.fillText(osToast.notes[0].slice(0,70),cx,y+42); }
   L.restore();
 }
+function nemChip(v,now){
+  if(!nemLive||v.phase==='draw'||v.phase==='over') return;
+  const b=v.board, x0=b?b.x0:0, x1=b?b.x1:ARENA_W, top=b?GY-b.top:GY-400, cx=(x0+x1)/2;
+  L.save(); L.font='700 13px Karla,system-ui,sans-serif'; const label='RED IS INK-OS  \u00b7  '+nemLive.name, tw=L.measureText(label).width;
+  L.globalAlpha=0.92; L.fillStyle='#2a0b0b'; L.fillRect(x1-tw-44,top+10,tw+34,24); L.fillStyle='#ff5a4a'; L.beginPath(); L.arc(x1-tw-30,top+22,4.5,0,7); L.fill(); L.textAlign='left'; L.fillText(label,x1-tw-18,top+27);
+  if(nemToast&&now<nemToast.until&&!koView){ const left=(nemToast.until-now)/4600, a=Math.min(1,left*6,(1-left)*8+0.2), y=top+(b?150:120)+(osToast&&now<osToast.until?116:0);
+    L.globalAlpha=0.92*a; L.fillStyle='#1c0606'; L.fillRect(x0,y-46,x1-x0,104); L.fillStyle='#ff5a4a'; L.fillRect(x0,y-46,x1-x0,3); L.fillRect(x0,y+55,x1-x0,3);
+    L.globalAlpha=a; L.textAlign='center'; L.fillStyle='#ff9a8f'; L.font='700 14px "Courier New",monospace'; L.fillText('INK-OS STUDIED YOU AND BUILT',cx,y-22);
+    L.fillStyle='#fff'; L.font='700 40px Karla,system-ui,sans-serif'; L.fillText(nemToast.name.toUpperCase(),cx,y+18); L.fillStyle='#ffd0ca'; L.font='600 italic 16px Karla,system-ui,sans-serif'; L.fillText('\u201c'+nemToast.taunt+'\u201d',cx,y+43); }
+  L.restore();
+}
 function render(now){
   const v=koView||view, age=net&&!v.hs&&!koView&&(v.phase==='fight'||v.phase==='end')?Math.min(0.08,(now-viewAt)/1000):0, dt=Math.max(0,Math.min(0.05,(now-(lastRender||now))/1000)); lastRender=now;
   fitCanvas(); L.setTransform(1,0,0,1,0,0); L.clearRect(0,0,cv.width,cv.height); L.setTransform(VS,0,0,VS,OX*VS,OY);
@@ -6849,7 +6941,7 @@ function render(now){
   else if(deskLike()&&v.phase==='fight'&&!v.practice&&!RETRO) banner(String(Math.ceil(v.t)),26,40,'#59658a');
   if(v.aw) banner('Writing the abilities\u2026',34,150,'#59658a');      // the round starts as soon as every drawing's abilities are in
   if(RETRO&&deskPaused) banner('Paused',44,150,'#fff');
-  osChip(v,now);
+  osChip(v,now); nemChip(v,now);
   if(DESK&&deskPaused&&!deskMenu) banner('Paused. Press Ctrl+Alt+D to come back.',30,150,'#59658a');
   else if(v.phase==='end'&&!koView) banner(v.winner<0?'Draw round!':NAME[v.winner]+' takes the round!',56,180,v.winner<0?'#1c2541':PCOL[v.winner]);
 }
@@ -6858,7 +6950,7 @@ function frame(now){
   const dt=Math.max(0,Math.min(0.05,(now-last)/1000)); last=now;      // never negative: a late frame must not run the match backwards
   deskSync();
   const ts=LAB?lab.speed:RETRO?FXI.P.speed:1;                                          // his Time scale slider (local matches)
-  if(sim&&!deskPaused){ if(bot){ bot(sim,dt*ts); if(sim.phase==='draw'&&!sim.ready[1]) sim.setReady(1); } sim.step(dt*ts); if(LAB) labTick(dt*ts); accept(sim.snapshot()); }
+  if(sim&&!deskPaused){ if(bot){ nemLocal(); bot(sim,dt*ts); if(sim.phase==='draw'&&!sim.ready[1]&&!nemHold) sim.setReady(1); } sim.step(dt*ts); if(LAB) labTick(dt*ts); accept(sim.snapshot()); }
   if(rep) replayTick(dt);
   FXI.step(dt);
   if(RETRO){ fpsT+=dt; fpsN++; if(fpsT>0.5){ document.querySelector('#st-fps').textContent=Math.round(fpsN/fpsT)+' fps'; fpsT=0; fpsN=0; } }
