@@ -427,6 +427,7 @@ Window titlebars = platforms
 <script src="/qrcode.js"></script>
 <script src="/inkshop.js"></script>
 <script src="/anim/core.js"></script>
+<script src="/anim/rig.js"></script>
 <script src="/anim/locomotion.js"></script>
 <script src="/anim/blade.js"></script>
 <script src="/anim/bow.js"></script>
@@ -1668,6 +1669,7 @@ function accept(v){
     if(e.e==='block') shake=Math.max(shake,3);
     if(e.e==='quake') shake=Math.max(shake,9);
     if(e.e==='hit'||e.e==='boom') shake=Math.max(shake,e.e==='boom'?(e.s?4:8):Math.min(8,3+e.n/4));
+    if(e.e==='hit'&&ANIM.rig&&anim[e.side]&&anim[e.side].rig) ANIM.rig.kick(anim[e.side].rig,(e.dir==='L'?-1:1)*(view?view.f[e.side].face:1),e.n);
     if(e.e==='hit'&&navigator.vibrate&&local[e.side]&&navigator.userActivation&&navigator.userActivation.hasBeenActive) navigator.vibrate(30);
   }
   // drawn shapes: follow their positions, forget the ones that are gone
@@ -1757,9 +1759,16 @@ function retroBuild(){
       ['About InkShop','',()=>FXI.toast('InkShop 2.0 \u2014 interface, glyph recogniser, hacks and effects from Alex\'s prototype, running on the Doodle Duel engine.')]]});
   FXI.buildUI();
   document.querySelector('#hint').textContent='A D move \u00b7 W jump \u00b7 J K attack \u00b7 L mine \u00b7 mouse draws (B R O) \u00b7 Q hack';
-  // his rig sliders drive his animation system, which this game does not use; Time scale and CPU skill are live
-  for(const k of ['jelly','stretch','flab','exag']){ const el=document.querySelector('#s-'+k); el.disabled=true; el.parentElement.classList.add('off'); el.parentElement.title='Belongs to the InkShop rig, not wired to this game\u2019s animations yet'; }
-  for(const id of ['c-onion','c-rig']){ const el=document.querySelector('#'+id); el.disabled=true; }
+  // His rig sliders drive the spring layer over this game's clips (anim/rig.js). They start gentler than his defaults,
+  // and Exaggerate starts at 1.00 (no change). Time scale and CPU skill were already live.
+  if(ANIM.rig){
+    const RP=ANIM.rig.P, tips={jelly:'How soft the springs are. 0 = exactly the authored animation.',stretch:'How far limbs may stretch, and how round they are drawn.',flab:'How loosely the belly hangs.',exag:'Bigger poses while moving about. Attacks are left alone.'};
+    for(const k of ['jelly','stretch','flab','exag']){ const el=document.querySelector('#s-'+k), out=document.querySelector('#v-'+k);
+      el.value=RP[k]; out.textContent=(+RP[k]).toFixed(2); el.parentElement.title=tips[k]; el.oninput=()=>{ ANIM.rig.set(k,+el.value); out.textContent=(+el.value).toFixed(2); }; }
+    const on=document.querySelector('#c-onion'), rg=document.querySelector('#c-rig'); on.checked=RP.onion; rg.checked=RP.show;
+    on.onchange=()=>ANIM.rig.set('onion',on.checked); rg.onchange=()=>ANIM.rig.set('show',rg.checked);
+    on.parentElement.title='Off: afterimages only during attacks, dashes and Overclock. On: always.';
+  }
   document.querySelector('#start').onclick=()=>{ if(view&&view.phase!=='draw'&&view.phase!=='over') deskMenu=!deskMenu; };
   $('deskHint').textContent='Esc or Start: this window';
   retroWindow('game','Game setup',document.querySelector('header'),{left:'calc(50% - 60px)',top:'70px',transform:'translateX(-50%)'});
@@ -1978,13 +1987,18 @@ function drawFighter(v,i,now,age,dt){
     s.rot=near(st.fromRot,s.rot||0); s.turn=st.fromTurn+((s.turn===undefined?1:s.turn)-st.fromTurn)*u;
   }
   st.pose=s.p.slice(); st.rot=s.rot||0; st.turn=s.turn===undefined?1:s.turn;
+  // Secondary motion (anim/rig.js): springs chase the clip pose. Display only; st.pose above stays the clip's own pose.
+  const RG=ANIM.rig, rigAt={x,base,d,KS:K*(f.sc||1),dt};
+  if(RG){ if(!st.rig) st.rig=RG.make();
+    RG.apply(st.rig,s,Object.assign({grounded:!!f.g,act:!!f.act,oc:!!f.oc,loose:!f.act&&!f.hurt&&!f.sh&&f.hp>0&&v.phase==='fight'},rigAt));
+    RG.ghost(st.rig,s,rigAt,RG.P.onion||!!(f.act||f.dash||f.oc)); RG.drawGhosts(L,st.rig,col); }
   const p=s.p, U=n=>n/K;
   // contact shadow
   L.fillStyle='rgba(0,0,0,.09)'; L.beginPath(); L.ellipse(f.x,GY-shadowY(f)+4,28,3.5,0,0,7); L.fill();
   const KS=K*(f.sc||1);
   L.save(); L.translate(x,base); L.scale(d*KS,KS);
   // speed smear behind a dash
-  if(f.dash) for(const [off,al] of [[-70,.12],[-36,.25]]){ L.save(); L.translate(off,0); L.globalAlpha=al; ANIM.draw(L,s,{col,noodle:true}); L.restore(); }
+  if(f.dash&&!RG) for(const [off,al] of [[-70,.12],[-36,.25]]){ L.save(); L.translate(off,0); L.globalAlpha=al; ANIM.draw(L,s,{col,noodle:true}); L.restore(); }
   const wlen=it&&kind==='melee'?U(it.sz*STYLE[it.style].reach):0;
   // weapon smear: everything the weapon swept in the last moments of an attack
   if(wlen&&it.style!=='fist'&&f.act) ANIM.smear(L,clip,st.t,it.style==='spear'?wlen*0.96:wlen,it.el==='none'?col:PEN[it.el],0.2);
@@ -2009,6 +2023,7 @@ function drawFighter(v,i,now,age,dt){
     }});
   if(it&&kind==='shield'&&f.sh){ L.save(); L.translate(p[2]+50,p[3]+22); sprite(i,k,U(it.sz*1.25));
     L.strokeStyle=PEN[it.el]; L.globalAlpha=.5; L.lineWidth=5; L.beginPath(); L.arc(-20,0,U(it.sz*0.85),-1.1,1.1); L.stroke(); L.restore(); }
+  if(RG&&RG.P.show) RG.debug(L,s);
   L.restore();
   // his status visuals: shield bubble, trap rings, stun stars, overclock glow
   { const cyy=base-55*(f.sc||1), T2=Math.PI*2, tm=now/1000;

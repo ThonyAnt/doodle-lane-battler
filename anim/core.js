@@ -146,10 +146,10 @@
     if(opts&&opts.noodle){
       // The InkShop figure (from Alex's prototype): solid-colour limbs drawn as curves bowed through the elbow and knee,
       // the far-side limbs slightly faded, a gently bellied torso, and a filled round head.
-      const q=(a,b,e)=>{ const k=0.68, mx=(p[a]+p[e])/2, my=(p[a+1]+p[e+1])/2; ctx.moveTo(p[a],p[a+1]); ctx.quadraticCurveTo(p[b]+(p[b]-mx)*k,p[b+1]+(p[b+1]-my)*k,p[e],p[e+1]); };
+      const q=(a,b,e)=>{ const k=s.bow===undefined?0.68:s.bow, mx=(p[a]+p[e])/2, my=(p[a+1]+p[e+1])/2; ctx.moveTo(p[a],p[a+1]); ctx.quadraticCurveTo(p[b]+(p[b]-mx)*k,p[b+1]+(p[b+1]-my)*k,p[e],p[e+1]); };
       const al=ctx.globalAlpha; ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=7.4; ctx.lineCap='round'; ctx.lineJoin='round';
       ctx.globalAlpha=al*0.78; ctx.beginPath(); q(4,14,16); q(2,6,8); ctx.stroke(); ctx.globalAlpha=al;
-      ctx.beginPath(); ctx.moveTo(p[4],p[5]); ctx.quadraticCurveTo((p[4]+p[2])/2+9,(p[5]+p[3])/2,p[2],p[3]); ctx.lineTo(p[0],p[1]); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(p[4],p[5]); ctx.quadraticCurveTo((p[4]+p[2])/2+(s.belly?s.belly[0]:9),(p[5]+p[3])/2+(s.belly?s.belly[1]:0),p[2],p[3]); ctx.lineTo(p[0],p[1]); ctx.stroke();
       if(opts.weapon){ ctx.save(); ctx.translate(p[12],p[13]); ctx.rotate(p[22]); opts.weapon(ctx,s); ctx.restore(); ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=7.4; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.globalAlpha=al; }
       ctx.beginPath(); q(4,18,20); q(2,10,12); ctx.stroke();
       ctx.beginPath(); ctx.arc(p[0],p[1],14.5,0,7); ctx.fill();

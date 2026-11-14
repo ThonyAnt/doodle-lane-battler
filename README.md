@@ -26,7 +26,9 @@ On a computer, `/duel` is Alex's InkShop prototype (repo `al371160/hackprinceton
 - **The bot** is his animator.bot on top of this game's fighting bot: it draws glyphs with a ghost cursor, runs hacks, and counters yours. His CPU skill slider sets how good it is; Time scale slows a local match.
 - Tablets and phones keep Benjamin's layout (with the draw strip and two new buttons, mine and hack); add `?plain=1` for the plain layout on a computer.
 
-What comes from where is marked in the code: `inkshop.js`, `inkshop.css` and the `INK` block in `duel.html` hold his code between BEGIN/END verbatim markers. Not merged: his fighter movement and springy animation rig (his Rig Properties sliders are shown but disabled), his pick-up weapon items, and cursor grabs.
+What comes from where is marked in the code: `inkshop.js`, `inkshop.css` and the `INK` block in `duel.html` hold his code between BEGIN/END verbatim markers. Not merged: his fighter movement, his pick-up weapon items, and cursor grabs.
+
+**Springy movement.** The fighters' animations are authored clips; on top of them every joint is a small weight on a spring chasing the clip's pose (`anim/rig.js`, using the spring maths of his rig). The body lags and settles, a hit throws the joints about, and fast moves leave afterimages. It only changes how fighters are drawn, never who hits whom. On the InkShop desktop the Rig Properties sliders tune it: **Jelly** (how soft; 0 is the plain authored animation), **Stretch** (how far limbs may stretch), **Flab** (how loose the belly is), **Exaggerate** (bigger poses while moving about), **Onion skin** (afterimages all the time, not just in attacks, dashes and Overclock) and **Show rig** (draws the springs). Settings are remembered per browser.
 
 ## Desktop overlay (experimental, Windows)
 
