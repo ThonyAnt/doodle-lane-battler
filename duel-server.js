@@ -57,17 +57,17 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   }
   // Who is here: the two seats, and whether a big screen is showing the match (players' devices then act as sketchbook and controller only).
   const roster=room=>({present:present(room),screen:[...room.clients].some(c=>c.watch),bot:!!room.bot});
-  // 30 ticks a second. The match only advances while both players are connected.
+  // 120 ticks a second (the match steps at 120 Hz); state goes out 60 times a second and screens glide in between. The match only advances while both players are connected.
   setInterval(()=>{
     const now=Date.now();
     for(const room of rooms.values()){
       const dt=Math.min(0.1,(now-room.last)/1000), both=present(room).every(Boolean), S=room.sim; room.last=now;
       if(both){ if(room.bot){ room.bot(S,dt); if(S.phase==='draw'&&!S.ready[1]) S.setReady(1); } S.step(dt); }
       const live=both&&(S.phase==='count'||S.phase==='fight'||S.phase==='end');
-      if(room.clients.size&&(live||room.dirty||now-room.sent>=250)){ broadcast(room,'state',S.snapshot()); room.sent=now; room.dirty=false; }
+      if(room.clients.size&&((live&&now-room.sent>=15)||room.dirty||now-room.sent>=250)){ broadcast(room,'state',S.snapshot()); room.sent=now; room.dirty=false; }
       if(room.clients.size) room.seen=now; else if(now-room.seen>10*60e3) rooms.delete(room.code);
     }
-  },33);
+  },8);
   setInterval(()=>{ for(const room of rooms.values()) for(const c of room.clients) c.res.write(': ping\n\n'); },15000);
 
   function cleanPlats(a){

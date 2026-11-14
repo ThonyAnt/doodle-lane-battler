@@ -935,7 +935,7 @@ function elOfColor(hex){ const m=/^#?([0-9a-f]{6})$/i.exec(hex||''); if(!m) retu
 const RECYCLE_SECS=6;      // how long RECYCLE.exe keeps a weapon out of the fight
 const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet stage: cell size, and half the size of the banker's selection
 function createDuel(opts){
-  let acc=0, nextId=1; const STEP=1/60, r1=v=>Math.round(v*10)/10;
+  let acc=0, nextId=1; const STEP=1/120, r1=v=>Math.round(v*10)/10;
   let W=Math.max(600,(opts&&opts.width)||AW), PL=(opts&&opts.plats)||PLATS, BOARD=null, SOL=[];  // arena size; the default is the 960-wide stage
   const PUNCH={name:'Fists',kind:'melee',style:'fist',el:'none',cost:0,st:Object.assign(itemStats('melee','none',6),{reach:58,dmg:5})};
   // In a layout with an art board the fighters start inside it; otherwise in the middle of the arena.
