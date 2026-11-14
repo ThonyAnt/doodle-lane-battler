@@ -1135,7 +1135,8 @@ let ARENA_W=960, ARENA_PLATS=PLATS, deskStage=true, deskEdges=null, deskSent='',
 if(deskLike()){ document.documentElement.classList.add('deskmode'); document.body.classList.add('deskmode'); }
 if(RETRO){ document.documentElement.classList.add('retro'); document.body.classList.add('retro'); }
 // One game unit in screen pixels: fixed for a match on this computer, and stretched to the screen for the standard stage.
-const deskSc=()=>deskStage?Math.min(1.6,innerWidth/960):DESK_SCALE;
+// On the InkShop desktop one unit is one pixel, as in Alex's game, so his sizes and distances mean what he intended.
+const deskSc=()=>RETRO?1:deskStage?Math.min(1.6,innerWidth/960):DESK_SCALE;
 // Real windows as terrain. The overlay app reports the visible top edges of the other apps' windows in screen pixels;
 // here they become platforms in game units. They replace the stage's fixed platforms.
 function deskTerrain(){
@@ -1383,11 +1384,11 @@ function setMode(m){
   deskMenu=false;
   mode=m; for(const b of ['Bot','2p','Online','Practice']) $('mode'+b).setAttribute('aria-pressed',m===b.toLowerCase());
   if(net){ net.es.close(); net=null; } setScreen(false); setPad(); sim=null; bot=null; resetLocal(); lastPhase=''; overlayKey='';
-  deskStage=m==='online'&&!RETRO; deskSent=''; rEdgesSent=''; rLayoutSent=''; wobj.clear(); wPending[0]=[]; wPending[1]=[];
+  deskStage=m==='online'&&!RETRO; deskSent=''; rEdgesSent=''; rLayoutSent=''; rTick=7; wobj.clear(); wPending[0]=[]; wPending[1]=[];
   if(m==='online'){ local=[false,false]; ARENA_W=960; ARENA_PLATS=PLATS; view=createDuel().snapshot(); buildDesks(); buildControls(); const code=(location.hash||'').slice(1).toUpperCase(); if(/^[A-Z]{4}$/.test(code)) joinRoom(code,watched()===code); return; }
   if(location.hash) history.replaceState(null,'',location.pathname);
   local=m==='2p'?[true,true]:[true,false];
-  if(deskLike()){ ARENA_W=Math.round(innerWidth/DESK_SCALE); ARENA_PLATS=[]; }
+  if(deskLike()){ ARENA_W=Math.round(innerWidth/deskSc()); ARENA_PLATS=[]; }
   sim=createDuel({practice:m==='practice',width:ARENA_W,plats:ARENA_PLATS});
   if(m==='bot'){ bot=makeBot(1,()=>RETRO?FXI.P.diff:0.55); botLoadout().forEach((b,k)=>{ const it=sim.setItem(1,k,b.spec,b.cost); setArt(1,k,b.strokes,it.ver,it.kind,it.style); }); }
   deskTerrain();
@@ -1501,7 +1502,7 @@ if(deskLike()){
   if(host) host.onMenu(()=>{ deskMenu=!(deskMenu||document.body.classList.contains('menu'))?true:false; });
 }
 /* ---------- retro desktop: Alex's InkShop, with this game wired into it ---------- */
-const rwin={}; let rTop=20, rEdgesSent='', rLayoutSent='', rTick=0;
+const rwin={}; let rTop=20, rEdgesSent='', rLayoutSent='', rTick=7;       // 7: measure the layout on the very first frame
 const mySide1=()=>local[0]?0:local[1]?1:-1;
 function makeDraggable(w,bar){
   let grab=null;
@@ -1550,6 +1551,7 @@ function retroBuild(){
     help:()=>[['Controls','F1',tip],['Glyph grammar','',()=>FXI.toast('Simple = terrain (\u2015 platform, | wall, \u25a1 crate, \u25cb pot/shield/trap). Compound = weapons. \u2192 dash/fling/wind/link \u00b7 \u2715 erase/disarm \u00b7 \u2298 null any hack \u00b7 \u03df lightning')],
       ['About InkShop','',()=>FXI.toast('InkShop 2.0 \u2014 interface, glyph recogniser, hacks and effects from Alex\'s prototype, running on the Doodle Duel engine.')]]});
   FXI.buildUI();
+  document.querySelector('#hint').textContent='A D move \u00b7 W jump \u00b7 J K attack \u00b7 L mine \u00b7 mouse draws (B R O) \u00b7 Q hack';
   // his rig sliders drive his animation system, which this game does not use; Time scale and CPU skill are live
   for(const k of ['jelly','stretch','flab','exag']){ const el=document.querySelector('#s-'+k); el.disabled=true; el.parentElement.classList.add('off'); el.parentElement.title='Belongs to the InkShop rig, not wired to this game\u2019s animations yet'; }
   for(const id of ['c-onion','c-rig']){ const el=document.querySelector('#'+id); el.disabled=true; }
@@ -1595,6 +1597,7 @@ function retroEdges(){
 }
 // The art board's place in the world: where his #artboard sits on screen, in game units.
 function retroBoard(){
+  fitCanvas();
   const r=document.querySelector('#artboard').getBoundingClientRect(), sc=deskSc(), fy=innerHeight-floorGap()-6*sc;
   return {x0:Math.round((r.left+2)/sc-OX),x1:Math.round((r.right-2)/sc-OX),floor:Math.round((fy-(r.bottom-2))/sc),top:Math.round((fy-(r.top+2))/sc)};
 }
@@ -1935,13 +1938,14 @@ function render(now){
   if(DESK&&deskPaused&&!deskMenu) banner('Paused. Press Ctrl+Alt+D to come back.',30,150,'#59658a');
   else if(v.phase==='end') banner(v.winner<0?'Draw round!':NAME[v.winner]+' takes the round!',56,180,v.winner<0?'#1c2541':PCOL[v.winner]);
 }
-let last=performance.now();
+let last=performance.now(), fpsT=0, fpsN=0;
 function frame(now){
   const dt=Math.min(0.05,(now-last)/1000); last=now;
   deskSync();
   const ts=RETRO?FXI.P.speed:1;                                          // his Time scale slider (local matches)
   if(sim&&!deskPaused){ if(bot){ bot(sim,dt*ts); if(sim.phase==='draw'&&!sim.ready[1]) sim.setReady(1); } sim.step(dt*ts); accept(sim.snapshot()); }
   FXI.step(dt);
+  if(RETRO){ fpsT+=dt; fpsN++; if(fpsT>0.5){ document.querySelector('#st-fps').textContent=Math.round(fpsN/fpsT)+' fps'; fpsT=0; fpsN=0; } }
   if(view){ syncUI(); render(now); if(padView&&net&&net.side>=0){ const tc=document.querySelector('.tcs'); if(tc) document.body.style.setProperty('--pad',(tc.getBoundingClientRect().height+12)+'px'); $('strip').hidden=$('stripbar').hidden=false; drawStrip(view); } }
   requestAnimationFrame(frame);
 }

@@ -3,6 +3,9 @@
    generic selectors (.bar, .win, fieldset, ...) from affecting the rest of the page. */
 #inkos{font:11px Tahoma,Verdana,"Segoe UI",sans-serif;color:#000;user-select:none;-webkit-user-select:none}
 #inkos[hidden]{display:none}
+/* This page styles every <input> as a big rounded text box. His radio buttons, checkboxes and sliders must not inherit that,
+   so they are put back to the browser's defaults before his own rules (below) apply. */
+#inkos input{all:revert}
 #inkos{
 /* --- BEGIN verbatim --- */
 *{box-sizing:border-box}
