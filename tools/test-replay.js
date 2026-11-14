@@ -170,7 +170,7 @@ try{
   // Blue's sword, the same sword after its change, and the bot's two items; a weapon forged in the fight brings its picture in its own event.
   await atest('the replay comes with the drawings, by item version',()=>{ const art=res.body.art, vers=art.map(x=>x.ver), its=[].concat(...replayed.items).filter(Boolean), forged=replayed.events.filter(e=>e.e==='forge').map(e=>e.ver);
     return [art.length===4&&new Set(vers).size===4&&art.every(x=>Array.isArray(x.strokes)&&x.strokes.length&&(x.side===0||x.side===1)&&(x.slot===0||x.slot===1))&&its.length>=1&&its.every(it=>vers.includes(it.ver)||forged.includes(it.ver)),{vers,forged,items:its.map(it=>it.ver)}]; });
-  await atest('the rules stamp on a replay is the one the page works out for itself',async()=>{ const html=await (await fetch(URL0+'/duel?replay='+code)).text(), script=/<script>\n([\s\S]*?)<\/script>/.exec(html)[1], P=pure(['rulesOf','replayProblem']);
+  await atest('the rules stamp on a replay is the one the page works out for itself',async()=>{ const html=await (await fetch(URL0+'/duel?replay='+code)).text(), script=/<script>\r?\n([\s\S]*?)<\/script>/.exec(html)[1], P=pure(['rulesOf','replayProblem']);
     return [/^[0-9a-f]{8}$/.test(res.body.rules)&&P.rulesOf(script)===res.body.rules&&P.replayProblem(res.body,P.rulesOf(script))==='',[res.body.rules,P.rulesOf(script)]]; });
   await atest('an unknown room is a 404',async()=>(await get('/duel/replay?room=ZZZZ')).status===404);
   await act({type:'rematch'}); await sleep(150);
