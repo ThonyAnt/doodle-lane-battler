@@ -118,4 +118,35 @@ function msFromFoeMoveToJump(skill,lead){
   }
 }
 
+{ // 3. the headless arena: real rounds of the real rules, the league's fixed opponents, and the fitness of a set of weights
+  let A=null; try{ A=require('../bot/arena.js'); }catch(e){ ok('bot/arena.js loads',false,String(e.message).split('\n')[0]); }
+  if(A){
+    const meanOf=(n,fn)=>{ let t=0; for(let i=0;i<n;i++) t+=fn(); return t/n; }, score=A.score;
+    const items=(S,s)=>S.items[s].map(it=>it&&[it.name,it.kind,it.style,it.el,it.cost,it.trait].join()).join('|');
+    // a player that does nothing but note what both fighters were given
+    let sameLoadoutSeen=null; const loadouts=new Set(), sides=[];
+    const spy={make:side=>{ let looked=false; return S=>{ if(looked||S.phase==='draw') return; looked=true; sides.push(side); loadouts.add(items(S,0)); const same=items(S,0)===items(S,1)&&S.items[0].every(Boolean); sameLoadoutSeen=sameLoadoutSeen===null?same:sameLoadoutSeen&&same; }; }};
+    ok('a round between two classic bots ends with a result',()=>(r=>[0,1,-1].includes(r.w)&&r.t>3&&r.t<=110)(A.playRound(A.opponent('classic0.55'),A.opponent('classic0.55'),{flip:0})));
+    for(let i=0;i<8;i++) A.playRound(spy,A.opponent('masher'),{flip:i%2});
+    ok('both sides get the same loadout',()=>sameLoadoutSeen===true);
+    ok('and a different one from round to round',()=>loadouts.size>=4,()=>loadouts.size);
+    ok('flip seats player A on the other side',()=>sides.join('')==='01010101',()=>sides.join(''));
+    ok('the result is told from player A\'s seat, whichever side it sat on',()=>[0,1].every(flip=>{ const r=A.playRound(A.netPlayer(new Float32Array(1232)),A.opponent('masher'),{flip,loadout:[{spec:D.stockItem('sword','none').spec,cost:46}]}); return r.w===1&&r.hpDiff<0&&r.timeout===false&&score(r)<-1; }));
+    ok('a round\'s score is the win, half the health margin and a penalty for running out the clock',()=>Math.abs(score({w:0,hpDiff:80,timeout:false})-1.25)<1e-9&&Math.abs(score({w:1,hpDiff:-160,timeout:false})+1.5)<1e-9&&Math.abs(score({w:-1,hpDiff:0,timeout:true})+0.2)<1e-9&&Math.abs(score({w:0,hpDiff:16,timeout:true})-0.85)<1e-9);
+    ok('a bot that never presses loses to the masher and scores below zero',()=>A.fitness(new Float32Array(1232),[A.opponent('masher')],12)<0);
+    // 400 rounds where the plan said 40: a single round's score swings by more than 1 either way, so the mean of 40 lands
+    // outside 0.25 by luck about one run in five. Same tolerance, more rounds.
+    ok('fitness of classic against itself is near zero',()=>Math.abs(meanOf(400,()=>score(A.playRound(A.opponent('classic0.55'),A.opponent('classic0.55'),{flip:Math.random()<0.5}))))<0.25);
+    ok('the league\'s six fixed opponents all play, and an unknown name is refused',()=>A.FIXED.join()==='classic0.3,classic0.55,classic0.8,masher,jumper,kiter'&&A.FIXED.every(k=>{ const r=A.playRound(A.opponent(k),A.opponent('masher'),{flip:0}); return [0,1,-1].includes(r.w); })&&(()=>{ try{ A.opponent('nobody'); return false; }catch(e){ return true; } })());
+    ok('a schedule draws the opponents evenly and swaps sides every round',()=>{ const sc=A.schedule(6,24), n=[0,0,0,0,0,0]; for(const r of sc) n[r.o]++;
+      return sc.length===24&&n.every(v=>v===4)&&sc.every((r,i)=>r.flip===i%2&&r.loadout.length===2&&r.loadout.every(it=>it.spec&&it.cost>0)); });
+    ok('with a schedule, every candidate meets the same opponents with the same loadouts on the same sides',()=>{ const seen=[[],[]]; let who=0;
+      const lg=[0,1,2].map(o=>({make:side=>{ let looked=false; return S=>{ if(looked||S.phase==='draw') return; looked=true; seen[who].push(o+':'+side+':'+items(S,0)); }; }})), sc=A.schedule(3,6);
+      A.fitness(randomTheta(5,0.3),lg,6,sc); who=1; A.fitness(randomTheta(6,0.3),lg,6,sc); return seen[0].length===6&&seen[0].join(';')===seen[1].join(';')&&new Set(seen[0].map(v=>v[0])).size===3; });
+    ok('the weights\' rules stamp is a short hash of the rules text',()=>/^[0-9a-f]{16}$/.test(A.RULES));
+    const t0=Date.now(); let secs=0; for(let i=0;i<30;i++) secs+=A.playRound(A.netPlayer(randomTheta(40+i,0.3)),A.opponent(A.FIXED[i%6]),{flip:i%2}).t; const msPerRound=(Date.now()-t0)/30;
+    ok('one round takes under 250 ms',msPerRound<250,{msPerRound:+msPerRound.toFixed(2),'game seconds per round':+(secs/30).toFixed(1)});
+  }
+}
+
 console.log(bad?bad+' failed':'all bot tests pass'); process.exit(bad?1:0);
