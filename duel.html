@@ -621,6 +621,7 @@ function strokeLen(strokes){ let n=0; for(const s of strokes) for(let i=1;i<s.pt
 function inkCost(strokes){ return Math.max(MIN_COST,strokeLen(strokes)*INK_PER_PX); }
 // Turn the reader's answer into an item. It never gives up: an answer that does not name a kind is sorted by its style,
 // then by any telling word in what it said, then by the shape of the drawing, and failing all that it is something to swing.
+const AMMO=['bullet','paint','ball','blob','beam','dart'], AMMO_HINTS=[['paint',/paint|colou?r|spray|ink/],['beam',/laser|ray|beam|phaser|light|zap/],['blob',/water|squirt|hose|slime|goo|soak|acid|bubble/],['dart',/dart|nerf|needle|nail|staple|blow/],['ball',/ball|pellet|bb\b|marble|pea|cannon|potato|snow/]];
 function validItem(o,strokes){
   if(!o||typeof o!=='object') return strokes?localGuess(strokes):null;
   const txt=k=>String(o[k]||'').toLowerCase().trim(), el=txt('element')||'none', said=txt('kind')+' '+txt('style')+' '+txt('name');
@@ -633,6 +634,8 @@ function validItem(o,strokes){
   const spec={name,kind,style,element:ELS.includes(el)?el:'none',power:clampStat(o.power),range:clampStat(o.range),speed:clampStat(o.speed)};
   if(o.power===undefined&&o.range===undefined&&o.speed===undefined&&shape) Object.assign(spec,{power:shape.power,range:shape.range,speed:shape.speed});
   spec.traits=traitChoices(kind,Array.isArray(o.traits)?o.traits:[o.trait],name||said); spec.trait=spec.traits[0];
+  // What flies out of something that shoots: the reader says, and if it does not, the name is a hint. It only changes the look.
+  if(kind==='ranged'){ const am=txt('ammo'); spec.ammo=AMMO.includes(am)?am:(AMMO_HINTS.find(h=>h[1].test(said))||['bullet'])[0]; }
   return spec;
 }
 function nameFor(spec){
@@ -1212,7 +1215,7 @@ function createDuel(opts){
     const style=styleOf(spec.kind,spec.style), tune=Math.max(-2,Math.min(2,Math.round(+spec.tune||0)));
     const raw={power:clampStat(spec.power),range:clampStat(spec.range),speed:clampStat(spec.speed)}, stats=balanceStats(raw,tune);
     const traits=traitChoices(spec.kind,spec.traits,spec.name), trait=traits.includes(spec.trait)?spec.trait:traits[0];
-    return {name:spec.name||nameFor(spec),kind:spec.kind,style,el:spec.element,cost,raw,tune,stats,trait,traits,st:itemStats(spec.kind,spec.element,cost,stats),ver:++S.ver};
+    return {name:spec.name||nameFor(spec),kind:spec.kind,style,el:spec.element,cost,raw,tune,stats,trait,traits,ammo:AMMO.includes(spec.ammo)?spec.ammo:undefined,st:itemStats(spec.kind,spec.element,cost,stats),ver:++S.ver};
   }
   // Change an item that is already made, while still drawing: what it is, which of its two traits it uses, or its tuning.
   S.tweak=(side,k,ch)=>{
@@ -1829,7 +1832,7 @@ function createDuel(opts){
     hack:S.hack&&{by:S.hack.by,target:S.hack.target,name:S.hack.def.name,desc:S.hack.def.desc,t:+S.hack.t.toFixed(2),max:S.hack.max,counter:S.hack.counter},
     fxs:S.effects.map(e=>({by:e.by,target:e.target,counter:e.counter,name:e.name})),
     items:S.items.map(a=>a.map(it=>it&&{name:it.name,kind:it.kind,style:it.style,el:it.el,cost:Math.round(it.cost),ver:it.ver,sz:Math.round(it.st.size),
-      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune})),
+      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune,am:it.ammo})),
     f:S.f.map(f=>({x:r1(f.x),y:r1(f.y),vx:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vx),vy:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vy),face:f.face,hp:Math.max(0,r1(f.hp)),g:f.ground?1:0,
       act:f.act?{k:f.act.k,m:f.act.m+(f.act.v?'_b':''),t:+f.act.t.toFixed(3),r:+f.act.rate.toFixed(2)}:null,
       sh:f.shield>0?1:0,hurt:f.hurt>0?1:0,burn:f.burn>0?1:0,slow:f.slow>0?1:0,dash:f.dash>0?1:0,held:f.held,
@@ -3886,7 +3889,14 @@ function render(now){
       else if(p.st==='staff'){ const r=8+5*(p.big||0); L.globalAlpha=.3; L.beginPath(); L.moveTo(0,-r); L.lineTo(-r*4.5,0); L.lineTo(0,r); L.closePath(); L.fill(); L.globalAlpha=1; L.beginPath(); L.arc(0,0,r,0,7); L.fill(); L.fillStyle='#fff'; L.beginPath(); L.arc(r*0.2,-r*0.2,r*0.45,0,7); L.fill();
         L.lineWidth=2.5; for(let n=0;n<3;n++){ const a2=now/70+n*2.1; L.beginPath(); L.arc(0,0,r+5,a2,a2+0.9); L.stroke(); } }
       else if(p.st==='hurl'){ L.rotate(now/40); if(!it||!sprite(ps,p.slot,it.sz*0.85)){ L.beginPath(); for(let n=0;n<8;n++){ const q=n%2?4:11, a2=n*Math.PI/4; n?L.lineTo(Math.cos(a2)*q,Math.sin(a2)*q):L.moveTo(Math.cos(a2)*q,Math.sin(a2)*q); } L.closePath(); L.fill(); } }
-      else{ L.globalAlpha=.35; L.lineWidth=4; L.beginPath(); L.moveTo(-46,0); L.lineTo(-8,0); L.stroke(); L.globalAlpha=1; L.lineWidth=6; L.beginPath(); L.moveTo(-12,0); L.lineTo(0,0); L.stroke(); }
+      else{ const am=it&&it.am, big=1+0.35*(p.big||0);
+        // What a gun fires looks like what the reader said it fires: paintballs, pellets, blobs, a beam, darts, or plain bullets.
+        if(am==='paint'){ const pc=['#e2552d','#2f7fd6','#35a35a','#e2a52d','#b04fc9','#e84f9a'][p.id%6]; L.fillStyle=pc; L.globalAlpha=.4; for(let n=1;n<=3;n++){ L.beginPath(); L.arc(-n*11,Math.sin(p.id+n*2.1)*3,(4.5-n)*big,0,7); L.fill(); } L.globalAlpha=1; L.beginPath(); L.arc(0,0,7*big,0,7); L.fill(); L.fillStyle='#fff'; L.beginPath(); L.arc(2,-2.5,2.2*big,0,7); L.fill(); }
+        else if(am==='ball'){ L.globalAlpha=.3; L.lineWidth=3; L.beginPath(); L.moveTo(-26,0); L.lineTo(-8,0); L.stroke(); L.globalAlpha=1; L.beginPath(); L.arc(0,0,6*big,0,7); L.fill(); L.fillStyle='#fff'; L.beginPath(); L.arc(1.8,-2,1.9*big,0,7); L.fill(); }
+        else if(am==='blob'){ const w=1+0.18*Math.sin(now/45+p.id), bc=p.el==='none'?PEN.water:col; L.fillStyle=bc; L.globalAlpha=.35; L.beginPath(); L.arc(-16,2,3,0,7); L.arc(-27,-2,2,0,7); L.fill(); L.globalAlpha=1; L.beginPath(); L.moveTo(-15*big,0); L.quadraticCurveTo(-2,-8*w*big,8*big,0); L.quadraticCurveTo(-2,8*w*big,-15*big,0); L.fill(); L.fillStyle='#fff'; L.beginPath(); L.arc(2,-2,1.8,0,7); L.fill(); }
+        else if(am==='beam'){ const bc=p.el==='none'?'#e2552d':col; L.strokeStyle=bc; L.globalAlpha=.3; L.lineWidth=9*big; L.beginPath(); L.moveTo(-70,0); L.lineTo(0,0); L.stroke(); L.globalAlpha=1; L.lineWidth=3.5*big; L.beginPath(); L.moveTo(-70,0); L.lineTo(0,0); L.stroke(); L.strokeStyle='#fff'; L.lineWidth=1.2; L.beginPath(); L.moveTo(-64,0); L.lineTo(-4,0); L.stroke(); }
+        else if(am==='dart'){ L.lineWidth=3; L.beginPath(); L.moveTo(-24,0); L.lineTo(0,0); L.moveTo(-6,-3.5); L.lineTo(0,0); L.lineTo(-6,3.5); L.moveTo(-24,0); L.lineTo(-30,-5); L.moveTo(-24,0); L.lineTo(-30,5); L.stroke(); }
+        else{ L.globalAlpha=.35; L.lineWidth=4; L.beginPath(); L.moveTo(-46,0); L.lineTo(-8,0); L.stroke(); L.globalAlpha=1; L.lineWidth=6; L.beginPath(); L.moveTo(-12,0); L.lineTo(0,0); L.stroke(); } }
       L.restore(); }
     else{ L.save(); L.translate(x,y); L.rotate(now/90*Math.sign(p.vx||1)); if(!it||!sprite(ps,p.slot,it.sz)){ L.fillStyle=PEN[p.el]; L.beginPath(); L.arc(0,0,10,0,7); L.fill(); } L.restore(); }
   }

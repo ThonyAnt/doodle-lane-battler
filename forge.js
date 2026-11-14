@@ -15,6 +15,9 @@
 // A rule's code is text from a language model. It is only ever parsed, checked and interpreted by ForgeScript: nothing
 // here hands text to the JavaScript engine to run.
 'use strict';
+// Newer OpenAI models (gpt-5 and later, and the o-series) take max_completion_tokens instead of max_tokens, and think
+// before answering unless told not to: the gpt-6 family accepts reasoning_effort 'none', which keeps the answer quick.
+const tokenCap=(model,n)=>/^(gpt-[5-9]|o\d)/.test(model)?Object.assign({max_completion_tokens:n},/^gpt-6/.test(model)?{reasoning_effort:'none'}:null):{max_tokens:n};
 module.exports=function({D,ForgeScript:FS,ask,now,retryMs,onNew}){
   now=now||Date.now;
   const API=D.FORGE_API, FL=D.FORGE_LIMITS, MOVES=D.MOVES||{};
@@ -60,7 +63,9 @@ module.exports=function({D,ForgeScript:FS,ask,now,retryMs,onNew}){
       if(need&&!t) errs.push(k+' is empty'); if(t.length>max) errs.push(k+' is '+t.length+' characters long, the most is '+max);
       return t;
     };
-    const name=text('name',22,true), blurb=text('blurb',70,false);
+    // A blurb that runs long is cut at a word, not sent back: it is only a caption, and a second call to the model costs a second.
+    const clip=t=>{ if(t.length<=70) return t; const c=t.slice(0,70), sp=c.lastIndexOf(' '); return (sp>40?c.slice(0,sp):c).replace(/[ ,;:.]+$/,''); };
+    const name=text('name',22,true), blurb=clip(text('blurb',400,false));
     const on=typeof spec.on==='string'&&own(API,spec.on)?spec.on:''; if(!on) errs.push('on must be one of '+Object.keys(API).join(', '));
     const ref=k=>{ const m=/^(blue|red)\.([01])$/.exec(typeof spec[k]==='string'?spec[k].trim().toLowerCase():''); if(!m){ errs.push(k+' must be "<blue|red>.<0|1>"'); return null; } return {id:m[0],side:SIDES.indexOf(m[1]),slot:+m[2]}; };
     const a=ref('a'), b=ref('b');
@@ -72,6 +77,11 @@ module.exports=function({D,ForgeScript:FS,ask,now,retryMs,onNew}){
     if(typeof cd!=='number'||!Number.isFinite(cd)){ errs.push('cooldown must be a number of seconds'); cd=1; }
     cd=Math.max(FL.cooldown[0],Math.min(FL.cooldown[1],cd));
     if(typeof spec.code!=='string') errs.push('code must be text');
+    else{
+      // Two things a rule can pass every test fight and still be no good at: only shouting, and hurting its own holder.
+      if(!/\b(reflect|destroy|slow|turn|power|scale|push|burn|soak|stun|heal|hurt)\s*\(/.test(spec.code)) errs.push('the code only shouts or sparks: make it change the fight (reflect, destroy, slow, turn, power, scale, push, burn, soak, stun, heal or hurt)');
+      if(/\b(burn|soak|stun|hurt)\s*\(\s*me\b/.test(spec.code)) errs.push('the rule harms its own holder: burn, soak, stun and hurt are for the foe (me is the holder of item a)');
+    }
     return {errs,rule:errs.length?null:{name,blurb,a:a.id,b:b.id,on,cooldown:cd,code:spec.code,A:[a.side,a.slot],B:[b.side,b.slot]}};
   }
   const plain=r=>({name:r.name,blurb:r.blurb,a:r.a,b:r.b,on:r.on,cooldown:r.cooldown,code:r.code});
@@ -308,9 +318,14 @@ module.exports=function({D,ForgeScript:FS,ask,now,retryMs,onNew}){
     'Reply with JSON only: {"rules":[...]} holding 2 or 3 rules, each shaped as in the example below.',
     '- name: at most 22 characters. blurb: one sentence, at most 70. a and b: "<blue|red>.<0|1>", on different sides. cooldown: seconds between two firings, '+R(FL.cooldown)+'. code: one string.',
     '- Give each player an interaction: at most two rules may have a on the same side.',
-    '- Prefer the physically obvious and the funny: what would these two things really do to each other?',
-    '- Write rules that happen in ordinary play. A rule only fires when its code calls an effect, so do something every time, or under a condition that is usually true. Keep effects small and code short: a condition and one to three calls.',
-    '- say() is a short shout in capitals.',
+    '- Think first about what these two objects would really do to each other, then pick the event that shows it. The best rules are ones a watcher gets at once: a racket returns a ball, scissors cut a paper plane, an umbrella shrugs off water, a magnet drags a sword.',
+    '- Every rule must change the fight: call at least one of reflect, destroy, slow, turn, power, scale, push, burn, soak, stun, heal, hurt. say and spark are decoration and never enough alone.',
+    '- me is the holder of item a and the rule is on their side: help me or hinder the foe. Never burn, soak, stun or hurt me.',
+    '- Be specific to these items. \"hit.scale(1.2)\" with a shout is the dull default: use it only when nothing else fits, and never for two rules in one reply.',
+    '- When the list in the user message offers swat or guard, use one: a shot sent back or cut down is the most fun to watch. At most one near rule, and a near rule should push, soak, burn or heal rather than stun at random.',
+    '- Write rules that happen in ordinary play. A rule only fires when its code calls an effect, so do something every time, or under a condition that is usually true. Keep code short: a condition and one to three calls.',
+    '- Use only the a, b and on combinations the user message lists; anything else is thrown away.',
+    '- say() is a short shout in capitals, different for each rule. The blurb is one short sentence about the two objects, not about numbers.',
     '',
     'Example, for blue.0 Tennis Racket (melee), blue.1 Torch (melee, fire), red.0 Ball (ranged), red.1 Ice Cream (heal):',
     JSON.stringify({rules:EXAMPLE.rules})].join('\n');
@@ -447,7 +462,7 @@ module.exports.openai=({key,base,model,log})=>async function ask(messages,o){
   try{
     const r=await fetch(base+'/chat/completions',{method:'POST',signal:AbortSignal.timeout(Math.max(1,Math.round((o&&o.timeoutMs)||6000))),
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
-      body:JSON.stringify({model,response_format:{type:'json_object'},max_tokens:700,messages})});
+      body:JSON.stringify(Object.assign({model,response_format:{type:'json_object'},messages},tokenCap(model,700)))});
     const body=await r.json();
     if(!r.ok) throw new Error((body.error&&body.error.message)||('OpenAI HTTP '+r.status));
     return body.choices[0].message.content;
