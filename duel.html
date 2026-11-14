@@ -853,6 +853,36 @@ function customPay(c,hook,arg){ return true; }
 /* CUSTOMS:transform START */
 /* CUSTOMS:transform END */
 //
+/* ---------- shape: attack-shape customizations (how a swing or a shot travels) ----------
+   An item may carry a list `it.customs=[{id,...params}]`, set with S.shapeSet(side,slot,list). Each block here changes the
+   path of the item's shots or swings and has a tell drawn by the page (shapeUnder / shapeDraw / shapeFx). `cost` is a first
+   guess at a point price; `params` are [least, most, default] and anything outside is pulled in. The rules that act on them
+   are grouped in createDuel under "shape" (shapeFire, shapeSwing, shapeStep). */
+const SHAPE_MAX=3, SHAPES={
+  split:    {label:'Split',     text:'Shots divide into three partway through their flight.',   kinds:['ranged'],cost:3,params:{at:[0.2,0.7,0.4],spread:[0.1,0.5,0.24]}},
+  spiral:   {label:'Corkscrew', text:'Shots corkscrew around their line of flight.',            kinds:['ranged'],cost:2,params:{amp:[12,40,26],wave:[80,260,150]}},
+  linger:   {label:'Linger',    text:'Shots stop at the end of their range and hang there.',    kinds:['ranged'],cost:3,params:{hold:[1,3,2]}},
+  ricochet: {label:'Ricochet',  text:'Shots bounce off the floor, walls, ledges and drawings.', kinds:['ranged'],cost:2,params:{n:[1,5,3],gain:[0,0.3,0.2]}},
+  swell:    {label:'Swell',     text:'Shots grow as they fly: weak up close, big far away.',    kinds:['ranged'],cost:2,params:{grow:[0.5,2.5,1.5]}},
+  echo:     {label:'Echo',      text:'A ghost repeats each swing a moment later, where it was.',kinds:['melee'], cost:3,params:{delay:[0.3,0.9,0.5],dmg:[0.3,0.6,0.5]}},
+  shockwave:{label:'Shockwave', text:'A finishing blow sends a wave along the ground.',         kinds:['melee'], cost:2,params:{range:[140,380,240]}}
+};
+// What of a requested list an item of this kind may carry: known blocks that suit the kind, once each, every parameter a
+// number inside its limits. Anything else is left out; it never throws.
+function shapeFit(kind,list){
+  const out=[];
+  try{
+    if(!Array.isArray(list)) list=list==null?[]:[list];
+    for(const c of list.slice(0,16)){
+      const id=typeof c==='string'?c:c&&typeof c==='object'&&typeof c.id==='string'?c.id:'', B=Object.prototype.hasOwnProperty.call(SHAPES,id)?SHAPES[id]:null;
+      if(!B||!B.kinds.includes(kind)||out.some(o=>o.id===id)) continue;
+      const o={id}; for(const k of Object.keys(B.params)){ const [lo,hi,def]=B.params[k], v=c&&typeof c==='object'&&typeof c[k]==='number'?c[k]:NaN; o[k]=Number.isFinite(v)?Math.max(lo,Math.min(hi,v)):def; }
+      out.push(o); if(out.length>=SHAPE_MAX) break;
+    }
+  }catch(err){ return []; }
+  return out;
+}
+const shapeCost=list=>(Array.isArray(list)?list:[]).reduce((n,c)=>n+(c&&Object.prototype.hasOwnProperty.call(SHAPES,c.id)?SHAPES[c.id].cost:0),0);
 // Words that give away what something is for, used when the reader's answer does not name one of the kinds or styles.
 const KIND_HINTS=[['bomb',/bomb|explo|grenade|dynamite|mine|firework|flask|meteor|molotov/],['shield',/shield|armou?r|wall|helmet|umbrella|barrier|door|lid|block|protect|defen/],
   ['heal',/heal|heart|food|snack|drink|fruit|apple|pizza|burger|cake|bandage|medic|medkit|soup|candy/],['dash',/wing|rocket|boot|shoe|skate|wheel|bike|jet|speed|spring|lightning|horse|move|mobility|dash/],
@@ -1222,7 +1252,7 @@ const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet s
 // A recording holds about LOG_ROOM characters of commands (some forty long matches' worth). When it is full it stops:
 // the match goes on, the log is marked full, and it replays up to the tick it stopped at.
 const LOG_ROOM=2e6;
-const LOG_V=1, COMMANDS=['setItem','tweak','setCustoms','targetSet','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold','trigSet'];
+const LOG_V=1, COMMANDS=['setItem','tweak','setCustoms','targetSet','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold','trigSet','shapeSet'];
 const INPUT_KEYS=['l','r','d','j','a','b','m','q','h','u'], viaJSON=v=>JSON.parse(JSON.stringify(v)), round1=v=>Math.round(v*10)/10;
 const packInput=i=>{ const o={}; for(const k of INPUT_KEYS){ const v=i?i[k]:undefined; o[k]=k==='l'||k==='r'||k==='d'?(v?1:0):v===undefined?null:v; } return viaJSON(o); };   // held buttons as 0 or 1, press counts as given, a missing one as null
 const unpackInput=o=>{ const i={}; for(const k of INPUT_KEYS) if(o[k]!==null&&o[k]!==undefined) i[k]=o[k]; return i; };
@@ -1900,10 +1930,12 @@ function createDuel(opts){
           vx:f.face*sp*Math.cos(aim),vy:-sp*Math.sin(aim),grav:M.grav||0,dmg:st.dmg*M.dmg*sty.dmg,el:it.el,kb:st.kb*(M.kbMul||1),stun:M.stun,tr:it.trait,fin:M.kbMul?1:0,life,ttl:life};
         cfire('shot',f,k,shot); S.pr.push(shot);      // wielder customizations
         trigShot(f,k,S.pr[S.pr.length-1]);      // trigger: an armed weapon fires an empowered shot
+        if(it.customs) shapeFire(S.pr[S.pr.length-1],it);      // shape: split, spiral, linger, ricochet, swell
         if(M.recoil) f.vx-=f.face*M.recoil;
         S.events.push({e:'shot',x:Math.round(f.x+f.face*(mz[0]+(it.style==='gun'||it.style==='akimbo'?14:4))),y:Math.round(f.y+mz[1]),st:it.style,side:f.side,f:f.face,el:it.el});
       }
     }
+    if(it.customs&&M.hits) shapeSwing(f,a,M,it,st,sty,k);      // shape: echo and shockwave
     if(!f.act||f.act!==a) return;                       // a trade knocked us out of the move
     if(M.next&&f.buf[k]>0&&a.t>=M.cancel){ startMove(f,k,M.next); return; }
     if(a.t>=a.dur){ f.act=null; if(M.mine) f.mcd=0.1; else if(M.hits||M.shots) f.cd[k]=f.cdMax[k]=M.end?st.cd:st.cd*0.45; }
@@ -1964,6 +1996,107 @@ function createDuel(opts){
     }
     if(land){ if(!f.ground) cfire('land',f,f.held,{vy:f.vy}); f.vy=0; f.jumps=0; } f.ground=land;
   }
+  /* ---------- shape: attack-shape blocks (see SHAPES) ----------
+     State lives on what already exists, so it is hashed, frozen by an ultimate and cleared between rounds with it:
+     a shot's p.sh (and p.hr, extra reach), and two marks on the fighter's current move (a.shE, a.shW). An echo and a
+     shockwave are themselves entries in S.pr (st 'echo', st 'swave'). Ultimates never get any of this: ultStep makes its
+     own shots, and they carry no p.sh. No dice are rolled here. */
+  // Give an item its customizations: the draw phase before you are ready, or any time in practice (as S.tweak). The list is
+  // cut down to what suits the item (shapeFit); returns what it now carries, or null if nothing could be changed.
+  S.shapeSet=(side,k,list)=>{
+    const it=(side===0||side===1)&&(k===0||k===1)?S.items[side][k]:null; if(!it||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
+    const fit=shapeFit(it.kind,list); if(fit.length) it.customs=fit; else delete it.customs;
+    return fit;
+  };
+  // S.tweak rebuilds the item, so carry the customizations over (those that still suit it, if its kind changed).
+  { const tweak0=S.tweak; S.tweak=(side,k,ch)=>{ const was=S.items[side]&&S.items[side][k], cs=was&&was.customs, it=tweak0(side,k,ch); if(it&&cs){ const fit=shapeFit(it.kind,cs); if(fit.length) it.customs=fit; } return it; }; }
+  // A shot has just left an item that carries customizations: note on it the ones that shape a shot's flight.
+  function shapeFire(p,it){
+    const h={t:0}; let any=0;
+    for(const c of it.customs){
+      if(c.id==='split'){ h.split={at:c.at*p.life,spread:c.spread}; any=1; }
+      else if(c.id==='spiral'){ h.spiral={amp:c.amp,wave:c.wave,w:2*Math.PI*(Math.hypot(p.vx,p.vy)||1)/c.wave,t0:0,o:0}; any=1; }
+      else if(c.id==='linger'){ h.linger={hold:c.hold,on:0}; any=1; }
+      else if(c.id==='ricochet'){ h.rico={n:Math.round(c.n),gain:c.gain}; any=1; }
+      else if(c.id==='swell'){ h.swell={grow:c.grow,k:0.85,g:1}; p.dmg*=0.85; any=1; }
+    }
+    if(any) p.sh=h;
+  }
+  // A swing of an item that carries customizations, each step of the move, after its hits are dealt with.
+  function shapeSwing(f,a,M,it,st,sty,k){
+    const marks=M.hits, base=st.dmg*M.dmg*sty.dmg;
+    for(const c of it.customs){
+      if(c.id==='echo'&&!a.shE&&a.t>=marks[0]){
+        // echo: a ghost stays where the swing was made and makes it again `delay` seconds later, for part of the damage
+        a.shE=1; const life=c.delay+0.3;
+        S.pr.push({id:nextId++,k:'shot',st:'echo',side:f.side,slot:k,x:f.x,y:f.y,vx:0,vy:0,grav:0,dmg:base*c.dmg,el:it.el,kb:M.kb*sty.kb*0.5,lift:(M.lift||0)*0.5,stun:0.12,life,ttl:life,
+          sh:{t:0,echo:{m:a.m+(a.v?'_b':''),f:f.face,at:marks[0],rate:a.rate,wait:c.delay,reach:st.reach*(M.reach||1)*sty.reach,tall:M.tall||72,hit:0}}});
+      }else if(c.id==='shockwave'&&!a.shW&&M.end&&f.ground&&a.t>=marks[marks.length-1]){
+        // shockwave: a finishing blow made on the ground sends a low wave ahead; jump it
+        a.shW=1; const life=c.range/560;
+        S.pr.push({id:nextId++,k:'shot',st:'swave',side:f.side,slot:k,x:f.x+f.face*20,y:f.y+8,vx:f.face*560,vy:0,grav:0,dmg:base*0.4,el:it.el,kb:M.kb*sty.kb*0.5,lift:240,stun:0.2,life,ttl:life,sh:{t:0,wave:1}});
+        S.events.push({e:'shape',id:'shockwave',x:Math.round(f.x+f.face*20),y:Math.round(f.y),side:f.side,f:f.face});
+      }
+    }
+  }
+  // One step of a shaped shot, before it moves. Returns true if this took care of the shot for this step.
+  function shapeStep(p,dt,e){
+    const h=p.sh, by=S.f[p.side], ev=(id,o)=>S.events.push(Object.assign({e:'shape',id,x:Math.round(p.x),y:Math.round(p.y),side:p.side},o)); h.t+=dt;
+    if(h.echo){
+      const E=h.echo;
+      if(!E.hit&&h.t>=E.wait){ const dx=(e.x-p.x)*E.f;
+        if(dx>-14&&dx<E.reach+14&&Math.abs(e.y-p.y)<E.tall){ E.hit=1; hurt(e,p.dmg,p.el,E.f*p.kb,p.lift,by,p.x,p.stun); }
+        else if(h.t>=E.wait+0.07) E.hit=1; }
+      p.ttl-=dt; return true;
+    }
+    if(h.wave){      // it runs along the ground it started on and ends where that ground does
+      const g=p.y-8; if(g>0.5&&!oneWays().some(q=>Math.abs(q.y-g)<3&&p.x>=q.x0-6&&p.x<=q.x1+6)&&!SOL.some(o=>Math.abs(o.y1-g)<3&&p.x>o.x0&&p.x<o.x1)){ p.ttl=0; return true; }
+      return false;
+    }
+    if(h.linger&&h.linger.on){
+      // linger: hanging in the air. Whoever it is aimed at and touches it takes the hit, pushed away from it, and it is gone.
+      p.ttl-=dt; const r=22+(p.hr||0);
+      if(Math.abs(p.x-e.x)<18+r&&p.y>e.y-4-r&&p.y<e.y+94*e.scale+r){ hurt(e,p.dmg,p.el,(Math.sign(e.x-p.x)||1)*p.kb,90,by,p.x,p.stun,p.tr,undefined,0,p.os===undefined?p.slot:undefined); p.ttl=0; ev('linger',{n:1}); }
+      return true;
+    }
+    if(h.split&&h.t>=h.split.at){
+      // split: one becomes three, the two new ones fanned to either side; each is worth a little over half
+      const q=h.split, sp=Math.hypot(p.vx,p.vy), a0=Math.atan2(p.vy,p.vx); delete h.split; p.dmg*=0.55;
+      for(const s of [-1,1]) S.pr.push(Object.assign({},p,{id:nextId++,fin:0,vx:Math.cos(a0+s*q.spread)*sp,vy:Math.sin(a0+s*q.spread)*sp,sh:JSON.parse(JSON.stringify(h))}));
+      ev('split',{a:+a0.toFixed(2)});
+    }
+    const fr=Math.min(1,h.t/p.life);
+    if(h.swell){ const w=h.swell, k=0.85+0.5*fr; p.dmg*=k/w.k; w.k=k; w.g=1+w.grow*fr; }      // swell: 85% of its damage at the muzzle, 135% at full range
+    p.hr=(h.spiral?h.spiral.amp*0.4:0)+(h.swell?12*h.swell.grow*fr:0);
+    if(h.rico&&h.rico.n>0){
+      // ricochet: look one step ahead and turn the shot before it would strike the floor, a side wall, a ledge or anything solid
+      const q=h.rico, nx=p.x+p.vx*dt, ny=p.y+(p.vy-(p.grav||0)*dt)*dt, o=SOL.find(o=>nx>o.x0&&nx<o.x1&&ny>o.y0&&ny<o.y1); let hit=0;
+      if(nx<6||nx>W-6){ p.vx=-p.vx; hit=1; }
+      else if(o){ if(p.x>o.x0&&p.x<o.x1) p.vy=-p.vy; else p.vx=-p.vx; hit=1; }
+      else if(ny<=1){ p.vy=Math.abs(p.vy)||120; hit=1; }
+      else for(const l of oneWays()) if(nx>=l.x0&&nx<=l.x1&&(p.y-l.y)*(ny-l.y)<0){ p.vy=-p.vy; hit=1; break; }
+      if(hit){ q.n--; p.dmg*=1+q.gain; p.ttl=Math.max(p.ttl,p.life*0.6); if(h.spiral){ h.spiral.t0=h.t; h.spiral.o=0; } ev('ricochet',{n:q.n}); }
+    }
+    if(h.spiral){      // spiral: the shot swings from side to side of its line of flight (drawn as a corkscrew), so it sweeps a band
+      const q=h.spiral, sp=Math.hypot(p.vx,p.vy)||1, o=q.amp*Math.sin(q.w*(h.t-q.t0)), d=(o-q.o)*(p.vx<0?-1:1); q.o=o; p.x+=-p.vy/sp*d; p.y+=p.vx/sp*d;
+    }
+    if(h.linger&&p.ttl-dt<=0&&!(p.tr==='boomerang'&&!p.back)){      // linger: out of range, so it stops here (a boomerang first comes back)
+      h.linger.on=1; p.vx=p.vy=0; p.grav=0; p.y=Math.max(14,p.y); p.ttl=h.linger.hold; p.dmg*=0.6; p.kb*=0.5; p.fin=0; ev('linger',{n:0}); return true;
+    }
+    return false;
+  }
+  // What the page needs to draw a shaped shot's tell (plain numbers and short strings only).
+  function shapeView(p){
+    const h=p.sh, o={};
+    if(h.echo) o.ec=[h.echo.m,h.echo.f,+Math.max(0,h.echo.at-(h.echo.wait-h.t)*h.echo.rate).toFixed(2)];
+    if(h.wave) o.wv=+Math.max(0,p.ttl/p.life).toFixed(2);
+    if(h.split) o.sl=+h.split.spread.toFixed(2);
+    if(h.spiral) o.sp=[h.spiral.amp,h.spiral.wave,+((h.spiral.w*(h.t-h.spiral.t0))%(2*Math.PI)).toFixed(2)];
+    if(h.swell) o.g=+h.swell.g.toFixed(2);
+    if(h.linger) o.lg=h.linger.on?+Math.max(0,p.ttl/h.linger.hold).toFixed(2):-1;
+    if(h.rico) o.rc=h.rico.n;
+    return o;
+  }
   function projectiles(dt,only){
     for(const p of S.pr){
       if(only>=0&&!(p.tr==='fleet'&&p.side===only)) continue;     // an ultimate is playing: everything else hangs in the air
@@ -1979,6 +2112,7 @@ function createDuel(opts){
         if(a.t>=p.go){ p.hover=0; p.ang=aim; p.vx=Math.cos(aim)*(p.sp||FLEET_SPEED); p.vy=Math.sin(aim)*(p.sp||FLEET_SPEED); p.ttl=p.life; S.events.push({e:'zip',x:Math.round(p.x),y:Math.round(p.y),side:p.side}); }
         continue;
       }
+      if(p.sh&&shapeStep(p,dt,e)) continue;      // shape: see shapeStep
       if(p.home&&e.hp>0){   // light homing: it can curve a little toward the foe, not chase them down
         const sp=Math.hypot(p.vx,p.vy)||1, cur=Math.atan2(p.vy,p.vx), d=((Math.atan2(e.y+50-p.y,e.x-p.x)-cur+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI, a2=cur+Math.max(-1.6*dt,Math.min(1.6*dt,d));
         p.vx=Math.cos(a2)*sp; p.vy=Math.sin(a2)*sp;
@@ -1988,7 +2122,7 @@ function createDuel(opts){
       p.x+=p.vx*dt; p.y+=p.vy*dt;
       if(S.rules.length&&!p.ruled&&swatting(p,e)&&shotRules('swat',p,e,e.act.k)) continue;      // swat rules: it is inside the foe's swing
       if(p.tr==='bounce'&&!p.wall&&(p.x<6||p.x>W-6)){ p.wall=1; p.vx=-p.vx; p.x=Math.max(6,Math.min(W-6,p.x)); }
-      const touch=!p.safe&&Math.abs(p.x-e.x)<18+10*(p.big||0)&&p.y>e.y-4-10*(p.big||0)&&p.y<e.y+94*e.scale;
+      const touch=!p.safe&&Math.abs(p.x-e.x)<18+10*(p.big||0)+(p.hr||0)&&p.y>e.y-4-10*(p.big||0)-(p.hr||0)&&p.y<e.y+94*e.scale+(p.hr||0);      // hr: extra reach from a shape block
       const turn=()=>{ p.back=1; p.vx=-p.vx; p.vy=0; p.grav=0; p.safe=0.3; p.ttl=p.life; };       // a boomerang comes back once
       const wall=SOL.find(o=>p.x>o.x0&&p.x<o.x1&&p.y>o.y0&&p.y<o.y1);
       if(wall&&p.k!=='bomb'){
@@ -2390,14 +2524,14 @@ function createDuel(opts){
     hack:S.hack&&{by:S.hack.by,target:S.hack.target,name:S.hack.def.name,desc:S.hack.def.desc,t:+S.hack.t.toFixed(2),max:S.hack.max,counter:S.hack.counter},
     fxs:S.effects.map(e=>({by:e.by,target:e.target,counter:e.counter,name:e.name})),
     items:S.items.map(a=>a.map(it=>it&&{name:it.name,kind:it.kind,style:it.style,el:it.el,cost:Math.round(it.cost),ver:it.ver,sz:Math.round(it.st.size),
-      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune,am:it.ammo,cu:it.customs&&it.customs.length?it.customs:undefined,cu:it.customs,cu:it.customs})),
+      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune,am:it.ammo,cu:it.customs&&it.customs.length?it.customs:undefined,cu:it.customs,cu:it.customs,cu:it.customs})),
     f:S.f.map(f=>({x:r1(f.x),y:r1(f.y),vx:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vx),vy:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vy),face:f.face,hp:Math.max(0,r1(f.hp)),g:f.ground?1:0,
       act:f.act?{k:f.act.k,m:f.act.m+(f.act.v?'_b':''),t:+f.act.t.toFixed(3),r:+f.act.rate.toFixed(2)}:null,
       sh:f.shield>0?1:0,hurt:f.hurt>0?1:0,burn:f.burn>0?1:0,slow:f.slow>0?1:0,dash:f.dash>0?1:0,held:f.held,
       cd:[+(f.cd[0]/f.cdMax[0]).toFixed(2),+(f.cd[1]/f.cdMax[1]).toFixed(2)],uses:f.uses,
       ink2:Math.round(f.ink2),od:Math.round(f.od),stun:f.stun>0?1:0,trap:f.trap>0?1:0,bub:f.bubble?Math.round(f.bubble.r):0,oc:f.overclock>0?1:0,sc:+f.scale.toFixed(2),fl:f.flung>0?1:0,cv:cuView(f),ts:targetView(f),tg:trigView(f)})),
     mo:S.motes.map(m=>({id:m.id,c:m.c,side:m.side,slot:m.slot,x:r1(m.x),y:r1(m.y),vx:Math.round(m.vx),vy:Math.round(m.vy),d:m.d})),      // wielder customizations: cu (an item's blocks), cv (what each shows on its fighter), mo (motes)
-    pr:S.pr.map(p=>({id:p.id,k:p.k,st:p.st,big:p.big,side:p.side,slot:p.slot,x:r1(p.x),y:r1(p.y),vx:Math.round(p.vx),vy:Math.round(p.vy),el:p.el,o:p.os,h:p.hover?1:undefined,a:p.st==='fleet'?+p.ang.toFixed(2):undefined,em:p.emp?1:undefined,z:S.ult>=0&&!(p.tr==='fleet'&&p.side===S.ult)?1:undefined})),
+    pr:S.pr.map(p=>({id:p.id,k:p.k,st:p.st,big:p.big,side:p.side,slot:p.slot,x:r1(p.x),y:r1(p.y),vx:Math.round(p.vx),vy:Math.round(p.vy),el:p.el,o:p.os,sh:p.sh?shapeView(p):undefined,h:p.hover?1:undefined,a:p.st==='fleet'?+p.ang.toFixed(2):undefined,em:p.emp?1:undefined,z:S.ult>=0&&!(p.tr==='fleet'&&p.side===S.ult)?1:undefined})),
     ev:S.events.splice(0)});
   // A fingerprint of where the match stands: the phase, clock, round and wins, and everything about every fighter and
   // every shot (numbers to the nearest 0.01). Two matches that agree tick for tick have the same one, so comparing a
@@ -4700,7 +4834,8 @@ function render(now){
       if(axis){ L.translate(-size/2,0); if(!sprite(ps,p.slot,size,true)){ L.fillStyle=PCOL[ps]; L.fillRect(0,-3,size,6); } }
       else if(!sprite(ps,p.slot,size)){ L.fillStyle=PCOL[ps]; L.beginPath(); L.arc(0,0,10,0,7); L.fill(); }
       L.restore(); continue; }
-    if(p.k==='shot'){ const col=p.el==='none'?'#111':PEN[p.el]; L.save(); L.translate(x,y); L.rotate(Math.atan2(-p.vy,p.vx)); L.strokeStyle=col; L.fillStyle=col; L.lineCap='round'; L.lineJoin='round';
+    if(p.sh&&shapeUnder(p,x,y,now,ps,it)) continue;      // shape: tells drawn under a shot, and the echo and shockwave
+    if(p.k==='shot'){ const col=p.el==='none'?'#111':PEN[p.el]; L.save(); L.translate(x,y); L.rotate(Math.atan2(-p.vy,p.vx)); L.strokeStyle=col; L.fillStyle=col; L.lineCap='round'; L.lineJoin='round'; if(p.sh) shapeDraw(p,now,ps);
       if(p.st==='bow'){ if(p.big>1){ L.scale(1+0.5*p.big,1+0.5*p.big); L.globalAlpha=.35; L.lineWidth=9; L.beginPath(); L.moveTo(-120,0); L.lineTo(-44,0); L.stroke(); L.globalAlpha=1; } L.lineWidth=3.5; L.beginPath(); L.moveTo(-44,0); L.lineTo(0,0); L.moveTo(-9,-5); L.lineTo(0,0); L.lineTo(-9,5); L.moveTo(-44,0); L.lineTo(-50,-5); L.moveTo(-44,0); L.lineTo(-50,5); L.stroke(); }
       else if(p.st==='staff'){ const r=8+5*(p.big||0); L.globalAlpha=.3; L.beginPath(); L.moveTo(0,-r); L.lineTo(-r*4.5,0); L.lineTo(0,r); L.closePath(); L.fill(); L.globalAlpha=1; L.beginPath(); L.arc(0,0,r,0,7); L.fill(); L.fillStyle='#fff'; L.beginPath(); L.arc(r*0.2,-r*0.2,r*0.45,0,7); L.fill();
         L.lineWidth=2.5; for(let n=0;n<3;n++){ const a2=now/70+n*2.1; L.beginPath(); L.arc(0,0,r+5,a2,a2+0.9); L.stroke(); } }
@@ -4744,6 +4879,7 @@ function render(now){
       L.font='30px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=L.strokeStyle; L.fillText('BOOM',e.x,y-e.n*0.6-a*20); }
     else if(e.e==='tg') targetFx(e,a);      // target: a status starts, ends, pays out, or two fighters trade places
     else if(e.e==='emp'||e.e==='trg') trigFx(e,a,y);      // trigger: an empowered hit lands; a trigger becomes armed
+    else if(e.e==='shape') shapeFx(e,a,y);
   }
   L.globalAlpha=1; L.setTransform(VS,0,0,VS,OX*VS,OY);
   // the cut scene's front layer, then the impact frame over everything drawn so far (see impactFrame)
@@ -4782,6 +4918,96 @@ function frame(now){
 }
 if(canRead) fetch('/info').then(r=>r.json()).then(o=>{ serverInfo=o; cpuBrains=Array.isArray(o.brains)?o.brains:['classic']; setBrain(cpuBrain); $('reader').textContent='Drawings read by: '+o.reader; canRead=/OpenAI/.test(o.reader); overlayKey=overlayKey.startsWith('wait')?'':overlayKey; }).catch(()=>{ canRead=false; });
 if(RETRO) retroBuild();
+/* ---------- shape: the tells of the attack-shape blocks (see SHAPES in the rules) ----------
+   Everything here reads p.sh from the snapshot (shapeView) or a 'shape' event; accents are in the owner's colour so it is
+   plain whose weapon did it. */
+const shapeTrails=new Map();      // ricochet: where each shot has turned, by shot id
+// Drawn at the shot's place before the shot itself, in arena coordinates. Returns true when it drew the whole thing
+// (an echo's ghost, a shockwave), so the ordinary shot drawing is skipped.
+function shapeUnder(p,x,y,now,ps,it){
+  const h=p.sh, col=PCOL[ps];
+  if(h.ec){
+    // echo: a ghost of the fighter in its owner's colour stands where the swing was made, flickering, then swings
+    const clip=clipFor(h.ec[0]), t=h.ec[2], go=t>0.005, s=ANIM.sample(clip,t), U=n=>n/K, mel=it&&it.kind==='melee'&&it.style!=='fist', wlen=mel?U(it.sz*STYLE[it.style].reach):0, two=mel&&PAIRED.includes(it.style);
+    L.save(); L.strokeStyle=col; L.lineWidth=2; L.globalAlpha=.5; L.setLineDash([5,5]); L.beginPath(); L.ellipse(x,y+3,30,5,0,0,7); L.stroke(); L.setLineDash([]);
+    L.translate(x,y); L.scale(h.ec[1]*K,K); L.shadowColor=col; L.shadowBlur=go?16:8;
+    if(go&&wlen){ L.globalAlpha=.5; ANIM.smear(L,clip,t,it.style==='spear'?wlen*0.96:wlen,col,0.35); }
+    L.globalAlpha=go?.8:.28+.14*Math.sin(now/45);
+    ANIM.draw(L,s,{col,noodle:true,weapon2:two?()=>{ sprite(ps,p.slot,wlen,true,2); }:null,
+      weapon(c){ if(!mel) return; if(it.style==='spear'){ c.translate(-wlen*0.22,0); sprite(ps,p.slot,wlen*1.22,true); } else sprite(ps,p.slot,wlen,true,two?1:0); }});
+    L.restore(); return true;
+  }
+  if(h.wv!==undefined){
+    // shockwave: a low crest of ink running along the ground, shrinking as it runs out
+    const dir=Math.sign(p.vx)||1, c2=p.el==='none'?col:PEN[p.el], k=0.6+0.4*h.wv; L.save(); L.translate(x,y+8); L.scale(dir*k,k); L.strokeStyle=c2; L.fillStyle=c2; L.lineCap='round'; L.lineJoin='round'; L.globalAlpha=Math.min(1,0.35+h.wv);
+    L.beginPath(); L.moveTo(-70,0); L.quadraticCurveTo(-8,-6,6,-62); L.quadraticCurveTo(22,-22,30,0); L.closePath(); L.fill();
+    L.lineWidth=4; for(let n=0;n<3;n++){ const bx=-28-n*26, hh=10+((now/40+n*7)%18); L.globalAlpha=(.7-n*.2)*Math.min(1,0.35+h.wv); L.beginPath(); L.moveTo(bx,0); L.lineTo(bx-6,-hh); L.stroke(); }
+    L.restore(); return true;
+  }
+  if(h.rc!==undefined){
+    // ricochet: a tracer through the last places it turned
+    let t=shapeTrails.get(p.id); const sx=Math.sign(p.vx), sy=Math.sign(p.vy);
+    if(!t) shapeTrails.set(p.id,t={pts:[],sx,sy,lx:x,ly:y});
+    if((sx!==t.sx||sy!==t.sy)&&(sx||sy)){ t.pts.push([t.lx,t.ly]); if(t.pts.length>4) t.pts.shift(); t.sx=sx; t.sy=sy; }
+    t.lx=x; t.ly=y;
+    if(t.pts.length){ L.save(); L.strokeStyle=col; L.lineCap='round'; L.lineJoin='round'; L.lineWidth=3; L.globalAlpha=.45; L.beginPath(); t.pts.forEach((q,i)=>i?L.lineTo(q[0],q[1]):L.moveTo(q[0],q[1])); L.lineTo(x,y); L.stroke();
+      L.globalAlpha=.7; for(const q of t.pts){ L.beginPath(); L.arc(q[0],q[1],6,0,7); L.stroke(); } L.restore(); }
+    if(shapeTrails.size>40) for(const id of [...shapeTrails.keys()]) if(!view||!view.pr.some(q=>q.id===id)) shapeTrails.delete(id);
+  }
+  return false;
+}
+// Drawn inside the shot's own frame (at the shot, x along its flight), just before the shot. Leaves the frame scaled for swell
+// and spinning for a shot that hangs.
+function shapeDraw(p,now,ps){
+  const h=p.sh, col=PCOL[ps]; L.save(); L.strokeStyle=col; L.fillStyle=col; L.lineCap='round';
+  if(h.sp){
+    // spiral: the corkscrew it has just flown, as two twined ribbons behind it
+    const A=h.sp[0], kd=2*Math.PI/h.sp[1], ph=h.sp[2], s=p.vx>=0?-1:1, y0=-s*A*Math.sin(ph), g=L.createLinearGradient(-130,0,0,0); g.addColorStop(0,'rgba(255,255,255,0)'); g.addColorStop(1,col); L.strokeStyle=g;
+    for(const m of [1,-1]){ L.lineWidth=m>0?4:2.5; L.globalAlpha=m>0?.9:.5; L.beginPath(); for(let d=0;d<=130;d+=5){ const yy=y0+m*s*A*Math.sin(ph-kd*d); d?L.lineTo(-d,yy):L.moveTo(-d,yy); } L.stroke(); }
+    L.strokeStyle=col; L.globalAlpha=1;
+  }
+  if(h.sl){ L.lineWidth=2.5; L.globalAlpha=.55+.3*Math.sin(now/50); L.setLineDash([4,5]); for(const m of [1,-1]){ L.beginPath(); L.moveTo(8,0); L.lineTo(8+34*Math.cos(h.sl),m*34*Math.sin(h.sl)*1.6); L.stroke(); } L.setLineDash([]); L.globalAlpha=1; }      // split: two dotted prongs show where it will part
+  if(h.rc){ for(let n=0;n<h.rc;n++){ const a=now/130+n*2*Math.PI/h.rc; L.beginPath(); L.arc(Math.cos(a)*15,Math.sin(a)*15,3,0,7); L.fill(); } }      // ricochet: one orbiting dot per bounce left
+  if(h.lg===-1){ L.lineWidth=2; L.globalAlpha=.6; L.setLineDash([3,5]); L.beginPath(); L.arc(0,0,14,0,7); L.stroke(); L.setLineDash([]); L.globalAlpha=1; }      // linger, still flying: a dotted ring
+  else if(h.lg!==undefined){
+    // linger, hanging: a spiked ring that pulses, with the time left as an arc
+    const r=27+3*Math.sin(now/90), sp=now/260; L.globalAlpha=.16; L.beginPath(); L.arc(0,0,r,0,7); L.fill(); L.globalAlpha=.9; L.lineWidth=3;
+    L.beginPath(); for(let n=0;n<12;n++){ const a=sp+n*Math.PI/6, q=n%2?r+9:r; n?L.lineTo(Math.cos(a)*q,Math.sin(a)*q):L.moveTo(Math.cos(a)*q,Math.sin(a)*q); } L.closePath(); L.stroke();
+    L.lineWidth=5; L.globalAlpha=.55; L.beginPath(); L.arc(0,0,r-8,-Math.PI/2,-Math.PI/2+h.lg*2*Math.PI); L.stroke();
+  }
+  if(h.g){ L.globalAlpha=.16; L.beginPath(); L.arc(0,0,13*h.g,0,7); L.fill(); L.globalAlpha=.75; L.lineWidth=2+h.g; for(const q of [1,1.5]){ L.beginPath(); L.arc(0,0,20*h.g*q,-0.6,0.6); L.stroke(); } }      // swell: a halo and bow waves that grow with it
+  L.restore();
+  if(h.g) L.scale(h.g,h.g);
+  if(h.lg!==undefined&&h.lg!==-1) L.rotate(now/170);
+}
+// The flash of a 'shape' event: a shot parting, turning off something, stopping to hang or going off, a wave leaving.
+function shapeFx(e,a,y){
+  if(a>0.5) return; const g=1-a/0.5, col=PCOL[e.side]||'#111'; L.save(); L.globalAlpha=g; L.strokeStyle=col; L.fillStyle=col; L.lineCap='round';
+  if(e.id==='split'){ L.lineWidth=4; for(const m of [-1,0,1]){ const an=-(e.a||0)+m*0.45, r0=6+a*40, r1=r0+26; L.beginPath(); L.moveTo(e.x+Math.cos(an)*r0,y+Math.sin(an)*r0); L.lineTo(e.x+Math.cos(an)*r1,y+Math.sin(an)*r1); L.stroke(); }
+    L.lineWidth=2; L.beginPath(); L.arc(e.x,y,8+a*50,0,7); L.stroke(); }
+  else if(e.id==='ricochet'){ L.lineWidth=3; L.beginPath(); L.arc(e.x,y,6+a*44,0,7); L.stroke(); L.beginPath(); for(let n=0;n<8;n++){ const an=n*Math.PI/4, q=(n%2?5:20)*(0.6+a); n?L.lineTo(e.x+Math.cos(an)*q,y+Math.sin(an)*q):L.moveTo(e.x+Math.cos(an)*q,y+Math.sin(an)*q); } L.closePath(); L.fill(); }
+  else if(e.id==='linger'){ L.lineWidth=3; for(const q of [0,1]){ L.beginPath(); L.arc(e.x,y,e.n?12+a*(70+q*30):Math.max(2,52-a*(60+q*30)),0,7); L.stroke(); } }
+  else if(e.id==='shockwave'){ L.lineWidth=4; L.beginPath(); L.moveTo(e.x,y+2); L.lineTo(e.x+(e.f||1)*(30+a*90),y+2); L.stroke(); for(let n=0;n<4;n++){ L.beginPath(); L.moveTo(e.x+(e.f||1)*n*14,y); L.lineTo(e.x+(e.f||1)*(n*14-6),y-(14+n*5)*Math.sin(Math.min(1,a*3)*Math.PI)); L.stroke(); } }
+  L.restore();
+}
+// The move tester's row: one block at a time on the weapon under test (those that suit it), and a way to stand the dummy
+// behind the fighter so a shot can be watched to the end of its flight.
+function labShape(){
+  const box=$('labShapes'); if(!box||!sim) return; const kind=MELEE_STYLES.includes(lab.style)?'melee':'ranged';
+  if(lab.shape&&!SHAPES[lab.shape].kinds.includes(kind)) lab.shape='';
+  sim.shapeSet(0,0,lab.shape?[{id:lab.shape}]:[]);
+  box.querySelectorAll('button').forEach(b=>{ b.disabled=!SHAPES[b.dataset.c].kinds.includes(kind); b.classList.toggle('on',b.dataset.c===lab.shape); });
+  $('labShapeText').textContent=lab.shape?SHAPES[lab.shape].text+' ('+SHAPES[lab.shape].cost+' points)':'';
+}
+function labShapeBuild(el){
+  lab.shape=''; lab.aside=false;
+  const row=document.createElement('div'); row.className='row';
+  row.innerHTML=`<b>Shape</b><span id="labShapes" class="row" style="margin:0 14px 0 0">${Object.keys(SHAPES).map(c=>`<button data-c="${c}" title="${SHAPES[c].text}">${SHAPES[c].label}</button>`).join('')}</span>
+    <label><input type="checkbox" id="labAside"> Dummy behind</label><span id="labShapeText" style="color:var(--muted);font-size:13px"></span>`;
+  el.appendChild(row);
+  row.querySelectorAll('button').forEach(b=>b.onclick=()=>{ b.blur(); lab.shape=lab.shape===b.dataset.c?'':b.dataset.c; labShape(); if(lab.last) labPlay(lab.last[0],lab.last[1]); });
+  $('labAside').onchange=e=>{ lab.aside=e.target.checked; labPlace(); };
+}
 /* ---------- move tester (/moves) ---------- */
 // Pick a weapon, press a move: the fighter does it against a dummy with everything the game draws (trails, hit-stop,
 // shake, projectiles, the ultimates). Slow it down, loop it, and move the dummy nearer or further. The keyboard still
@@ -4803,10 +5029,10 @@ function labCustoms(){
     +on.map(e=>`<p style="margin:2px 0"><b>${esc(CUSTOMS[e.id].label)}:</b> ${esc(CUSTOMS[e.id].text)} <i>You should see: ${esc(CUSTOMS[e.id].tell)}.</i></p>`).join('');
   box.querySelectorAll('button[data-cu]').forEach(b=>b.onclick=()=>{ b.blur(); const id=b.dataset.cu; lab.customs=lab.customs.some(e=>e.id===id)?lab.customs.filter(e=>e.id!==id):[{id},...lab.customs]; labEquip(); });
   box.querySelectorAll('input[data-cu]').forEach(r=>r.onchange=()=>{ const e=lab.customs.find(e=>e.id===r.dataset.cu); if(e){ e.params=Object.assign({},e.params,{[r.dataset.p]:+r.value}); labEquip(); } });
-}
+labShape(); }
 function labPlace(gap){ const a=sim.f[0], b=sim.f[1], g=gap||lab.gap, x0=Math.max(60,Math.min(ARENA_W-60-g,ARENA_W/2-g/2-60));
   for(const f of [a,b]){ f.y=0; f.vx=f.vy=0; f.ground=true; f.act=null; f.hurt=0; f.stun=0; f.dash=0; f.burn=0; f.slow=0; f.shield=0; f.hp=HP; f.tfx={}; f.scale=f.scaleGoal=1; }
-  a.x=x0; b.x=x0+g; a.face=1; b.face=-1; sim.pr.length=0; }
+  a.x=x0; b.x=lab.aside?Math.max(20,x0-90):x0+g; a.face=1; b.face=-1; sim.pr.length=0; }
 function labPlay(m,alt){
   if(!sim||sim.phase!=='fight') return; lab.last=[m,alt]; lab.idle=0;
   document.querySelectorAll('#labMoves button').forEach(b=>b.classList.toggle('on',b.dataset.m===m&&(b.dataset.alt||'')===(alt===undefined?'':String(alt))));
@@ -4871,6 +5097,7 @@ function labBuild(){
     <div class="row"><b></b><span id="labTrigTip" style="font-size:13px;color:var(--muted);flex:1 1 300px"></span>
       <label><input type="checkbox" id="labWound"> Keep blue wounded</label><button id="labInk0">Empty blue's ink</button><button id="labRearm">Reset trigger</button></div>`;
   document.querySelector('.arenawrap').after(el);
+  labShapeBuild(el);      // shape: the customization row
   const styles=$('labStyles'), els=$('labEls');
   styles.innerHTML=Object.keys(LAB_STOCK).map(s=>`<button data-s="${s}">${LAB_NAME[s]}</button>`).join('');
   const pickStyle=s=>{ lab.style=s; lab.last=null; styles.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.s===s)); labEquip(); labMoves(); labPlace(); };
