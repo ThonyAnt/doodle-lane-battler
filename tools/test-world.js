@@ -161,4 +161,39 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
   ok('fire on a soaked fighter bursts into steam and dries them',Math.abs(steam.d/base-1.25)<0.03&&steam.tag==='steam'&&steam.b.slow===0,+steam.d.toFixed(1));
   const g=hit('plant','plant',b=>{ b.slow=2; }); ok('a plant hit on a soaked fighter is tagged overgrown',g.tag==='grow');
 }
+{ // target: customization blocks that put a status on the fighter a weapon hits (TARGET_FX, S.setCustoms)
+  const SW={kind:'melee',style:'blade',element:'none',name:'S',power:5,range:5,speed:5,traits:['swift','guard'],trait:'swift'};
+  const mk=cu=>{ const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,SW,50); const got=S.setCustoms(0,0,cu); b.x=a.x+60; b.face=-1; return {S,a,b,got}; };
+  const swing=S=>{ S.play(0,'blade1'); run(S,0.5); }, tg=S=>S.snapshot().ev.filter(e=>e.e==='tg').map(e=>e.k+':'+e.id);
+  { const {S,got}=mk([{id:'nope'},null,7,{id:'shrink',secs:99,size:'big'},{id:'shrink'},{id:'mark',boost:NaN},{id:'float'}]);
+    ok('target: unknown ids, repeats and a third block are dropped, numbers are clamped',JSON.stringify(got)==='[{"id":"shrink","secs":5,"size":0.6},{"id":"mark","secs":5,"boost":1.5}]',got);
+    let threw=''; try{ for(const v of [undefined,null,5,'s',{},[[]],[{id:{}}]]) S.setCustoms(0,0,v); S.setCustoms(9,0,[]); S.setCustoms(0,'a',[]); S.setCustoms(); }catch(e){ threw=e.message; }
+    ok('target: bad input never throws, and an empty hand has nothing to customize',threw===''&&S.setCustoms(1,1,[{id:'mark'}])===null,threw);
+    S.setItem(0,1,{kind:'shield',element:'none',name:'W'},20); ok('target: a shield cannot carry one',S.setCustoms(0,1,[{id:'mark'}]).length===0);
+    S.setCustoms(0,0,[{id:'tether',len:500}]); const it=S.tweak(0,0,{tune:1}); ok('target: a tweaked item keeps its customizations',!!it&&it.customs.length===1&&it.customs[0].len===300,it&&it.customs);
+    ok('target: the snapshot lists them on the item',S.snapshot().items[0][0].cu[0].id==='tether'); }
+  { const {S,b}=mk([{id:'shrink'}]); swing(S); const on=tg(S); run(S,1);
+    ok('target shrink: the hit fighter is small, and the snapshot says whose doing it is',on.includes('on:shrink')&&Math.abs(b.scale-0.6)<0.03&&S.snapshot().f[1].tg.shrink[1]===0,[on,b.scale]);
+    const t0=b.tfx.shrink.t; swing(S); ok('target: a second hit neither refreshes nor stacks',b.tfx.shrink.t<t0);
+    run(S,2.3); ok('target shrink: it ends with an event and they grow back',tg(S).includes('off:shrink')&&b.scaleGoal===1&&b.tfx.shrink.t===0,b.tfx);
+    swing(S); ok('target: after it ends the same block cannot land again at once',b.tfx.shrink.t===0); run(S,2.6); swing(S); ok('target: but can once the rest is over',b.tfx.shrink.t>0); }
+  { const {S,b}=mk([{id:'float'}]); S.play(0,'blade1'); let top=0, air=0; for(let i=0;i<300;i++){ S.step(1/60); top=Math.max(top,b.y-BOARD.floor); if(!b.ground) air++; }
+    ok('target float: they are lifted and hang in the air',top>70&&air>60,{top:Math.round(top),air}); }
+  { const {S,b}=mk([{id:'slick',secs:5}]); swing(S); run(S,1.2); b.vx=0; inp(S,1,{r:1}); run(S,0.3); const slow=b.vx; b.vx=300; inp(S,1,{r:0}); run(S,0.3);
+    ok('target slick: slow to get going, and they keep sliding after letting go',slow<130&&b.vx>140,[Math.round(slow),Math.round(b.vx)]); }
+  { const {S,b}=mk([{id:'mirror'}]); swing(S); run(S,0.3); const x0=b.x; inp(S,1,{r:1}); run(S,0.5); const went=b.x-x0; run(S,1.6); const x1=b.x; run(S,0.4);
+    ok('target mirror: right walks left, and right again once it is over',went<-40&&b.x>x1+40,[Math.round(went),Math.round(b.x-x1)]); }
+  { const {S,a,b}=mk([{id:'tether'}]); swing(S); inp(S,1,{r:1}); run(S,1.2); const far=b.x-a.x; inp(S,1,{r:0}); inp(S,0,{l:1}); run(S,0.5); const towed=b.x-a.x; inp(S,0,{l:0}); run(S,1.6); inp(S,1,{r:1}); run(S,1);
+    ok('target tether: the target cannot leave the line, is towed by its owner, and is free afterwards',far>190&&far<=200.01&&towed<=200.01&&b.x-a.x>230,[far,towed,b.x-a.x].map(Math.round)); }
+  { const plain=mk([]); swing(plain.S); const base=HP0-plain.b.hp;
+    const {S,b}=mk([{id:'mark'}]); swing(S); const first=HP0-b.hp, h=b.hp; S.snapshot(); swing(S); const pop=S.snapshot().ev.find(e=>e.e==='tg'&&e.k==='pop'), second=h-b.hp, h2=b.hp; swing(S);
+    ok('target mark: the marking hit is ordinary, the next one is half again as big and uses the mark up',Math.abs(first-base)<0.01&&Math.abs(second-base*1.5)<0.01&&!!pop&&Math.abs(h2-b.hp-base)<0.01,[base,first,second,h2-b.hp].map(v=>+v.toFixed(2))); }
+  { const {S,a,b}=mk([{id:'swap'}]); const ax=a.x, bx=b.x; S.play(0,'blade1'); for(let i=0;i<60&&!b.tfx.swap;i++) S.step(1/120);
+    ok('target swap: the two trade places and the owner turns to face them',Math.abs(b.x-ax)<30&&Math.abs(a.x-bx)<8&&a.face===-1&&tg(S).includes('swap:swap'),[ax,bx,a.x,b.x].map(Math.round)); }
+  { const {S,a,b}=mk([{id:'shrink'},{id:'swap'}]); a.od=100; S.startUlt(0); let lo=HP0; for(let i=0;i<360;i++){ S.step(1/60); lo=Math.min(lo,b.hp); }
+    ok('target: an ultimate does its damage and carries no block',lo<HP0-5&&!b.tfx.shrink&&!b.tfx.swap,[lo,b.tfx]); }
+  { const {S,b}=mk([{id:'float',secs:4}]); S.setItem(1,0,SW,50); swing(S); run(S,0.8); const left=b.tfx.float.t; b.hurt=0; b.od=100; const went=S.startUlt(1); run(S,0.5);
+    ok('target: status clocks stop while an ultimate plays',went&&Math.abs(b.tfx.float.t-left)<1e-9,[left,b.tfx.float.t]); }
+  { const {S}=mk([{id:'mark'}]), T=mk([{id:'mark'}]).S; swing(S); swing(T); const same=S.hash()===T.hash(); T.f[1].tfx.mark.t-=0.5; ok('target: S.hash covers the statuses',same&&S.hash()!==T.hash()); }
+}
 console.log(bad?bad+' failed':'all world rules pass'); process.exit(bad?1:0);

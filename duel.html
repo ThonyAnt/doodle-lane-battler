@@ -975,7 +975,7 @@ const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet s
 // A recording holds about LOG_ROOM characters of commands (some forty long matches' worth). When it is full it stops:
 // the match goes on, the log is marked full, and it replays up to the tick it stopped at.
 const LOG_ROOM=2e6;
-const LOG_V=1, COMMANDS=['setItem','tweak','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold'];
+const LOG_V=1, COMMANDS=['setItem','tweak','setCustoms','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold'];
 const INPUT_KEYS=['l','r','d','j','a','b','m','q','h','u'], viaJSON=v=>JSON.parse(JSON.stringify(v)), round1=v=>Math.round(v*10)/10;
 const packInput=i=>{ const o={}; for(const k of INPUT_KEYS){ const v=i?i[k]:undefined; o[k]=k==='l'||k==='r'||k==='d'?(v?1:0):v===undefined?null:v; } return viaJSON(o); };   // held buttons as 0 or 1, press counts as given, a missing one as null
 const unpackInput=o=>{ const i={}; for(const k of INPUT_KEYS) if(o[k]!==null&&o[k]!==undefined) i[k]=o[k]; return i; };
@@ -1047,6 +1047,33 @@ const FORGE_LIMITS={reflect:[0.5,1.5],slow:[0.3,1],turn:[-180,180],shotPower:[0.
   burn:2,soak:2,stun:0.6,heal:8,hurt:8,hpBudget:24,stunBudget:1.5,cooldown:[0.25,5],nearEvery:0.25,nearDist:260,say:18,sayEvery:1.5,faults:3,hold:4};
 // The Math a rule gets: these ten and nothing else of the real one. The two-argument ones take exactly two.
 const FORGE_MATH=Object.freeze({abs:v=>Math.abs(v),sign:v=>Math.sign(v),floor:v=>Math.floor(v),round:v=>Math.round(v),sqrt:v=>Math.sqrt(v),sin:v=>Math.sin(v),cos:v=>Math.cos(v),min:(a,b)=>Math.min(a,b),max:(a,b)=>Math.max(a,b),hypot:(a,b)=>Math.hypot(a,b)});
+/* ---------- target: customization blocks that put something on the fighter a weapon hits ----------
+   An item may carry customizations: it.customs=[{id,...numbers}], set with S.setCustoms(side,slot,list). The ones here
+   are the "effect on the target" blocks. Each entry of TARGET_FX: name, cost (points of a weapon's customization budget;
+   a first guess, not tuned), secs [default,least,most] (how long it stays on the fighter), rest (seconds after it ends in
+   which the same block cannot be put on that fighter again), p (its other numbers, each [default,least,most]) and say
+   (what the page shouts). How they act is in createDuel, section "target"; how they look, in the page (targetTell). */
+const TARGET_FX={
+  shrink:{name:'Shrink',cost:3,secs:[3.5,2,5],rest:2.5,p:{size:[0.6,0.45,0.75]},say:'SHRUNK!'},
+  float:{name:'Float',cost:2,secs:[2.5,1.5,4],rest:2.5,p:{grav:[0.3,0.2,0.5]},say:'FLOATING!'},
+  slick:{name:'Slippery',cost:2,secs:[3,2,5],rest:2.5,p:{grip:[0.12,0.05,0.3]},say:'SLIPPERY!'},
+  mirror:{name:'Mirror',cost:3,secs:[2,1,3],rest:3,p:{},say:'MIRRORED!'},
+  tether:{name:'Tether',cost:3,secs:[3,2,5],rest:2.5,p:{len:[200,140,300]},say:'TETHERED!'},
+  mark:{name:'Mark',cost:3,secs:[5,3,8],rest:1,p:{boost:[1.5,1.25,1.75]},say:'MARKED!'},
+  swap:{name:'Swap',cost:4,secs:[0,0,0],rest:2.5,p:{},say:'SWAP!'}};
+const TARGET_KINDS=['melee','ranged','bomb','dash'], TARGET_MAX=2;      // only things that hit can carry one; two at most on an item
+// One customization as the rules will keep it, or null: a known id on a kind that can carry it, every number a finite
+// one inside its range (anything else becomes the default). Never throws, whatever it is given.
+function targetCustom(c,kind){
+  if(!c||typeof c!=='object'||typeof c.id!=='string'||!Object.prototype.hasOwnProperty.call(TARGET_FX,c.id)||!TARGET_KINDS.includes(kind)) return null;
+  const D=TARGET_FX[c.id], num=(v,r)=>typeof v==='number'&&Number.isFinite(v)?Math.round(Math.max(r[1],Math.min(r[2],v))*100)/100:r[0], o={id:c.id};
+  if(D.secs[2]>0) o.secs=num(c.secs,D.secs);
+  for(const k of Object.keys(D.p)) o[k]=num(c[k],D.p[k]);
+  return o;
+}
+const targetCost=list=>Array.isArray(list)?list.reduce((n,c)=>n+(c&&Object.prototype.hasOwnProperty.call(TARGET_FX,c.id)?TARGET_FX[c.id].cost:0),0):0;
+// Has this fighter's left and right been swapped for at least `after` seconds? (How the bots notice: see makeBot.)
+const targetMirrored=(f,after)=>{ const e=f.tfx&&f.tfx.mirror; return !!(e&&e.t>0&&e.d-e.t>=after); };
 function createDuel(opts){
   if(opts&&opts.record) opts=viaJSON(opts);       // a recorded match keeps its own copy of what it was made with (see S.log)
   let acc=0, nextId=1; const STEP=1/120, r1=round1;
@@ -1055,7 +1082,7 @@ function createDuel(opts){
   // In a layout with an art board the fighters start inside it; otherwise in the middle of the arena.
   const fresh=side=>({side,x:BOARD?BOARD.x0+(BOARD.x1-BOARD.x0)*(side?0.8:0.2):W/2+(side?260:-260),y:BOARD?BOARD.floor:0,vx:0,vy:0,face:side?-1:1,hp:HP,ground:true,jumps:0,jq:0,buf:[0,0],cd:[0,0],cdMax:[1,1],
     act:null,shield:0,hurt:0,burn:0,burnDps:0,slow:0,dash:0,dashHit:false,dashItem:null,drop:0,uses:[3,3],held:0,
-    ink2:100,od:0,stun:0,trap:0,flung:0,flungBy:-1,overclock:0,scale:1,scaleGoal:1,bubble:null,mcd:0,mbuf:0});
+    ink2:100,od:0,stun:0,trap:0,flung:0,flungBy:-1,overclock:0,scale:1,scaleGoal:1,bubble:null,mcd:0,mbuf:0,tfx:{}});
   const S={phase:'draw',t:45,round:1,wins:[0,0],ready:[false,false],items:[[null,null],[null,null]],f:[fresh(0),fresh(1)],pr:[],events:[],
     winner:-1,champ:-1,ver:0,practice:!!(opts&&opts.practice),inp:[{l:0,r:0,d:0},{l:0,r:0,d:0}],cnt:[{j:0,a:0,b:0,m:0,q:0,u:0},{j:0,a:0,b:0,m:0,q:0,u:0}],
     objs:[],fields:[],groups:[null,null],hack:null,effects:[],broken:null,breached:false,cells:[],time:0,stop:0};
@@ -1227,7 +1254,7 @@ function createDuel(opts){
     if(typeof ch.name==='string'){ const nm=ch.name.replace(/[<>&"']/g,'').trim().slice(0,22); if(nm) spec.name=nm; }
     if(ch.trait!==undefined) spec.trait=String(ch.trait);
     if(ch.tune!==undefined) spec.tune=ch.tune;
-    return S.setItem(side,k,spec,it.cost);
+    return targetKeep(it,S.setItem(side,k,spec,it.cost));      // target: the remade item keeps its customizations
   };
   const usesFor=side=>[0,1].map(k=>{ const it=S.items[side][k]; return it&&it.kind==='heal'?it.st.uses+(it.trait==='feast'?1:0):3; });
   const carries=(side,tr)=>S.items[side].some(it=>it&&it.trait===tr);
@@ -1312,6 +1339,7 @@ function createDuel(opts){
     // A hit with no stun only nudges: it adds to the target's speed instead of replacing it, and does not lift them.
     const firm=casting(t);   // a fighter casting an ultimate takes the damage and stands their ground
     t.hp-=dmg; if(tr==='fleet') S.ultDmg+=dmg; if(!firm){ if(stun>0) t.vx=kx; else{ t.vx+=kx*0.25; ky=0; } if(ky>0){ t.vy=ky; t.ground=false; } else if(ky<0&&!t.ground) t.vy=ky; }
+    if(!blocked&&by&&by!==t&&tr!=='fleet') targetHit(t,by,slot,dmg);      // target: what the weapon's customizations put on whoever it hits
     // Hit-stop: a hit that staggers freezes the whole fight (both fighters, shots, the clock) for a few frames, longer the
     // harder it lands. Nothing moves, so it changes how a hit feels and not who wins. w is the hit's weight, 0 to 1.
     const w=blocked?0:Math.min(1,dmg/20+(fin?0.3:0));
@@ -1445,13 +1473,13 @@ function createDuel(opts){
       if(!f.dashHit&&Math.abs(e.x-f.x)<36&&Math.abs(e.y-f.y)<70){ f.dashHit=true; hurt(e,f.dashItem.st.dmg,f.dashItem.el,f.face*f.dashItem.st.kb,200,f,f.x,undefined,f.dashItem.trait,undefined,undefined,S.items[f.side].indexOf(f.dashItem)); }
       if(f.dash<=0) f.vx*=0.35;
     }else{
-      const stunned=f.hurt>0||f.stun>0||f.trap>0, dir=stunned?0:inp.r-inp.l;
+      const stunned=f.hurt>0||f.stun>0||f.trap>0, dir=stunned?0:(inp.r-inp.l)*targetDir(f);
       if(stunned){ f.vx*=Math.max(0,1-3*dt); f.jq=0; }
       else{
         if(dir&&(!f.act||(MOVES[f.act.m]&&MOVES[f.act.m].shots))) f.face=dir;   // a fighter can turn mid-volley: the shots still to come follow
         // While committed to a move the fighter can only drift.
         const max=RUN_SPEED*(f.slow>0?0.55:1)*(f.shield>0?(f.shieldMove||0.6):1)*(carries(f.side,'swift')?1.12:1)*(f.overclock>0?1.18:1)*(f.scale<0.85?0.85:1), a=(f.act?(f.ground?900:500):(f.ground?2600:1500))*dt, want=f.act?dir*max*0.3:dir*max;
-        if(f.flung<=0) f.vx+=Math.max(-a,Math.min(a,want-f.vx));          // a flung fighter keeps its momentum
+        if(f.flung<=0){ const g=a*targetGrip(f); f.vx+=Math.max(-g,Math.min(g,want-f.vx)); }          // a flung fighter keeps its momentum
         if(f.jq>0){ f.jq--; if(!f.act&&(f.ground||f.jumps<2)){ if(!f.ground) puff(f.x,-f.y,PCOLS[f.side],6); f.vy=f.ground?640:560; f.jumps=f.ground?1:2; f.ground=false; } }
         if(inp.d&&f.ground&&f.y>0&&!f.act&&f.buf[0]<=0&&f.buf[1]<=0) f.drop=0.22;
         for(const k of [0,1]) if(f.buf[k]>0&&f.cd[k]<=0&&!f.act) use(f,k);
@@ -1459,7 +1487,7 @@ function createDuel(opts){
       }
       // Casting the ultimate, the fighter drifts up and hangs in the air until the volley is nearly out.
       if(f.act&&f.act.m==='fleet'&&f.act.t<1.25){ f.vx*=Math.max(0,1-8*dt); f.vy=f.act.t<0.4?130*(1-f.act.t/0.4):0; }
-      else f.vy-=1750*dt;
+      else f.vy-=1750*targetGrav(f)*dt;
     }
     // Move, then push out of anything solid: art-board cells, drawn walls and blocks, crates and pop-ups.
     const hw=11, hh=88*f.scale, px=f.x, py=f.y; let land=false;
@@ -1718,6 +1746,70 @@ function createDuel(opts){
     if(best.kind==='obj'){ t.life=0; log(f,'mined through a '+t.kind); }
     else{ log(f,'mined through the art board'); if(!S.breached){ S.breached=true; flash('CANVAS BREACHED','mined a way out',f.side); } }
   }
+  /* ---------- target: what a weapon's customizations put on the fighter it hits (see TARGET_FX) ----------
+     A fighter's statuses are f.tfx[id]={t,d,cd,by,v}: t seconds left (0 once it is over), d how long it was given, cd the
+     rest of the pause before the same block can land on this fighter again, by the side whose weapon did it, v the
+     block's own number. The rules, for every block:
+      - it goes on with any unblocked hit of the item that carries it (swing, shot, bomb, dash; not an ultimate, not a
+        shot that was sent back), and a fighter may carry several different ones at once;
+      - a hit while it is on, or while it rests, changes nothing: no refresh, no stacking. With the rest after each one,
+        no block can be kept on a fighter for more than about 60% of the time, however fast the hits come;
+      - a fighter casting an ultimate is never given one (refused, not saved up), and one already on a fighter does
+        nothing to them while they cast. Their clocks stop while an ultimate plays, as the round clock does;
+      - events: {e:'tg',k:'on'|'off'|'pop'|'swap',id,side (who has it),by,x,y}; the snapshot has f.tg={id:[secs,by,v]}. */
+  const TF_NAME=(HACKS.find(h=>h.id==='transform')||{}).name;
+  const targetOn=(f,id)=>{ const e=f.tfx[id]; return e&&e.t>0&&!casting(f)?e:null; };
+  const targetDir=f=>targetOn(f,'mirror')?-1:1;                                   // mirror: left is right
+  const targetGrip=f=>{ const e=f.ground&&targetOn(f,'slick'); return e?e.v:1; };   // slick: feet barely grip the ground
+  const targetGrav=f=>{ const e=targetOn(f,'float'); return e?e.v:1; };           // float: a fraction of the gravity
+  const targetEv=(k,id,f,by,more)=>fx('tg',Object.assign({k,id,side:f.side,by,x:rr(f.x),y:rr(f.y)},more));
+  function targetKeep(old,it){ if(it&&old&&Array.isArray(old.customs)) it.customs=old.customs.map(c=>targetCustom(c,it.kind)).filter(Boolean); return it; }
+  // Set an item's customizations (in the manner of S.tweak: while drawing, or any time in practice). Unknown ids, ones the
+  // item's kind cannot carry, repeats and anything past TARGET_MAX are dropped; bad numbers become the defaults. Returns
+  // what the item now carries, or null if there is no such item or it is too late.
+  S.setCustoms=(side,k,list)=>{
+    const it=(side===0||side===1)&&(k===0||k===1)?S.items[side][k]:null; if(!it||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
+    const out=[]; if(Array.isArray(list)) for(const c of list.slice(0,16)){ const o=targetCustom(c,it.kind); if(o&&out.length<TARGET_MAX&&!out.some(q=>q.id===o.id)) out.push(o); }
+    return it.customs=out;
+  };
+  function targetEnd(f,id,k){
+    const e=f.tfx[id]; e.t=0; e.cd=TARGET_FX[id].rest;
+    if(id==='shrink') f.scaleGoal=S.effects.some(q=>q.target===f.side&&q.name===TF_NAME)?0.55:1;      // TRANSFORM.exe may still be holding them small
+    targetEv(k,id,f,e.by);
+  }
+  // by's blow (from item slot `slot`, if it was an item's) has just landed on t for dmg, unblocked.
+  function targetHit(t,by,slot,dmg){
+    // mark: the owner's next hit of any kind pays out, and the mark is gone. The hit that set it does not count.
+    const m=t.tfx.mark;
+    if(m&&m.t>0&&m.by===by.side){ const extra=dmg*(m.v-1); t.hp-=extra; S.stop=Math.max(S.stop,0.09); targetEnd(t,'mark','pop'); S.events[S.events.length-1].n=Math.max(1,Math.round(extra)); }
+    const it=slot>=0?S.items[by.side][slot]:null; if(!it||!Array.isArray(it.customs)||casting(t)||t.hp<=0) return;
+    for(const c of it.customs){
+      const D=TARGET_FX[c.id]; if(!D||t.tfx[c.id]) continue;
+      if(c.id==='swap'){
+        // The two trade places. The target keeps the blow's knock-back, turned round so it still carries them away.
+        const o={x:by.x,y:by.y,ground:by.ground,on:by.on};
+        by.x=t.x; by.y=t.y; by.ground=t.ground; by.on=t.on; t.x=o.x; t.y=o.y; t.ground=o.ground; t.on=o.on;
+        t.vx=-t.vx; by.vx=0; if(by.ground) by.vy=0; if(by.x!==t.x) by.face=Math.sign(t.x-by.x);
+        t.tfx.swap={t:0,d:0,cd:D.rest,by:by.side,v:0}; targetEv('swap','swap',t,by.side,{x2:rr(by.x),y2:rr(by.y)}); continue;
+      }
+      const v=c.id==='shrink'?c.size:c.id==='float'?c.grav:c.id==='slick'?c.grip:c.id==='tether'?c.len:c.id==='mark'?c.boost:0;
+      t.tfx[c.id]={t:c.secs,d:c.secs,cd:0,by:by.side,v};
+      if(c.id==='shrink') t.scaleGoal=Math.min(t.scaleGoal,v);
+      if(c.id==='float'){ t.vy=Math.max(t.vy,320); t.ground=false; }      // lifted off their feet, then they drift
+      targetEv('on',c.id,t,by.side);
+    }
+  }
+  function targetStep(dt){
+    for(const f of S.f){
+      const o=f.tfx;
+      for(const id in o){ const e=o[id]; if(e.t>0){ e.t-=dt; if(e.t<=0) targetEnd(f,id,'off'); } else{ e.cd-=dt; if(e.cd<=0) delete o[id]; } }
+      const sh=o.shrink; if(sh&&sh.t>0) f.scaleGoal=Math.min(f.scaleGoal,sh.v);
+      // tether: the target cannot be further from the weapon's owner (sideways) than the line is long, and is towed along
+      const te=o.tether, w=te&&S.f[te.by];
+      if(te&&te.t>0&&f.hp>0&&Math.abs(f.x-w.x)>te.v){ const s=Math.sign(f.x-w.x); f.x=Math.max(18,Math.min(W-18,w.x+s*te.v)); f.vx=w.vx*s<0?w.vx:f.vx*s>0?0:f.vx; }
+    }
+  }
+  function targetView(f){ let o=null; for(const id in f.tfx){ const e=f.tfx[id]; if(e.t>0) (o=o||{})[id]=[r1(e.t),e.by,e.v||0]; } return o; }
   function world(dt){
     for(const side of [0,1]){ const g=S.groups[side]; if(g&&S.time-g.t>0.6) finalize(side); }
     // a flung fighter slamming into the other one hurts them (his body-collision rule)
@@ -1829,6 +1921,7 @@ function createDuel(opts){
       if(S.rules.length) ruleStep(dt);
       for(const f of S.f) control(f,dt);
       projectiles(dt,-1); world(dt); if(S.sheet) sheetTick(dt);
+      targetStep(dt);      // target: statuses run down (not while an ultimate plays: their clocks stop with the round's)
     }
     const a=S.f[0], b=S.f[1], d0=a.hp<=0, d1=b.hp<=0;
     if(!S.practice&&(d0||d1||S.t<=0)){
@@ -1844,12 +1937,12 @@ function createDuel(opts){
     hack:S.hack&&{by:S.hack.by,target:S.hack.target,name:S.hack.def.name,desc:S.hack.def.desc,t:+S.hack.t.toFixed(2),max:S.hack.max,counter:S.hack.counter},
     fxs:S.effects.map(e=>({by:e.by,target:e.target,counter:e.counter,name:e.name})),
     items:S.items.map(a=>a.map(it=>it&&{name:it.name,kind:it.kind,style:it.style,el:it.el,cost:Math.round(it.cost),ver:it.ver,sz:Math.round(it.st.size),
-      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune,am:it.ammo})),
+      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune,am:it.ammo,cu:it.customs})),
     f:S.f.map(f=>({x:r1(f.x),y:r1(f.y),vx:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vx),vy:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vy),face:f.face,hp:Math.max(0,r1(f.hp)),g:f.ground?1:0,
       act:f.act?{k:f.act.k,m:f.act.m+(f.act.v?'_b':''),t:+f.act.t.toFixed(3),r:+f.act.rate.toFixed(2)}:null,
       sh:f.shield>0?1:0,hurt:f.hurt>0?1:0,burn:f.burn>0?1:0,slow:f.slow>0?1:0,dash:f.dash>0?1:0,held:f.held,
       cd:[+(f.cd[0]/f.cdMax[0]).toFixed(2),+(f.cd[1]/f.cdMax[1]).toFixed(2)],uses:f.uses,
-      ink2:Math.round(f.ink2),od:Math.round(f.od),stun:f.stun>0?1:0,trap:f.trap>0?1:0,bub:f.bubble?Math.round(f.bubble.r):0,oc:f.overclock>0?1:0,sc:+f.scale.toFixed(2),fl:f.flung>0?1:0})),
+      ink2:Math.round(f.ink2),od:Math.round(f.od),stun:f.stun>0?1:0,trap:f.trap>0?1:0,bub:f.bubble?Math.round(f.bubble.r):0,oc:f.overclock>0?1:0,sc:+f.scale.toFixed(2),fl:f.flung>0?1:0,tg:targetView(f)})),
     pr:S.pr.map(p=>({id:p.id,k:p.k,st:p.st,big:p.big,side:p.side,slot:p.slot,x:r1(p.x),y:r1(p.y),vx:Math.round(p.vx),vy:Math.round(p.vy),el:p.el,o:p.os,h:p.hover?1:undefined,a:p.st==='fleet'?+p.ang.toFixed(2):undefined,z:S.ult>=0&&!(p.tr==='fleet'&&p.side===S.ult)?1:undefined})),
     ev:S.events.splice(0)});
   // A fingerprint of where the match stands: the phase, clock, round and wins, and everything about every fighter and
@@ -2011,6 +2104,7 @@ function makeBot(side,skillOf,seed){
     stuck=mv===-1&&Math.abs(f.vx)<30?stuck+dt:0;
     if(mv<0&&f.act&&MOVES[f.act.m]&&MOVES[f.act.m].shots) mv=0;     // backing off mid-volley would turn it around and fire the wrong way
     i.r=mv*dir>0?1:0; i.l=mv*dir<0?1:0; i.d=down;
+    if(targetMirrored(f,lag)){ const sw=i.l; i.l=i.r; i.r=sw; }      // target: once it has noticed that its left and right are swapped, it presses the other one
     // ---- the slower thoughts: ultimate, hacks and drawing, a few times a second ----
     think-=dt; if(think>0){ S.setInput(side,i); return; } think=0.35+(0.1-0.35)*d+R()*0.08+0.07;
     const incoming=shotIn<9;
@@ -2108,6 +2202,7 @@ function makeNetBot(side,theta,skillOf){
     for(let k=0;k<NI;k++) x[k]=seen[at+k];
     const o=netForward(theta,x,ws), mv=o[0]>=0.33?dir:o[0]<=-0.33?-dir:0;
     i.r=mv>0?1:0; i.l=mv<0?1:0; i.d=o[4]>0?1:0;
+    if(targetMirrored(S.f[side],0.2)){ const sw=i.l; i.l=i.r; i.r=sw; }      // target: left and right are swapped, and it has had time to notice
     if(o[1]>0) tap('j'); if(o[2]>0) tap('a'); if(o[3]>0) tap('b'); if(o[5]>0) tap('u');
     if(o[6]>0&&S.f[side].od>=100&&!S.hack&&tap('q')){        // which hack: the same sensible choices the bot above makes
       const f=S.f[side], e=S.f[1-side], opts=[2,3]; if(S.cells.length&&!S.broken) opts.push(0); if(S.items[1-side][e.held]) opts.push(1,1); if(S.items[side][f.held]) opts.push(4,4); i.h=INK.pick(opts); }
@@ -3031,6 +3126,7 @@ function accept(v){
     if(e.e==='hit'&&ANIM.rig&&anim[e.side]&&anim[e.side].rig) ANIM.rig.kick(anim[e.side].rig,(e.dir==='L'?-1:1)*(view?view.f[e.side].face:1),e.n);
     const now=e.t0, soft=CALM?0.3:1;
     if(e.e==='boom') shake=Math.max(shake,(e.s?4:8)*soft);
+    if(e.e==='tg'){ if(e.k==='pop'||e.k==='swap') shake=Math.max(shake,7*soft); if(e.k==='on') e.row=v.ev.filter(q=>q.e==='tg'&&q.k==='on'&&q.side===e.side&&q.t0!==undefined).length-1; }      // target: a mark pays out or the two trade places; two that start together are named one above the other
     // A hit shakes the screen by its weight. Only the ultimate gets an impact frame: when its last copy lands, the picture
     // is inverted for a few frames (on a white stage a plain white flash would not show). Ordinary attacks and knockouts
     // never black the screen out.
@@ -3394,6 +3490,70 @@ function pickClip(v,i,st,age){
   if(v.phase==='fight'||v.phase==='count') return [ranged?it.style+'_stance':it&&it.style==='dual'&&ANIM.clips.dual_stance?'dual_stance':(!it||it.style==='fist')&&ANIM.clips.fist_stance?'fist_stance':'fight_idle'];
   return ['idle'];
 }
+/* ---------- target: how the statuses a weapon's hit leaves on a fighter look (see TARGET_FX in the rules) ----------
+   Each is drawn on the fighter who has it for as long as it lasts, in the colour of the player whose weapon did it, and
+   flickers for its last 0.6 s. Starting, ending, a mark paying out and a swap are `tg` events (targetFx). */
+function targetTell(v,i,x,base,now,age){
+  const f=v.f[i], tg=f.tg, sc=f.sc||1, tm=now/1000, T2=Math.PI*2, head=base-100*sc, mid=base-52*sc;
+  const tri=(ax,ay,dx,dy,n)=>{ L.beginPath(); L.moveTo(ax+dx*n,ay+dy*n); L.lineTo(ax-dx*n*0.5-dy*n*0.8,ay-dy*n*0.5+dx*n*0.8); L.lineTo(ax-dx*n*0.5+dy*n*0.8,ay-dy*n*0.5-dx*n*0.8); L.closePath(); L.fill(); };
+  for(const id in tg){
+    const left=tg[id][0], by=tg[id][1], val=tg[id][2], col=PCOL[by]||'#111', pale=PFLASH[by]||'#ddd';
+    L.save(); L.lineCap='round'; L.lineJoin='round'; L.strokeStyle=col; L.fillStyle=col; L.globalAlpha=left<0.6&&Math.floor(now/75)%2?0.2:1;
+    if(id==='shrink'){
+      // the outline of the size they were, and arrows squeezing them down into the size they are
+      const p=(tm*1.8)%1; L.lineWidth=2.5; L.setLineDash([6,7]); L.strokeRect(x-24,base-98,48,98); L.setLineDash([]);
+      tri(x,base-98-16+p*10,0,1,9); tri(x-24-16+p*10,base-49,1,0,9); tri(x+24+16-p*10,base-49,-1,0,9);
+      L.lineWidth=3; L.beginPath(); L.arc(x,mid,34*sc+6+4*Math.sin(tm*9),0,T2); L.stroke();
+    }else if(id==='float'){
+      // a balloon tied to them, and bubbles rising round them
+      const bx=x+Math.sin(tm*1.7)*7, by2=head-50+Math.sin(tm*2.3)*4;
+      L.lineWidth=2; L.beginPath(); L.moveTo(x,head+18*sc); L.quadraticCurveTo(x+(bx-x)*2,head-14,bx,by2+22); L.stroke();
+      L.beginPath(); L.ellipse(bx,by2,17,21,0,0,T2); L.fill(); tri(bx,by2+24,0,-1,5);
+      L.fillStyle='#fff'; L.globalAlpha*=0.75; L.beginPath(); L.ellipse(bx-6,by2-8,4,7,0.5,0,T2); L.fill(); L.globalAlpha/=0.75;
+      L.lineWidth=2; for(let n=0;n<4;n++){ const u=((tm*0.9+n*0.27)%1); L.globalAlpha*=1-u; L.beginPath(); L.arc(x-26+n*17+Math.sin(tm*3+n)*3,base-u*96*sc,3+n%2*2,0,T2); L.stroke(); L.globalAlpha/=1-u||1; }
+    }else if(id==='slick'){
+      // a puddle under their feet that goes where they go, and skid lines behind them when they slide
+      const gy=base+3; L.globalAlpha*=0.4; L.beginPath(); L.ellipse(x,gy,40,7,0,0,T2); L.fill(); L.globalAlpha/=0.4; L.lineWidth=2.5; L.beginPath(); L.ellipse(x,gy,40,7,0,0,T2); L.stroke();
+      L.strokeStyle='#fff'; L.lineWidth=2; L.beginPath(); L.moveTo(x-22,gy-1); L.lineTo(x-8,gy-2); L.moveTo(x+10,gy+1); L.lineTo(x+20,gy); L.stroke(); L.strokeStyle=col;
+      for(let n=0;n<3;n++){ const u=(tm*1.6+n/3)%1; L.globalAlpha*=1-u; L.beginPath(); L.arc(x-20+n*20,gy-8-u*16,2.5,0,T2); L.fill(); L.globalAlpha/=1-u||1; }
+      if(Math.abs(f.vx)>50){ const s=-Math.sign(f.vx), n2=Math.min(60,Math.abs(f.vx)*0.2); L.lineWidth=3; for(let n=0;n<3;n++){ L.beginPath(); L.moveTo(x+s*(18+n*4),base-4-n*9); L.lineTo(x+s*(18+n*4+n2),base-4-n*9); L.stroke(); } }
+    }else if(id==='mirror'){
+      // a mirror line down their middle, and two arrows over their head that keep trading places
+      L.lineWidth=2.5; L.setLineDash([3,7]); L.beginPath(); L.moveTo(x,head-8); L.lineTo(x,base+4); L.stroke(); L.setLineDash([]);
+      const fl=Math.cos(tm*7), ay=head-50, w=28; L.lineWidth=5;
+      for(const s of [1,-1]){ const yy=ay+s*9, d=s*(fl>=0?1:-1), sq=Math.max(0.25,Math.abs(fl)); L.beginPath(); L.moveTo(x-w*sq,yy); L.lineTo(x+w*sq,yy); L.stroke(); tri(x+d*(w*sq+4),yy,d,0,11); }
+      L.fillStyle=pale; L.globalAlpha*=0.5; L.fillRect(x-1.5,head-8,3,base+4-head+8); L.globalAlpha/=0.5;
+    }else if(id==='tether'){
+      // the line itself, from the owner's middle to a cuff round theirs: it sags while slack and hums when pulled tight
+      const o=v.f[by], held=v.ul&&v.phase==='fight', ox=o.x+(v.phase==='fight'&&!held?o.vx*age:0), oy=GY-Math.max(0,o.y)-52*(o.sc||1);
+      const slack=Math.max(0,val-Math.abs(x-ox)), taut=slack<14, sag=Math.min(70,slack*0.5), mx=(x+ox)/2, my=(mid+oy)/2+sag+(taut?Math.sin(now/18)*2.5:0);
+      L.lineWidth=taut?5:4; L.beginPath(); L.moveTo(ox,oy); L.quadraticCurveTo(mx,my+sag,x,mid); L.stroke();
+      L.strokeStyle=pale; L.lineWidth=1.6; L.setLineDash([7,9]); L.beginPath(); L.moveTo(ox,oy); L.quadraticCurveTo(mx,my+sag,x,mid); L.stroke(); L.setLineDash([]);
+      L.strokeStyle=col; L.lineWidth=4; L.beginPath(); L.ellipse(x,mid,17*sc,8*sc,0,0,T2); L.stroke(); L.beginPath(); L.arc(ox,oy,5,0,T2); L.fill();
+    }else if(id==='mark'){
+      // a reticle on their chest and a pointer over their head
+      const r=27+3*Math.sin(tm*8), a0=tm*1.4; L.lineWidth=3.5; L.beginPath(); L.arc(x,mid,r,0,T2); L.stroke(); L.beginPath(); L.arc(x,mid,4,0,T2); L.fill();
+      for(let n=0;n<4;n++){ const a=a0+n*T2/4, c=Math.cos(a), s=Math.sin(a); L.beginPath(); L.moveTo(x+c*(r-9),mid+s*(r-9)); L.lineTo(x+c*(r+11),mid+s*(r+11)); L.stroke(); }
+      tri(x,head-26+Math.sin(tm*6)*4,0,1,11);
+    }
+    L.restore();
+  }
+}
+// One `tg` event, a seconds-long flash: a is how far through its 0.7 s it is (the caller has set the fade).
+function targetFx(e,a){
+  const col=PCOL[e.by]||'#111', pale=PFLASH[e.by]||'#fff', y=GY-e.y, D=TARGET_FX[e.id]||{}, T2=Math.PI*2;
+  const word=(t,wx,wy,size)=>{ L.font='bold '+size+'px "Gochi Hand",cursive'; L.textAlign='center'; L.lineJoin='round'; L.lineWidth=6; L.strokeStyle='#fffdf6'; L.strokeText(t,wx,wy); L.fillStyle=col; L.fillText(t,wx,wy); L.strokeStyle=col; };
+  L.save(); L.strokeStyle=col; L.fillStyle=col; L.lineCap='round';
+  if(e.k==='on'){ L.lineWidth=6*(1-a)+1; L.beginPath(); L.arc(e.x,y-52,16+a*52,0,T2); L.stroke(); word(D.say||'',e.x,y-122-a*24-(e.row||0)*28,26); }
+  else if(e.k==='off'){ L.lineWidth=3; for(let n=0;n<10;n++){ const t=n*T2/10+0.3, r0=26+a*40, r1=r0+10*(1-a); L.beginPath(); L.moveTo(e.x+Math.cos(t)*r0,y-52+Math.sin(t)*r0); L.lineTo(e.x+Math.cos(t)*r1,y-52+Math.sin(t)*r1); L.stroke(); } }
+  else if(e.k==='pop'){ L.beginPath(); for(let n=0;n<24;n++){ const t=n*T2/24, r=(n%2?22:60)*(0.5+a*1.1); n?L.lineTo(e.x+Math.cos(t)*r,y-52+Math.sin(t)*r):L.moveTo(e.x+Math.cos(t)*r,y-52+Math.sin(t)*r); } L.closePath(); L.lineWidth=5*(1-a)+1; L.stroke(); L.globalAlpha*=0.25; L.fill(); L.globalAlpha/=0.25; word('MARK +'+(e.n||0),e.x,y-124-a*26,32); }
+  else if(e.k==='swap'){ const y2=GY-e.y2, w=30*(1-a)+2;
+    for(const [bx,byy] of [[e.x,y],[e.x2,y2]]){ const g=L.createLinearGradient(0,byy-190,0,byy); g.addColorStop(0,'rgba(255,255,255,0)'); g.addColorStop(1,col); L.fillStyle=g; L.fillRect(bx-w/2,byy-190,w,190); L.lineWidth=4; L.beginPath(); L.ellipse(bx,byy,26+a*30,6+a*5,0,0,T2); L.stroke(); }
+    const mx=(e.x+e.x2)/2, my=(y+y2)/2-52, h=Math.max(40,Math.abs(e.x-e.x2)*0.3); L.lineWidth=5*(1-a)+1.5; L.setLineDash([12,9]);
+    L.beginPath(); L.moveTo(e.x,y-52); L.quadraticCurveTo(mx,my-h,e.x2,y2-52); L.moveTo(e.x2,y2-52); L.quadraticCurveTo(mx,my+h,e.x,y-52); L.stroke(); L.setLineDash([]);
+    L.fillStyle=col; word(D.say||'SWAP!',mx,my-h*0.5-34-a*18,30); }
+  L.restore();
+}
 function drawFighter(v,i,now,age,dt){
   // While the other fighter's ultimate plays this one is held: drawn in grey, pose and place frozen.
   const held=!!(v.ul&&v.ul[0]!==i&&v.phase==='fight'); if(held){ dt=0; age=0; }
@@ -3476,6 +3636,7 @@ function drawFighter(v,i,now,age,dt){
     if(f.trap){ L.save(); L.strokeStyle=PCOL[1-i]; L.lineWidth=2; L.globalAlpha=.7; for(let n=0;n<4;n++){ L.beginPath(); L.arc(x,cyy-5,40+n*3,tm*3+n,tm*3+n+2); L.stroke(); } L.restore(); }
     if(f.stun){ L.save(); L.fillStyle='#fb0'; L.font='12px sans-serif'; for(let n=0;n<3;n++){ const a=tm*6+n*T2/3; L.fillText('\u2605',x+Math.cos(a)*16-5,base-98*(f.sc||1)+Math.sin(a)*5); } L.restore(); }
     if(f.oc){ L.save(); L.strokeStyle='#0cf'; L.globalAlpha=.35+.2*Math.sin(tm*20); L.lineWidth=2; L.beginPath(); L.arc(x,cyy,34,0,T2); L.stroke(); L.restore(); } }
+  if(f.tg) targetTell(v,i,x,base,now,age);      // target: what a customized weapon's hit left on them
   // status
   L.lineCap='round';
   if(f.burn){ L.strokeStyle=PEN.fire; L.lineWidth=2.5; for(let n=0;n<3;n++){ const fx0=x-12+n*12, fy=base-104-((now/6+n*23)%22); L.beginPath(); L.moveTo(fx0,fy+8); L.lineTo(fx0+3,fy+2); L.lineTo(fx0,fy-4); L.stroke(); } }
@@ -3940,6 +4101,7 @@ function render(now){
     else if(e.e==='rule'){ if(e.txt){ L.save(); L.globalAlpha=Math.min(1,(1-a)*2.5); L.font='bold 25px "Gochi Hand",cursive'; L.textAlign='center'; L.lineJoin='round'; L.lineWidth=5; L.strokeStyle='#fffdf6'; L.strokeText(e.txt,e.x,y-44-a*34); L.fillStyle=PCOL[e.side]||'#111'; L.fillText(e.txt,e.x,y-44-a*34); L.restore(); } }      // a match rule's shout over its owner, in their colour
     else if(e.e==='boom'){ L.strokeStyle=e.el==='none'?'#e2a52d':PEN[e.el]; L.lineWidth=6*(1-a)+1; L.beginPath(); L.arc(e.x,y,e.n*(0.3+0.7*Math.min(1,a*2.2)),0,7); L.stroke();
       L.font='30px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=L.strokeStyle; L.fillText('BOOM',e.x,y-e.n*0.6-a*20); }
+    else if(e.e==='tg') targetFx(e,a);      // target: a status starts, ends, pays out, or two fighters trade places
   }
   L.globalAlpha=1; L.setTransform(VS,0,0,VS,OX*VS,OY);
   // the cut scene's front layer, then the impact frame over everything drawn so far (see impactFrame)
@@ -3984,10 +4146,10 @@ if(RETRO) retroBuild();
 // works, so runs, jumps and combos can be tried by hand too.
 const LAB_STOCK={blade:'sword',spear:'spear',hammer:'hammer',fist:'gloves',dual:'twins',bow:'bow',gun:'gun',akimbo:'pistols',staff:'staff',hurl:'star'};
 const LAB_NAME={blade:'Sword',spear:'Spear',hammer:'Hammer',fist:'Fists',dual:'Twin blades',bow:'Bow',gun:'Gun',akimbo:'Twin pistols',staff:'Staff',hurl:'Thrown'};
-const lab={style:'blade',el:'none',speed:1,loop:false,gap:220,last:null,idle:0};
-function labEquip(){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,st.spec,50); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0; if(desk[0]) updateDesk(desk[0]); }
+const lab={style:'blade',el:'none',speed:1,loop:false,gap:220,last:null,idle:0,cu:[]};
+function labEquip(){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,st.spec,50); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0; if(desk[0]) updateDesk(desk[0]); labTarget(); }
 function labPlace(gap){ const a=sim.f[0], b=sim.f[1], g=gap||lab.gap, x0=Math.max(60,Math.min(ARENA_W-60-g,ARENA_W/2-g/2-60));
-  for(const f of [a,b]){ f.y=0; f.vx=f.vy=0; f.ground=true; f.act=null; f.hurt=0; f.stun=0; f.dash=0; f.burn=0; f.slow=0; f.shield=0; f.hp=HP; }
+  for(const f of [a,b]){ f.y=0; f.vx=f.vy=0; f.ground=true; f.act=null; f.hurt=0; f.stun=0; f.dash=0; f.burn=0; f.slow=0; f.shield=0; f.hp=HP; f.tfx={}; f.scale=f.scaleGoal=1; }
   a.x=x0; b.x=x0+g; a.face=1; b.face=-1; sim.pr.length=0; }
 function labPlay(m,alt){
   if(!sim||sim.phase!=='fight') return; lab.last=[m,alt]; lab.idle=0;
@@ -3995,6 +4157,16 @@ function labPlay(m,alt){
   if(m==='hit'||m==='bighit'){ labPlace(48); sim.play(1,m==='hit'?'fist1':'fist4'); return; }   // the dummy hits back, to see the reactions
   labPlace(); const f=sim.f[0];
   if(m==='ult'){ f.od=100; sim.startUlt(0); } else sim.play(0,m,alt);
+}
+// target: the "On hit" row. The chosen blocks go on the weapon under test through the rules' own call, and the buttons
+// show what the rules kept. The dummy gets gloves carrying the same blocks, so "Take a hit" puts them on the blue fighter.
+function labTarget(){
+  const got=sim.setCustoms(0,0,lab.cu.map(id=>({id})))||[]; lab.cu=got.map(c=>c.id);
+  if(lab.cu.length){ const st=stockItem('gloves','none'), it=sim.setItem(1,0,st.spec,50); if(it){ setArt(1,0,st.strokes,it.ver,it.kind,it.style); sim.setCustoms(1,0,got); } }
+  else sim.items[1][0]=null;
+  sim.f[1].held=0;
+  document.querySelectorAll('#labTarget button').forEach(b=>b.classList.toggle('on',lab.cu.includes(b.dataset.c)));
+  const n=$('labTargetN'); if(n) n.textContent=lab.cu.length?targetCost(got)+' points':'';
 }
 function labTick(dt){ const f=sim.f[0], e=sim.f[1]; lab.idle=f.act||e.act||sim.pr.length||f.hurt>0||e.hurt>0||!f.ground||!e.ground?0:lab.idle+dt; if(lab.loop&&lab.last&&lab.idle>0.6) labPlay(lab.last[0],lab.last[1]); }
 function labMoves(){
@@ -4021,7 +4193,8 @@ function labBuild(){
     <div class="row"><b>Ink</b><span id="labEls" class="row" style="margin:0 14px 0 0"></span>
       <label>Speed <input type="range" id="labSpeed" min="0.1" max="1" step="0.05" value="1"><span id="labSpeedV">1.00×</span></label>
       <label>Distance <input type="range" id="labGap" min="40" max="520" step="10" value="220"></label>
-      <label><input type="checkbox" id="labLoop"> Loop</label></div>`;
+      <label><input type="checkbox" id="labLoop"> Loop</label></div>
+    <div class="row"><b>On hit</b><span id="labTarget" class="row" style="margin:0"></span><span id="labTargetN" style="font-size:13px;color:var(--muted)"></span></div>`;
   document.querySelector('.arenawrap').after(el);
   const styles=$('labStyles'), els=$('labEls');
   styles.innerHTML=Object.keys(LAB_STOCK).map(s=>`<button data-s="${s}">${LAB_NAME[s]}</button>`).join('');
@@ -4033,6 +4206,9 @@ function labBuild(){
   $('labSpeed').oninput=e=>{ lab.speed=+e.target.value; $('labSpeedV').textContent=lab.speed.toFixed(2)+'×'; };
   $('labGap').oninput=e=>{ lab.gap=+e.target.value; labPlace(); };
   $('labLoop').onchange=e=>{ lab.loop=e.target.checked; };
+  // target: one button per block; two at most stay on (TARGET_MAX), the oldest gives way
+  $('labTarget').innerHTML=Object.keys(TARGET_FX).map(c=>`<button data-c="${c}" title="${TARGET_FX[c].cost} points">${TARGET_FX[c].name}</button>`).join('');
+  $('labTarget').querySelectorAll('button').forEach(b=>b.onclick=()=>{ b.blur(); const c=b.dataset.c; lab.cu=lab.cu.includes(c)?lab.cu.filter(q=>q!==c):lab.cu.concat(c).slice(-TARGET_MAX); labTarget(); labPlace(); if(lab.last) labPlay(lab.last[0],lab.last[1]); });
   sim.step(0.05); pickEl('none'); pickStyle('blade');
 }
 if(REPLAY) setReplay(REPLAY);      // duel?replay=CODE: watch that room's match again
