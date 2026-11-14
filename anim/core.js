@@ -154,29 +154,60 @@
     ctx.restore();
   };
 
-  A.TRAIL={none:['#465793','#9eb8d3','#fbf8ef'],fire:['#b8381a','#f08a3c','#fff1c9'],water:['#1f5fae','#6fb7ee','#eefaff'],plant:['#1f7a3e','#7fcf7a','#f3ffe6']};
-  // Painted slash trail: a ribbon swept by the real blade over the last moments of a trail window.
-  // len = blade length in local units. Draw before the body so the fighter sits on top of it.
+  A.TRAIL={none:['#2b3a7a','#7f9be0','#ffffff'],fire:['#c2330f','#ff9a3d','#fff6d8'],water:['#1457b8','#5cc0ff','#f2fcff'],plant:['#177a35','#7edb6c','#f6ffe9']};
+  // Slash arc, in the manner of stick-fight animation and action-game effects:
+  //  - a crescent that hugs the path of the weapon TIP, not a fan from hand to tip
+  //  - a hard, saturated outer edge with a bright streak just inside it, feathering away toward the inside
+  //  - needle-sharp at the tail, widest past the middle, meeting the weapon at the head
+  //  - it hangs in the air after the cut and dissolves from the tail while thinning, instead of just fading
+  // len = weapon length in local units. cols = [edge, body, highlight]. Draw before the body.
   A.trail=function(ctx,clip,t,len,cols){
     if(typeof clip==='string') clip=A.clips[clip];
     cols=cols||A.TRAIL.none;
+    const LINGER=0.12, SPAN=0.14;
     for(const w of clip.trail){
-      const fade=0.07; if(t<=w[0]||t>=w[1]+fade) continue;
-      const head=Math.min(t,w[1]), span=Math.min(0.1,head-w[0]), n=Math.max(2,Math.ceil(span/0.006));
-      const tips=[],inner=[];
+      if(t<=w[0]||t>=w[1]+LINGER) continue;
+      const head=Math.min(t,w[1]), after=t>w[1]?(t-w[1])/LINGER:0;
+      let tail=Math.max(w[0],head-SPAN); tail+=(head-tail)*0.8*after*(2-after);
+      const span=head-tail; if(span<0.004) continue;
+      const n=Math.max(8,Math.min(56,Math.ceil(span/0.0025))), tips=[],dirs=[];
+      let path=0;
       for(let j=0;j<=n;j++){
-        const s=A.sample(clip,head-span*j/n),p=s.p,c=Math.cos(p[22]),q=Math.sin(p[22]),k=Math.pow(1-j/n,1.25);
-        const tip=A.xf(s,p[12]+c*len,p[13]+q*len), base=A.xf(s,p[12]+c*12,p[13]+q*12);
-        tips.push(tip); inner.push([tip[0]+(base[0]-tip[0])*k,tip[1]+(base[1]-tip[1])*k]);
+        const s=A.sample(clip,tail+span*j/n),p=s.p,c=Math.cos(p[22]),q=Math.sin(p[22]);
+        const tip=A.xf(s,p[12]+c*len*1.04,p[13]+q*len*1.04), base=A.xf(s,p[12]+c*len*0.2,p[13]+q*len*0.2);
+        const dx=base[0]-tip[0],dy=base[1]-tip[1],d=Math.hypot(dx,dy)||1;
+        tips.push(tip); dirs.push([dx/d,dy/d,d]);
+        if(j) path+=Math.hypot(tip[0]-tips[j-1][0],tip[1]-tips[j-1][1]);
       }
-      const band=(v0,v1,col)=>{
-        ctx.beginPath();
-        for(let j=0;j<=n;j++){ const x=tips[j][0]+(inner[j][0]-tips[j][0])*v0,y=tips[j][1]+(inner[j][1]-tips[j][1])*v0; j?ctx.lineTo(x,y):ctx.moveTo(x,y); }
-        for(let j=n;j>=0;j--) ctx.lineTo(tips[j][0]+(inner[j][0]-tips[j][0])*v1,tips[j][1]+(inner[j][1]-tips[j][1])*v1);
-        ctx.closePath(); ctx.fillStyle=col; ctx.fill();
+      // A slow or short sweep gets a thin arc; only a real cut earns the full crescent.
+      const W=len*0.46*Math.min(1,path/(len*0.9))*(1-0.55*after);
+      if(W<1.5) continue;
+      const wid=u=>Math.min(1,Math.pow(Math.sin(Math.PI*Math.pow(u,0.8)),0.75)*0.9+0.55*Math.pow(u,6))*W;
+      const pt=(j,v)=>{ const k=Math.min(wid(j/n)*v,dirs[j][2]); return [tips[j][0]+dirs[j][0]*k,tips[j][1]+dirs[j][1]*k]; };
+      const band=(v0,v1,col,alpha)=>{
+        ctx.globalAlpha=alpha; ctx.fillStyle=col; ctx.beginPath();
+        for(let j=0;j<=n;j++){ const a=pt(j,v0); j?ctx.lineTo(a[0],a[1]):ctx.moveTo(a[0],a[1]); }
+        for(let j=n;j>=0;j--){ const a=pt(j,v1); ctx.lineTo(a[0],a[1]); }
+        ctx.closePath(); ctx.fill();
       };
-      ctx.save(); ctx.globalAlpha=t>w[1]?Math.max(0,1-(t-w[1])/fade):Math.min(1,(t-w[0])/0.02);
-      band(0,1,cols[0]); band(0.07,0.74,cols[1]); band(0.13,0.42,cols[2]); ctx.restore();
+      const streak=(u0,u1,v,width,alpha)=>{
+        const j0=Math.round(u0*n),j1=Math.round(u1*n); if(j1-j0<2) return;
+        ctx.globalAlpha=alpha; ctx.strokeStyle=cols[2]; ctx.lineWidth=width; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.beginPath();
+        for(let j=j0;j<=j1;j++){ const a=pt(j,v); j===j0?ctx.moveTo(a[0],a[1]):ctx.lineTo(a[0],a[1]); } ctx.stroke();
+      };
+      const a=Math.pow(1-after,1.3)*Math.min(1,(t-w[0])/0.012);
+      ctx.save();
+      band(0,1,cols[1],0.16*a);                       // soft feather reaching inward
+      band(0,0.82,cols[1],0.22*a);
+      band(0,0.64,cols[1],0.34*a);
+      band(0,0.5,cols[1],0.5*a);
+      ctx.shadowColor=cols[1]; ctx.shadowBlur=10;
+      band(0,0.4,cols[0],0.96*a);                    // hard outer edge
+      ctx.shadowBlur=0;
+      band(0.08,0.27,cols[2],a);                      // bright streak just inside the edge
+      streak(0.30,0.72,0.52,Math.max(1.5,W*0.035),0.75*a);   // broken brush streaks in the body
+      streak(0.50,0.93,0.80,Math.max(1.2,W*0.025),0.55*a);
+      ctx.restore();
     }
   };
 
