@@ -241,6 +241,10 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   const handle=async function(req,res,url){
     const p=url.pathname;
     // Animation clip files and the preview lab are plain static files.
+    if(req.method==='GET'&&/^\/sfx\/[A-Za-z0-9]+\.(wav|ogg)$/.test(p)){      // recorded sound effects (sfx/CREDITS.md)
+      const file=path.join(__dirname,p.slice(1)); if(!fs.existsSync(file)){ res.writeHead(404); res.end(); return true; }
+      res.writeHead(200,{'Content-Type':p.endsWith('.ogg')?'audio/ogg':'audio/wav','Cache-Control':'max-age=3600'}); fs.createReadStream(file).pipe(res); return true;
+    }
     if(req.method==='GET'&&(/^\/anim\/[a-z_]+\.js$/.test(p)||p==='/anim-lab.html'||p==='/inkshop.js'||p==='/forgescript.js'||p==='/wire.js'||p==='/sfx.js'||p==='/inkshop.css')){      // forgescript.js: the rule language, for matches simulated in the page; wire.js: state frames, for a page on a socket
       const file=path.join(__dirname,p.slice(1));
       if(!fs.existsSync(file)){ res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-cache'}); res.end('/* '+p+' is not written yet */'); return true; }

@@ -3010,7 +3010,7 @@ function sfxHear(p,v){
   }
   if(!p||!p.f||!v.f) return;
   for(const s of [0,1]){ const a=p.f[s], b=v.f[s]; if(!a||!b) continue; const pan=sfxPan(b.x);
-    if(b.act&&(!a.act||a.act.m!==b.act.m||b.act.t<a.act.t-0.05)){ const m=MOVES[b.act.m.replace(/_b$/,'')]; if(m&&m.hits) X.play('swing',{pan,w:Math.min(1,(m.dmg||0.6)/1.6)}); }
+    if(b.act&&(!a.act||a.act.m!==b.act.m||b.act.t<a.act.t-0.05)){ const m=MOVES[b.act.m.replace(/_b$/,'')]; if(m&&m.hits) X.play('swing',{pan,w:Math.min(1,(m.dmg||0.6)/1.6),blade:/^(blade|dual)/.test(b.act.m)}); }
     if(v.phase==='fight'||v.practice){ if(b.vy>120&&!b.g&&(a.g||b.vy-a.vy>300)) X.play('jump',{pan}); else if(!a.g&&b.g&&a.vy<-260) X.play('land',{pan}); }
   }
   if(v.hack&&!p.hack) X.play('hack');

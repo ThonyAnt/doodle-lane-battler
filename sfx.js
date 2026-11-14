@@ -1,7 +1,8 @@
-// Doodle Duel sound effects. Every sound is made here with the Web Audio API (oscillators and filtered noise); there are
-// no audio files. The page calls SFX.play(name, opts) from its game events; nothing in the rules or the server knows
+// Doodle Duel sound effects. Most sounds are made here with the Web Audio API (oscillators and filtered noise). Sword
+// slashes, weapon swings and gunshots are recordings in /sfx (public-domain packs, see sfx/CREDITS.md); if a recording
+// has not loaded or cannot be decoded, the synthesized version plays instead. The page calls SFX.play(name, opts) from its game events; nothing in the rules or the server knows
 // about sound, and every hook in duel.html checks window.SFX, so the page works without this file.
-//   opts: {w: weight 0..1 (louder and lower), pan: -1..1, st: weapon style, el: element, small: true}
+//   opts: {w: weight 0..1 (louder and lower), pan: -1..1, st: weapon style, el: element, small: true, blade: a bladed swing}
 // Browsers only allow sound after a tap or a key press, so the audio engine starts on the first one. The on/off choice is
 // kept in localStorage as "dd-sfx".
 (function(){
@@ -17,6 +18,7 @@
       noiseBuf=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate); const d=noiseBuf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
     }
     if(ctx.state==='suspended') ctx.resume();
+    loadAll();
     return true;
   }
   // an output for one sound, panned left or right
@@ -29,13 +31,22 @@
   // a burst of noise through a filter whose frequency glides from f0 to f1
   function noise(dst,kind,f0,f1,dur,g,at,q,att){ const t=ctx.currentTime+(at||0), s=ctx.createBufferSource(), f=ctx.createBiquadFilter(); s.buffer=noiseBuf; s.loop=true; f.type=kind; f.Q.value=q||1;
     f.frequency.setValueAtTime(f0,t); if(f1&&f1!==f0) f.frequency.exponentialRampToValueAtTime(f1,t+dur); s.connect(f); f.connect(env(dst,t,dur,g,att)); s.start(t,Math.random()*0.5); s.stop(t+dur+0.02); }
+  // Recordings: a few takes of each sound, loaded once the audio engine starts. smp plays a random take (never the same
+  // one twice running) at a slightly varied speed, and says whether it could.
+  const FILES={slash:[1,2,3,4,5,6,7,8,9,10].map(n=>'slash'+n+'.ogg'),swishL:[1,2,3,4].map(n=>'swishL'+n+'.wav'),swishH:[1,2,3,4].map(n=>'swishH'+n+'.wav'),
+    pistol:[1,2,3,4].map(n=>'pistol'+n+'.wav'),magnum:[1,2,3].map(n=>'magnum'+n+'.wav')}, BUF={}, lastTake={}; let loading=false;
+  function loadAll(){ if(loading||!ctx||!window.fetch) return; loading=true;
+    for(const set in FILES){ BUF[set]=[]; FILES[set].forEach((f,i)=>{ fetch('/sfx/'+f).then(r=>r.ok?r.arrayBuffer():Promise.reject()).then(a=>new Promise((ok,no)=>ctx.decodeAudioData(a,ok,no))).then(b=>{ BUF[set][i]=b; }).catch(()=>{}); }); } }
+  function smp(dst,set,g,rate){ const have=(BUF[set]||[]).map((b,i)=>b?i:-1).filter(i=>i>=0); if(!have.length) return false;
+    let i=have[Math.floor(Math.random()*have.length)]; if(have.length>1&&i===lastTake[set]) i=have[(have.indexOf(i)+1)%have.length]; lastTake[set]=i;
+    const src=ctx.createBufferSource(), n=ctx.createGain(); src.buffer=BUF[set][i]; src.playbackRate.value=(rate||1)*(0.95+Math.random()*0.1); n.gain.value=g; src.connect(n); n.connect(dst); src.start(); return true; }
   const notes=(dst,type,list,step,dur,g)=>list.forEach((f,i)=>tone(dst,type,f,f,dur,g,i*step));
 
   // name -> [shortest gap between two plays in ms, how to make it]
   const S={
     click:  [30, d=>{ tone(d,'square',1300,900,0.025,0.10); }],
-    swing:  [50, (d,o)=>{ const w=o.w||0.3; noise(d,'bandpass',500-200*w,2600-900*w,0.13+0.08*w,0.22+0.12*w,0,1.4,0.03); }],
-    slash:  [60, d=>{ noise(d,'bandpass',900,5200,0.16,0.3,0,2,0.02); tone(d,'sawtooth',1400,500,0.12,0.05); }],
+    swing:  [50, (d,o)=>{ const w=o.w||0.3; if(o.blade?smp(d,'slash',0.75,1.08-0.2*w):smp(d,w>0.55?'swishH':'swishL',0.9,1.1-0.25*w)) return; noise(d,'bandpass',500-200*w,2600-900*w,0.13+0.08*w,0.22+0.12*w,0,1.4,0.03); }],
+    slash:  [60, d=>{ if(smp(d,'slash',0.85,0.9)) return; noise(d,'bandpass',900,5200,0.16,0.3,0,2,0.02); tone(d,'sawtooth',1400,500,0.12,0.05); }],
     hit:    [35, (d,o)=>{ const w=Math.min(1,o.w||0.3); tone(d,'sine',190-70*w,48,0.10+0.12*w,0.5+0.3*w); noise(d,'lowpass',2600-1200*w,400,0.07+0.05*w,0.35+0.25*w);
               if(o.el==='fire') noise(d,'highpass',2500,6000,0.18,0.12,0.02); if(o.el==='water') tone(d,'sine',500,1100,0.12,0.12,0.02); if(o.el==='plant') tone(d,'triangle',260,180,0.12,0.14,0.02); }],
     block:  [60, d=>{ tone(d,'square',980,940,0.11,0.10); tone(d,'square',1470,1440,0.09,0.07); noise(d,'highpass',4000,4000,0.03,0.2); }],
@@ -43,6 +54,7 @@
               if(st==='bow'){ tone(d,'triangle',330,170,0.16,0.3); noise(d,'bandpass',1200,3600,0.14,0.14,0.02,2,0.03); }
               else if(st==='staff'){ tone(d,'sine',420,1250,0.2,0.2); tone(d,'triangle',630,1880,0.2,0.08); }
               else if(st==='hurl'){ noise(d,'bandpass',700,2400,0.16,0.22,0,1.5,0.04); }
+              else if(smp(d,st==='akimbo'?'pistol':'magnum',st==='akimbo'?0.7:0.85,1)){ tone(d,'sine',150,45,0.09,0.35); }
               else{ noise(d,'highpass',1200,500,0.07,0.45); tone(d,'square',720,140,0.07,0.18); } }],
     boom:   [90, (d,o)=>{ const k=o.small?0.6:1; noise(d,'lowpass',1400*k,70,0.5*k,0.8*k); tone(d,'sine',110,32,0.45*k,0.7*k); noise(d,'highpass',2000,800,0.06,0.3*k); }],
     quake:  [120,d=>{ noise(d,'lowpass',260,50,0.55,0.9,0,1,0.03); tone(d,'sine',70,34,0.5,0.6); }],
@@ -72,5 +84,5 @@
   }
   function setMuted(m){ muted=!!m; if(out) out.gain.value=muted?0:vol; save(); if(!muted&&unlock()) play('click'); }
   for(const ev of ['pointerdown','keydown','touchend']) window.addEventListener(ev,unlock,{capture:true,passive:true});
-  window.SFX={play,unlock,setMuted,toggle:()=>{ setMuted(!muted); return muted; },get muted(){ return muted; },get state(){ return ctx?ctx.state:'off'; },names:Object.keys(S)};
+  window.SFX={play,unlock,setMuted,toggle:()=>{ setMuted(!muted); return muted; },get muted(){ return muted; },get state(){ return ctx?ctx.state:'off'; },get loaded(){ let n=0; for(const k in BUF) n+=BUF[k].filter(Boolean).length; return n; },names:Object.keys(S)};
 })();
