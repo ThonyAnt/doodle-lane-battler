@@ -8,7 +8,7 @@ Hackathon MVP with three ways to play: against a bot, two players on one screen,
 
 Open `/duel` on the same server for a live two-player stickman fight. Before each round both players draw two things (a sword, a bow, a bomb, a shield, wings, a snack) and share 100 ink between them; the vision model decides what each drawing does and the ink spent sets how strong it is. Then you fight live: move, double jump, and use your two drawings. First to 2 rounds wins. It has the same three ways to play (bot, one screen, online rooms with a QR code).
 
-Keys: A/D move, W jump, S drop through a platform, F and G use your drawings. Second player on one screen: arrows, K and L. Touch buttons appear under the arena on tablets.
+Keys: A/D move, W jump, S drop through a platform, F and G use your drawings. Tap a blade repeatedly for a 3-hit combo; attack while running, in the air, or holding down for other moves. Bows and guns keep firing as you tap, and down + attack is a charged shot. Second player on one screen: arrows, K and L. Touch buttons appear under the arena on tablets.
 
 ## Run
 
@@ -52,6 +52,7 @@ The server runs the match; each device only draws and displays, so both players 
 - `index.html`: the whole game (simulation, bot, drawing pads, rendering).
 - `server.js`: serves the page, reads drawings with OpenAI (the key never reaches the browser), and runs online rooms. It loads the match rules from the marked block in `index.html`, so there is one copy of the rules.
 - `duel.html` and `duel-server.js`: Doodle Duel. Same pattern: the rules sit in a marked block in `duel.html` and the server runs that block for online rooms.
+- `anim/`: Doodle Duel animation clips (run, blade combo, bow, gun) and the engine that plays them; see `anim/README.md`. `anim-lab.html` previews clips and `tools/strip.js` renders them to frame strips.
 - `qrcode.js`: QR Code Generator by Kazuhiko Arase (MIT), used for the join code.
 
 ## Status

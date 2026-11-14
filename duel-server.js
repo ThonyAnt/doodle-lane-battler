@@ -2,7 +2,7 @@
 // Loaded by server.js. The match rules come from the marked block in duel.html, so there is one copy of them.
 const fs=require('fs'), path=require('path');
 
-const PROMPT="You are the referee of a stick-figure fighting game. The attached image is a quick doodle a player drew as their fighter's weapon or ability.\nDecide what it is and classify it. Reply with JSON only, no other text:\n{\"name\":\"2-3 word name of what was drawn\",\"kind\":\"melee|ranged|bomb|shield|dash|heal\",\"element\":\"fire|water|plant|none\"}\nRules: kind is \"melee\" for anything swung, stabbed or punched with (sword, axe, hammer, club, fist, claw, whip).\n\"ranged\" for anything that shoots or flies straight (gun, bow, wand, laser, shuriken, arrow).\n\"bomb\" for anything that explodes or splashes over an area (bomb, grenade, flask, meteor, firework).\n\"shield\" for anything that blocks or protects (shield, wall, armour, helmet, umbrella).\n\"dash\" for anything that makes you fast or lets you fly (wings, rocket, boots, skateboard, lightning bolt, spring).\n\"heal\" for anything that restores health (heart, food, drink, bandage, medkit).\nelement is \"fire\" for flames, heat or lava, \"water\" for water or ice, \"plant\" for leaves, wood or vines, otherwise \"none\". Ink colour is a hint (red fire, blue water, green plant) but the content of the drawing decides.\nAlways pick the closest fit, even for a scribble.";
+const PROMPT="You are the referee of a stick-figure fighting game. The attached image is a quick doodle a player drew as their fighter's weapon or ability.\nDecide what it is and classify it. Reply with JSON only, no other text:\n{\"name\":\"2-3 word name of what was drawn\",\"kind\":\"melee|ranged|bomb|shield|dash|heal\",\"style\":\"bow|gun\",\"element\":\"fire|water|plant|none\"}\nRules: kind is \"melee\" for anything swung, stabbed or punched with (sword, axe, hammer, club, fist, claw, whip).\n\"ranged\" for anything that shoots or flies straight (gun, bow, wand, laser, shuriken, arrow).\nstyle only matters for ranged: \"bow\" for bows, crossbows, slingshots and anything drawn back or thrown; \"gun\" for guns, cannons, wands, lasers and anything with a trigger.\n\"bomb\" for anything that explodes or splashes over an area (bomb, grenade, flask, meteor, firework).\n\"shield\" for anything that blocks or protects (shield, wall, armour, helmet, umbrella).\n\"dash\" for anything that makes you fast or lets you fly (wings, rocket, boots, skateboard, lightning bolt, spring).\n\"heal\" for anything that restores health (heart, food, drink, bandage, medkit).\nelement is \"fire\" for flames, heat or lava, \"water\" for water or ice, \"plant\" for leaves, wood or vines, otherwise \"none\". Ink colour is a hint (red fire, blue water, green plant) but the content of the drawing decides.\nAlways pick the closest fit, even for a scribble.";
 
 module.exports=function({readBody,KEY,MODEL,BASE}){
   const page=path.join(__dirname,'duel.html'), src=fs.readFileSync(page,'utf8');
@@ -81,12 +81,18 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
     if(!it) return [409,{error:'Too late: the round has started.'}];
     room.art[side][slot]={strokes,ver:it.ver,kind:it.kind}; room.dirty=true;
     broadcast(room,'item',{side,slot,strokes,ver:it.ver,kind:it.kind});
-    return [200,{name:it.name,kind:it.kind,element:it.el,source}];
+    return [200,{name:it.name,kind:it.kind,style:it.style,element:it.el,source}];
   }
 
   /* ---------- http ---------- */
   return async function handle(req,res,url){
     const p=url.pathname;
+    // Animation clip files and the preview lab are plain static files.
+    if(req.method==='GET'&&(/^\/anim\/[a-z_]+\.js$/.test(p)||p==='/anim-lab.html')){
+      const file=path.join(__dirname,p.slice(1));
+      if(!fs.existsSync(file)){ res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-cache'}); res.end('/* '+p+' is not written yet */'); return true; }
+      res.writeHead(200,{'Content-Type':(p.endsWith('.html')?'text/html':'text/javascript')+'; charset=utf-8','Cache-Control':'no-cache'}); fs.createReadStream(file).pipe(res); return true;
+    }
     if(p!=='/duel'&&p!=='/duel.html'&&!p.startsWith('/duel/')) return false;
     const send=(code,obj)=>{ res.writeHead(code,{'Content-Type':'application/json','Cache-Control':'no-store'}); res.end(JSON.stringify(obj)); };
     if(req.method==='GET'&&(p==='/duel'||p==='/duel.html')){
@@ -96,7 +102,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
     if(req.method==='POST'&&p==='/duel/read'){
       if(!KEY){ send(500,{error:'OPENAI_API_KEY is not set on the server'}); return true; }
       const out=await readDrawing(await readBody(req,2e6),null);
-      out?send(200,Object.assign({source:out.source,element:out.spec.element},out.spec)):send(502,{error:'OpenAI could not read the drawing'}); return true;
+      out?send(200,Object.assign({source:out.source},out.spec)):send(502,{error:'OpenAI could not read the drawing'}); return true;
     }
     if(req.method==='POST'&&p==='/duel/room'){
       if(rooms.size>=500) send(503,{error:'Too many rooms are open right now.'}); else send(200,{code:newRoom().code});

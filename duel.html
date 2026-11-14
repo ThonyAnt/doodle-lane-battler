@@ -131,12 +131,18 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
   <ul class="rules">
     <li><b>Draw two things</b> before each round: a sword, a bow, a bomb, a shield, wings, a snack. You share 100 ink between them, and more ink means a stronger item.</li>
     <li><b>Fight live:</b> move, double jump, and use your two drawings. An empty slot is a punch. First to 2 rounds wins.</li>
+    <li><b>Moves:</b> tap a blade for a 3-hit combo, or swing it while running, in the air, or holding down for a launcher. Bows and guns keep firing as you tap; hold down for a charged shot.</li>
     <li><span class="chip fire">fire</span> burns after the hit · <span class="chip water">water</span> slows and shoves · <span class="chip plant">plant</span> heals you for part of the damage · plain ink hits 15% harder.</li>
     <li>Shields only block from the front. Your own bombs hurt you too. Snacks heal 3 times per round.</li>
   </ul>
 </main>
 
 <script src="/qrcode.js"></script>
+<script src="/anim/core.js"></script>
+<script src="/anim/locomotion.js"></script>
+<script src="/anim/blade.js"></script>
+<script src="/anim/bow.js"></script>
+<script src="/anim/gun.js"></script>
 <script>
 /*DUEL-START*/
 // Pure match rules for Doodle Duel. No DOM access in this block: the server runs the same code for online rooms.
@@ -150,11 +156,12 @@ function validItem(o){
   if(!o||typeof o!=='object') return null;
   const kind=String(o.kind||'').toLowerCase().trim(), el=String(o.element||'none').toLowerCase().trim();
   if(!KINDS.includes(kind)) return null;
-  return {name:String(o.name||'').replace(/[<>&"']/g,'').trim().slice(0,22),kind,element:ELS.includes(el)?el:'none'};
+  const style=kind==='ranged'?(String(o.style||'').toLowerCase().trim()==='bow'?'bow':'gun'):'';
+  return {name:String(o.name||'').replace(/[<>&"']/g,'').trim().slice(0,22),kind,style,element:ELS.includes(el)?el:'none'};
 }
 function nameFor(spec){
   const el={none:'Scribble',fire:'Fire',water:'Water',plant:'Leafy'}[spec.element];
-  return el+' '+{melee:'Blade',ranged:'Shooter',bomb:'Bomb',shield:'Shield',dash:'Wings',heal:'Snack'}[spec.kind];
+  return el+' '+(spec.kind==='ranged'?(spec.style==='bow'?'Bow':'Blaster'):{melee:'Blade',bomb:'Bomb',shield:'Shield',dash:'Wings',heal:'Snack'}[spec.kind]);
 }
 // Rough guess from shape and ink colour, used when no vision model is available.
 function localGuess(strokes){
@@ -164,7 +171,7 @@ function localGuess(strokes){
   const a=strokes[0].pts, closed=Math.hypot(a[0][0]-a[a.length-1][0],a[0][1]-a[a.length-1][1])<size*0.25&&a.length>=4;
   let element='none', best=len.none*0.8; for(const e of ['fire','water','plant']) if(len[e]>best){ best=len[e]; element=e; }
   const kind=aspect>=2.4?'melee':closed?(size<130?'bomb':'shield'):w>h*1.25?'ranged':strokes.length>=3?'dash':'heal';
-  const spec={kind,element,name:''}; spec.name=nameFor(spec); return spec;
+  const spec={kind,style:kind==='ranged'?(h>w?'bow':'gun'):'',element,name:''}; spec.name=nameFor(spec); return spec;
 }
 // Ink spent sets strength; the kind only decides what the item does.
 function itemStats(kind,el,cost){
@@ -178,9 +185,32 @@ function itemStats(kind,el,cost){
     default:      return {p,size:22+6*p,heal:6+7*p,cd:4.5};
   }
 }
+// Every attack is a move with fixed timing. Times are in seconds of the move's own clock, and each move
+// has an animation clip of the same name in anim/*.js whose marks must match these numbers.
+//   hits/shots: when damage lands or a projectile leaves.  cancel: earliest time a follow-up press chains into `next`.
+//   dmg: multiplier on the item's damage.  lunge/carry: forward speed given to the fighter.  lift: upward knock on the target.
+const MOVES={
+  punch:    {dur:0.26,hits:[0.08],cancel:0.18,next:'punch',dmg:1,kb:200,lift:120,lunge:130},
+  blade1:   {dur:0.34,hits:[0.12],cancel:0.24,next:'blade2',dmg:0.6,kb:150,lift:60,lunge:170},
+  blade2:   {dur:0.36,hits:[0.13],cancel:0.26,next:'blade3',dmg:0.7,kb:180,lift:140,lunge:190},
+  blade3:   {dur:0.64,hits:[0.30],dmg:1.5,kb:420,lift:280,lunge:260,lungeAt:0.2,reach:1.15,end:1},
+  blade_run:{dur:0.42,hits:[0.14],dmg:1.05,kb:320,lift:120,carry:380,end:1},
+  blade_air:{dur:0.42,hits:[0.10,0.24],dmg:0.55,kb:200,lift:-160,tall:110,end:1},
+  blade_up: {dur:0.46,hits:[0.16],dmg:0.95,kb:110,lift:560,hop:250,tall:110,end:1},
+  bow_shot: {dur:0.50,shots:[0.30],cancel:0.42,next:'bow_quick',dmg:1.3,speed:760,grav:220},
+  bow_quick:{dur:0.34,shots:[0.18],cancel:0.30,next:'bow_quick',dmg:0.75,speed:760,grav:220},
+  bow_air:  {dur:0.42,shots:[0.22],dmg:1.0,speed:760,aim:0.44,grav:120,hop:130,end:1},
+  bow_power:{dur:0.80,shots:[0.58],dmg:2.2,speed:980,grav:90,kbMul:2.2,recoil:120,end:1},
+  gun_shot: {dur:0.26,shots:[0.08],cancel:0.18,next:'gun_rapid',dmg:0.55,speed:920,recoil:40},
+  gun_rapid:{dur:0.18,shots:[0.05],cancel:0.16,next:'gun_rapid',dmg:0.42,speed:920,recoil:30},
+  gun_air:  {dur:0.28,shots:[0.08],dmg:0.45,speed:920,recoil:170,end:1},
+  gun_power:{dur:0.60,shots:[0.36],dmg:1.8,speed:1100,kbMul:2.4,recoil:260,end:1},
+  throw:    {dur:0.22,end:1}
+};
+const ALT=['blade1','blade2','bow_shot','bow_quick','gun_shot','gun_rapid'];   // moves with a second animation, name + '_b'
 function createDuel(){
   let acc=0, nextId=1; const STEP=1/60, r1=v=>Math.round(v*10)/10;
-  const PUNCH={name:'Fists',kind:'melee',el:'none',cost:0,st:Object.assign(itemStats('melee','none',6),{reach:36,dmg:4})};
+  const PUNCH={name:'Fists',kind:'melee',style:'fist',el:'none',cost:0,st:Object.assign(itemStats('melee','none',6),{reach:36,dmg:4})};
   const fresh=side=>({side,x:side?AW-220:220,y:0,vx:0,vy:0,face:side?-1:1,hp:HP,ground:true,jumps:0,jq:0,buf:[0,0],cd:[0,0],cdMax:[1,1],
     act:null,shield:0,hurt:0,burn:0,burnDps:0,slow:0,dash:0,dashHit:false,dashItem:null,drop:0,uses:[3,3],held:0});
   const S={phase:'draw',t:45,round:1,wins:[0,0],ready:[false,false],items:[[null,null],[null,null]],f:[fresh(0),fresh(1)],pr:[],events:[],
@@ -190,7 +220,8 @@ function createDuel(){
   S.setItem=(side,k,spec,cost)=>{
     if(S.phase!=='draw'&&S.phase!=='count') return null;
     const other=S.items[side][1-k]; cost=Math.min(cost,INK_MAX-(other?other.cost:0)); if(cost<MIN_COST-0.5) return null;
-    return S.items[side][k]={name:spec.name||nameFor(spec),kind:spec.kind,el:spec.element,cost,st:itemStats(spec.kind,spec.element,cost),ver:++S.ver};
+    const style=spec.kind==='ranged'?(spec.style==='bow'?'bow':'gun'):spec.kind==='melee'?'blade':'';
+    return S.items[side][k]={name:spec.name||nameFor(spec),kind:spec.kind,style,el:spec.element,cost,st:itemStats(spec.kind,spec.element,cost),ver:++S.ver};
   };
   S.clearItem=(side,k)=>{ if(S.phase==='draw') S.items[side][k]=null; };
   S.setReady=side=>{ if(S.phase==='draw') S.ready[side]=true; };
@@ -198,13 +229,13 @@ function createDuel(){
   S.setInput=(side,i)=>{
     const f=S.f[side], inp=S.inp[side], c=S.cnt[side]; inp.l=i.l?1:0; inp.r=i.r?1:0; inp.d=i.d?1:0;
     if(i.j!==c.j){ c.j=i.j; if(S.phase==='fight') f.jq=Math.min(2,f.jq+1); }
-    if(i.a!==c.a){ c.a=i.a; f.buf[0]=0.2; }
-    if(i.b!==c.b){ c.b=i.b; f.buf[1]=0.2; }
+    if(i.a!==c.a){ c.a=i.a; f.buf[0]=0.32; }
+    if(i.b!==c.b){ c.b=i.b; f.buf[1]=0.32; }
   };
   function hurt(t,dmg,el,kx,ky,by,fromX){
     const blocked=t.shield>0&&Math.sign(fromX-t.x)===t.face;
     if(blocked){ dmg*=0.15; kx*=0.3; ky*=0.3; } else if(el==='water') kx*=1.45;
-    t.hp-=dmg; t.vx=kx; if(ky>0){ t.vy=ky; t.ground=false; }
+    t.hp-=dmg; t.vx=kx; if(ky>0){ t.vy=ky; t.ground=false; } else if(ky<0&&!t.ground) t.vy=ky;
     if(!blocked){
       t.hurt=0.2; t.act=null; t.dash=0;
       if(el==='fire'){ t.burn=2; t.burnDps=dmg*0.15; }
@@ -213,16 +244,27 @@ function createDuel(){
     }
     S.events.push({e:blocked?'block':'hit',x:Math.round(t.x),y:Math.round(t.y+52),n:Math.max(1,Math.round(dmg)),el,side:t.side});
   }
+  // Begin a move: the fighter is committed until it ends or chains.
+  function startMove(f,k,m){
+    const it=itemOf(f.side,k), M=MOVES[m], p=it.st.p;
+    f.act={k,m,v:ALT.includes(m)&&Math.random()<0.5?1:0,t:0,dur:M.dur,rate:1/(it.kind==='ranged'?0.75+0.25*p:0.85+0.15*p),done:0,lunged:false};
+    f.buf[k]=0; f.held=k;
+    if(M.carry) f.vx=f.face*Math.max(Math.abs(f.vx),M.carry);
+    if(M.hop&&f.ground){ f.vy=M.hop; f.ground=false; f.jumps=1; } else if(M.hop) f.vy=Math.max(f.vy,M.hop);
+  }
+  function firstMove(f,it){
+    const inp=S.inp[f.side];
+    if(it===PUNCH) return 'punch';
+    if(it.kind==='melee') return !f.ground?'blade_air':inp.d?'blade_up':Math.abs(f.vx)>200&&Math.sign(f.vx)===f.face?'blade_run':'blade1';
+    return it.style+(!f.ground?'_air':inp.d?'_power':'_shot');
+  }
   function use(f,k){
     const it=itemOf(f.side,k), st=it.st; f.buf[k]=0; f.held=k;
     const cool=s=>{ f.cd[k]=f.cdMax[k]=s; };
-    if(it.kind==='melee'){ f.act={k,kind:'melee',t:0,wind:st.wind,dur:st.wind+0.17,hit:false}; cool(st.cd+st.wind); }
-    else if(it.kind==='ranged'){
-      f.act={k,kind:'ranged',t:0,wind:0,dur:0.14,hit:true}; cool(st.cd);
-      S.pr.push({id:nextId++,k:'shot',side:f.side,slot:k,x:f.x+f.face*44,y:f.y+70,vx:f.face*st.speed,vy:0,dmg:st.dmg,el:it.el,kb:st.kb,ttl:1.4});
-    }else if(it.kind==='bomb'){
-      f.act={k,kind:'bomb',t:0,wind:0,dur:0.2,hit:true}; cool(st.cd);
-      S.pr.push({id:nextId++,k:'bomb',side:f.side,slot:k,x:f.x+f.face*14,y:f.y+72,vx:f.face*340+f.vx*0.4,vy:420,dmg:st.dmg,el:it.el,kb:st.kb,radius:st.radius,ttl:3});
+    if(it.kind==='melee'||it.kind==='ranged') startMove(f,k,firstMove(f,it));
+    else if(it.kind==='bomb'){
+      startMove(f,k,'throw'); cool(st.cd);
+      S.pr.push({id:nextId++,k:'bomb',side:f.side,slot:k,x:f.x+f.face*14,y:f.y+72,vx:f.face*340+f.vx*0.4,vy:420,dmg:st.dmg,el:it.el,kb:st.kb,radius:st.radius,grav:1100,ttl:3});
     }else if(it.kind==='shield'){ f.shield=st.dur; cool(st.cd+st.dur); }
     else if(it.kind==='dash'){ f.dash=0.2; f.dashHit=false; f.dashItem=it; f.vx=f.face*st.speed; cool(st.cd); S.events.push({e:'dash',x:Math.round(f.x),y:Math.round(f.y+40),side:f.side}); }
     else{
@@ -231,12 +273,37 @@ function createDuel(){
       S.events.push({e:'heal',x:Math.round(f.x),y:Math.round(f.y+96),n:Math.round(n),side:f.side});
     }
   }
+  // Advance the fighter's current move: lunges, hits, shots, chaining and the end.
+  function act(f,dt){
+    const a=f.act, M=MOVES[a.m], it=itemOf(f.side,a.k), st=it.st, e=S.f[1-f.side], k=a.k;
+    a.t+=dt*a.rate;
+    if(M.lunge&&!a.lunged&&a.t>=(M.lungeAt||0.04)){ a.lunged=true; if(f.ground) f.vx=f.face*Math.max(Math.abs(f.vx)*0.5,M.lunge); }
+    const marks=M.hits||M.shots||[];
+    while(a.done<marks.length&&a.t>=marks[a.done]){
+      if(M.hits){
+        const dx=(e.x-f.x)*f.face, reach=st.reach*(M.reach||1);
+        if(dx>-14&&dx<reach+14&&Math.abs(e.y-f.y)<(M.tall||72)){ a.done++; hurt(e,st.dmg*M.dmg,it.el,f.face*M.kb*(0.7+0.3*st.p),M.lift,f,f.x); continue; }
+        if(a.t<marks[a.done]+0.07) break;      // the blade stays dangerous for a moment
+        a.done++;
+      }else{
+        a.done++;
+        const bow=it.style==='bow', aim=M.aim||0;
+        S.pr.push({id:nextId++,k:'shot',st:it.style,side:f.side,slot:k,x:f.x+f.face*(bow?40:48),y:f.y+(bow?72:71),
+          vx:f.face*M.speed*Math.cos(aim),vy:-M.speed*Math.sin(aim),grav:M.grav||0,dmg:st.dmg*M.dmg,el:it.el,kb:st.kb*(M.kbMul||1),ttl:1.6});
+        if(M.recoil) f.vx-=f.face*M.recoil;
+        S.events.push({e:'shot',x:Math.round(f.x+f.face*(bow?44:62)),y:Math.round(f.y+72),st:it.style,side:f.side,f:f.face,el:it.el});
+      }
+    }
+    if(!f.act||f.act!==a) return;                       // a trade knocked us out of the move
+    if(M.next&&f.buf[k]>0&&a.t>=M.cancel){ startMove(f,k,M.next); return; }
+    if(a.t>=a.dur){ f.act=null; if(M.hits||M.shots) f.cd[k]=f.cdMax[k]=M.end?st.cd:st.cd*0.45; }
+  }
   function control(f,dt){
     const inp=S.inp[f.side], e=S.f[1-f.side];
     for(const k of [0,1]){ f.cd[k]=Math.max(0,f.cd[k]-dt); f.buf[k]=Math.max(0,f.buf[k]-dt); }
     f.shield=Math.max(0,f.shield-dt); f.hurt=Math.max(0,f.hurt-dt); f.slow=Math.max(0,f.slow-dt); f.drop=Math.max(0,f.drop-dt);
     if(f.burn>0){ f.burn-=dt; f.hp-=f.burnDps*dt; }
-    if(f.act){ f.act.t+=dt; if(f.act.t>=f.act.dur) f.act=null; }
+    if(f.act) act(f,dt);
     if(f.dash>0){
       f.dash-=dt; f.vy=0;
       if(!f.dashHit&&Math.abs(e.x-f.x)<36&&Math.abs(e.y-f.y)<70){ f.dashHit=true; hurt(e,f.dashItem.st.dmg,f.dashItem.el,f.face*f.dashItem.st.kb,200,f,f.x); }
@@ -246,10 +313,11 @@ function createDuel(){
       if(stunned){ f.vx*=Math.max(0,1-3*dt); f.jq=0; }
       else{
         if(dir&&!f.act) f.face=dir;
-        const max=250*(f.slow>0?0.55:1)*(f.shield>0?0.6:1), a=(f.ground?2600:1500)*dt;
-        f.vx+=Math.max(-a,Math.min(a,dir*max-f.vx));
-        if(f.jq>0){ f.jq--; if(f.ground||f.jumps<2){ f.vy=f.ground?640:560; f.jumps=f.ground?1:2; f.ground=false; } }
-        if(inp.d&&f.ground&&f.y>0) f.drop=0.22;
+        // While committed to a move the fighter can only drift.
+        const max=250*(f.slow>0?0.55:1)*(f.shield>0?0.6:1), a=(f.act?(f.ground?900:500):(f.ground?2600:1500))*dt, want=f.act?dir*max*0.3:dir*max;
+        f.vx+=Math.max(-a,Math.min(a,want-f.vx));
+        if(f.jq>0){ f.jq--; if(!f.act&&(f.ground||f.jumps<2)){ f.vy=f.ground?640:560; f.jumps=f.ground?1:2; f.ground=false; } }
+        if(inp.d&&f.ground&&f.y>0&&!f.act&&f.buf[0]<=0&&f.buf[1]<=0) f.drop=0.22;
         for(const k of [0,1]) if(f.buf[k]>0&&f.cd[k]<=0&&!f.act) use(f,k);
       }
       f.vy-=1750*dt;
@@ -260,19 +328,15 @@ function createDuel(){
     if(land){ f.vy=0; f.jumps=0; } f.ground=land;
     if(f.x<18){ f.x=18; f.vx=Math.max(0,f.vx); } if(f.x>AW-18){ f.x=AW-18; f.vx=Math.min(0,f.vx); }
   }
-  function melee(f){
-    const a=f.act; if(!a||a.kind!=='melee'||a.hit||a.t<a.wind) return;
-    if(a.t>a.wind+0.1){ a.hit=true; return; }
-    const it=itemOf(f.side,a.k), e=S.f[1-f.side], dx=(e.x-f.x)*f.face;
-    if(dx>-12&&dx<it.st.reach+14&&Math.abs(e.y-f.y)<72){ a.hit=true; hurt(e,it.st.dmg,it.el,f.face*it.st.kb,180,f,f.x); }
-  }
   function projectiles(dt){
     for(const p of S.pr){
-      p.ttl-=dt; if(p.k==='bomb') p.vy-=1100*dt;
+      p.ttl-=dt; p.vy-=(p.grav||0)*dt;
       p.x+=p.vx*dt; p.y+=p.vy*dt;
       const e=S.f[1-p.side], touch=Math.abs(p.x-e.x)<18&&p.y>e.y-4&&p.y<e.y+94;
-      if(p.k==='shot'){ if(touch){ hurt(e,p.dmg,p.el,Math.sign(p.vx)*p.kb,90,S.f[p.side],p.x-Math.sign(p.vx)*30); p.ttl=0; } }
-      else if(touch||p.y<=0||p.ttl<=0){
+      if(p.k==='shot'){
+        if(touch){ hurt(e,p.dmg,p.el,Math.sign(p.vx)*p.kb,90,S.f[p.side],p.x-Math.sign(p.vx)*30); p.ttl=0; }
+        else if(p.y<=0) p.ttl=0;
+      }else if(touch||p.y<=0||p.ttl<=0){
         const by=Math.max(0,p.y);
         for(const g of S.f){
           const d=Math.hypot(g.x-p.x,g.y+45-by); if(d>=p.radius+20) continue;
@@ -297,7 +361,6 @@ function createDuel(){
       return;
     }
     for(const f of S.f) control(f,dt);
-    for(const f of S.f) melee(f);
     projectiles(dt);
     const a=S.f[0], b=S.f[1], d0=a.hp<=0, d1=b.hp<=0;
     if(d0||d1||S.t<=0){
@@ -308,12 +371,12 @@ function createDuel(){
   }
   S.step=dt=>{ acc+=Math.min(0.25,dt); while(acc>=STEP){ acc-=STEP; tick(STEP); } };
   S.snapshot=()=>({phase:S.phase,t:+S.t.toFixed(2),round:S.round,wins:S.wins,ready:S.ready,winner:S.winner,champ:S.champ,ink:[S.inkLeft(0),S.inkLeft(1)],
-    items:S.items.map(a=>a.map(it=>it&&{name:it.name,kind:it.kind,el:it.el,cost:Math.round(it.cost),ver:it.ver,sz:Math.round(it.st.size)})),
+    items:S.items.map(a=>a.map(it=>it&&{name:it.name,kind:it.kind,style:it.style,el:it.el,cost:Math.round(it.cost),ver:it.ver,sz:Math.round(it.st.size)})),
     f:S.f.map(f=>({x:r1(f.x),y:r1(f.y),vx:Math.round(f.vx),vy:Math.round(f.vy),face:f.face,hp:Math.max(0,r1(f.hp)),g:f.ground?1:0,
-      act:f.act?{k:f.act.k,kind:f.act.kind,p:+(f.act.t/f.act.dur).toFixed(2),w:+(f.act.wind/f.act.dur).toFixed(2)}:null,
+      act:f.act?{k:f.act.k,m:f.act.m+(f.act.v?'_b':''),t:+f.act.t.toFixed(3),r:+f.act.rate.toFixed(2)}:null,
       sh:f.shield>0?1:0,hurt:f.hurt>0?1:0,burn:f.burn>0?1:0,slow:f.slow>0?1:0,dash:f.dash>0?1:0,held:f.held,
       cd:[+(f.cd[0]/f.cdMax[0]).toFixed(2),+(f.cd[1]/f.cdMax[1]).toFixed(2)],uses:f.uses})),
-    pr:S.pr.map(p=>({id:p.id,k:p.k,side:p.side,slot:p.slot,x:r1(p.x),y:r1(p.y),vx:Math.round(p.vx),vy:Math.round(p.vy),el:p.el})),
+    pr:S.pr.map(p=>({id:p.id,k:p.k,st:p.st,side:p.side,slot:p.slot,x:r1(p.x),y:r1(p.y),vx:Math.round(p.vx),vy:Math.round(p.vy),el:p.el})),
     ev:S.events.splice(0)});
   return S;
 }
@@ -354,11 +417,12 @@ function botLoadout(){
     bomb:[ring(240,170,62,62,0,T),[[270,115],[300,80],[290,60]]],
     shield:[[[160,60],[320,60],[320,170],[240,255],[160,170],[160,60]],[[240,90],[240,210]]],
     dash:[[[120,150],[200,90],[280,150]],[[200,150],[280,90],[360,150]],[[150,190],[330,190]]],
+    gun:[[[150,110],[330,110],[330,145],[205,145],[192,205],[150,205],[150,110]],[[215,145],[222,170],[200,172]]],
     heal:[[[240,230],[170,150],[170,110],[205,95],[240,125],[275,95],[310,110],[310,150],[240,230]]]
   };
-  const main=pick(['melee','melee','ranged','bomb']), side=pick(['shield','dash','heal','ranged','bomb','melee'].filter(k=>k!==main));
+  const main=pick(['melee','melee','ranged','gun','bomb']), side=pick(['shield','dash','heal','ranged','gun','bomb','melee'].filter(k=>k!==main));
   return [[main,pick(ELS),46],[side,pick(ELS),34]].map(([kind,element,cost])=>{
-    const spec={kind,element,name:''}; spec.name=nameFor(spec);
+    const spec={kind:kind==='gun'?'ranged':kind,style:kind==='gun'?'gun':kind==='ranged'?'bow':'',element,name:''}; spec.name=nameFor(spec);
     return {spec,cost,strokes:art[kind].map(pts=>({el:element,pts}))};
   });
 }
@@ -368,6 +432,10 @@ function botLoadout(){
 const $=id=>document.getElementById(id);
 const PEN={none:'#1c2541',fire:'#e2552d',water:'#2a7fd4',plant:'#2f9e56'}, PCOL=['#2f6fde','#d9486e'], NAME=['Blue','Red'];
 const GY=392, cv=$('arena'), L=cv.getContext('2d');
+// Match the canvas backing store to the screen's real pixels so lines stay sharp on high-density displays.
+let VS=1;
+function fitCanvas(){ const r=Math.min(3,window.devicePixelRatio||1), w=Math.max(960,Math.round(cv.clientWidth*r)); if(cv.width!==w){ cv.width=w; cv.height=Math.round(w*440/960); } VS=cv.width/960; }
+new ResizeObserver(fitCanvas).observe(cv); fitCanvas();
 let mode='bot', sim=null, bot=null, view=null, viewAt=0, net=null, local=[true,false], fx=[], shake=0, serverInfo={}, canRead=location.protocol.startsWith('http');
 const art=[[null,null],[null,null]], desk=[null,null];
 const inp=[0,1].map(()=>({l:0,r:0,d:0,j:0,a:0,b:0}));
@@ -401,15 +469,15 @@ function buildSprite(strokes,kind){
   const c=Math.cos(-ang), s=Math.sin(-ang);
   const R=strokes.map(st=>({el:st.el,pts:st.pts.map(p=>{ const dx=p[0]-cx,dy=p[1]-cy; return [dx*c-dy*s,dx*s+dy*c]; })}));
   let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(const st of R) for(const p of st.pts){ x0=Math.min(x0,p[0]); y0=Math.min(y0,p[1]); x1=Math.max(x1,p[0]); y1=Math.max(y1,p[1]); }
-  const k=120/Math.max(20,x1-x0,y1-y0), m=8, can=document.createElement('canvas');
+  const k=420/Math.max(20,x1-x0,y1-y0), m=28, can=document.createElement('canvas');
   can.width=Math.ceil((x1-x0)*k+m*2); can.height=Math.ceil((y1-y0)*k+m*2);
-  const g=can.getContext('2d'); g.translate(m-x0*k,m-y0*k); g.scale(k,k); drawStrokes(g,R,9/k);
+  const g=can.getContext('2d'); g.translate(m-x0*k,m-y0*k); g.scale(k,k); drawStrokes(g,R,31/k);
   return {cv:can,w:can.width,h:can.height};
 }
 function setArt(side,k,strokes,ver,kind){ art[side][k]=strokes?{ver,sprite:buildSprite(strokes,kind)}:null; }
 function sprite(side,k,size,grip){
   const a=art[side][k]; if(!a) return false; const sp=a.sprite, sc=size/Math.max(sp.w,sp.h);
-  L.drawImage(sp.cv,grip?-4*sc:-sp.w*sc/2,-sp.h*sc/2,sp.w*sc,sp.h*sc); return true;
+  L.drawImage(sp.cv,grip?-14*sc:-sp.w*sc/2,-sp.h*sc/2,sp.w*sc,sp.h*sc); return true;
 }
 
 /* ---------- drawing desks ---------- */
@@ -420,7 +488,7 @@ function buildDesks(){
     const el=document.createElement('div'); el.className='desk';
     el.innerHTML=`<h2><span class="dot" style="background:${PCOL[side]}"></span>${NAME[side]}'s sketchbook</h2>
       <div class="slots"><button class="slot" data-k="0" aria-pressed="true"></button><button class="slot" data-k="1" aria-pressed="false"></button></div>
-      <div class="padrow"><canvas class="pad" width="${PAD_W}" height="${PAD_H}" aria-label="Drawing pad"></canvas>
+      <div class="padrow"><canvas class="pad" width="${PAD_W*2}" height="${PAD_H*2}" aria-label="Drawing pad"></canvas>
         <div class="pens">${Object.keys(PEN).map((e,i)=>`<button class="pen" data-el="${e}" style="background:${PEN[e]}" aria-pressed="${i===0}" aria-label="${e==='none'?'Plain':e} ink" title="${e==='none'?'Plain':e} ink"></button>`).join('')}</div></div>
       <div class="inkrow"><span>Ink</span><div class="inkbar"><div class="have"></div><div class="cost"></div></div><span class="inkn"></span></div>
       <div class="actions"><button class="undo">Undo</button><button class="clear">Clear</button><button class="primary make">Make it!</button><button class="ready">I'm ready</button></div>
@@ -452,7 +520,7 @@ function buildDesks(){
 // Ink available for the slot being drawn: the full pot minus what the other slot already holds.
 function budget(d){ const o=view&&view.items[d.side][1-d.k]; return INK_MAX-(o?o.cost:0); }
 function updateDesk(d){
-  const g=d.g; g.fillStyle='#fff'; g.fillRect(0,0,PAD_W,PAD_H); drawStrokes(g,d.strokes,5);
+  const g=d.g; g.setTransform(2,0,0,2,0,0); g.fillStyle='#fff'; g.fillRect(0,0,PAD_W,PAD_H); drawStrokes(g,d.strokes,5);
   const items=view?view.items[d.side]:[null,null], cost=d.strokes.length?inkCost(d.strokes):0, have=budget(d), ready=!!(view&&view.ready[d.side]);
   d.el.querySelectorAll('.slot').forEach(b=>{ const k=+b.dataset.k, it=items[k];
     b.setAttribute('aria-pressed',k===d.k);
@@ -488,7 +556,7 @@ async function makeItem(d){
   }catch(e){ read.textContent=e.message; }
   d.busy=false; updateDesk(d);
 }
-const HINT={melee:'Swing it up close.',ranged:'Shoots straight ahead.',bomb:'Lobbed in an arc; mind the blast.',shield:'Blocks hits from the front for a moment.',dash:'A burst of speed that rams.',heal:'Restores health, 3 uses a round.'};
+const HINT={melee:'Tap again and again for a 3-hit combo; down + attack launches; try it running or in the air.',ranged:'Tap to keep firing; hold down and press for a charged shot.',bomb:'Lobbed in an arc; mind the blast.',shield:'Blocks hits from the front for a moment.',dash:'A burst of speed that rams.',heal:'Restores health, 3 uses a round.'};
 
 /* ---------- controls ---------- */
 const KEYS1={KeyA:'l',KeyD:'r',KeyW:'j',KeyS:'d',KeyF:'a',KeyG:'b'}, KEYS2={ArrowLeft:'l',ArrowRight:'r',ArrowUp:'j',ArrowDown:'d',KeyK:'a',KeyL:'b'};
@@ -524,7 +592,7 @@ function buildControls(){
 
 /* ---------- modes ---------- */
 function resetLocal(){
-  for(const s of [0,1]){ art[s]=[null,null]; Object.assign(inp[s],{l:0,r:0,d:0}); } fx=[]; view=null; poseNow[0]=poseNow[1]=null;
+  for(const s of [0,1]){ art[s]=[null,null]; Object.assign(inp[s],{l:0,r:0,d:0}); } fx=[]; view=null; resetAnim();
 }
 function setMode(m){
   mode=m; for(const b of ['Bot','2p','Online']) $('mode'+b).setAttribute('aria-pressed',m===b.toLowerCase());
@@ -614,127 +682,113 @@ function syncUI(){
 }
 
 /* ---------- rendering ---------- */
-// Pose animation in the style of motion-review.html: keyframed skeleton poses blended over time,
-// with wind-up, a fast cut through contact, follow-through, a painted slash trail and ink-burst impacts.
-// A pose is: head, neck, hips, back elbow/hand, front elbow/hand, knee/foot x2 (x,y pairs), then the weapon angle.
-const K=0.6, ARM=54, POSES={
-  idle: [-7,-154,-4,-132,0,-77,-30,-112,-20,-83,22,-112,39,-91,-18,-39,-33,0,24,-40,41,0,-0.95],
-  ready:[-15,-137,-13,-116,0,-67,-37,-104,-25,-84,9,-102,27,-89,-22,-32,-47,0,30,-33,56,0,-0.85],
-  wind: [-24,-142,-18,-119,0,-73,-45,-101,-61,-78,-43,-145,-34,-167,-27,-35,-54,0,29,-38,53,0,-2.35],
-  slash:[35,-139,20,-119,0,-70,-17,-103,-41,-121,50,-110,77,-94,-25,-34,-55,0,39,-30,70,0,0.24],
-  follow:[43,-134,26,-113,0,-67,-6,-85,-32,-72,49,-90,54,-63,-25,-33,-53,0,35,-29,65,0,0.90],
-  hurt:[-29,-147,-22,-125,-8,-75,-53,-110,-68,-126,5,-108,28,-115,-31,-37,-45,0,19,-37,38,0,-0.6],
-  guard:[-17,-146,-12,-124,0,-76,10,-109,33,-112,21,-115,38,-124,-24,-36,-43,0,25,-38,47,0,-1.3],
-  thrust:[25,-145,14,-124,0,-76,-19,-108,-46,-116,46,-118,80,-116,-22,-37,-52,0,36,-35,62,0,0],
-  leap:[-15,-154,-8,-130,0,-78,-40,-151,-33,-183,16,-155,-2,-184,-29,-55,-48,-27,32,-57,48,-38,-1.95],
-  air:[2,-152,0,-130,0,-78,-34,-126,-52,-148,26,-122,44,-138,-16,-46,-28,-10,18,-48,24,-12,-1.1],
-  gather:[-19,-151,-15,-128,0,-75,-26,-108,10,-112,14,-100,5,-73,-23,-37,-43,0,28,-37,49,0,1.05],
-  cast:[16,-150,8,-129,0,-76,38,-127,66,-123,13,-100,-6,-73,-24,-36,-47,0,30,-37,52,0,1.10],
-  fall:[-57,-102,-47,-83,-23,-44,-77,-66,-100,-74,-25,-58,-2,-49,-53,-21,-76,0,11,-22,43,0,-0.3],
-  down:[-80,-21,-58,-17,-9,-14,-64,-3,-91,-1,-34,-3,-7,-1,24,-9,57,0,21,-23,61,-5,0.05],
-  cheer:[-4,-158,-2,-136,0,-80,-30,-150,-38,-180,22,-150,30,-182,-16,-40,-24,0,18,-40,26,0,-1.5]
-};
-// Run cycle: contact, passing, opposite contact, passing. Arms swing against the legs.
-const RUN=[
-  [24,-143,15,-122,0,-72,-12,-100,-34,-84,30,-104,48,-96,-22,-42,-50,-20,30,-44,46,0,-0.7],
-  [22,-148,14,-127,0,-78,2,-102,4,-80,24,-106,40,-92,10,-46,-8,-24,4,-38,0,0,-0.8],
-  [24,-143,15,-122,0,-72,14,-104,34,-110,20,-100,36,-84,30,-44,46,0,-22,-42,-50,-20,-0.9],
-  [22,-148,14,-127,0,-78,2,-102,4,-80,24,-106,40,-92,4,-38,0,0,10,-46,-8,-24,-0.8]
-];
-// The shoulder is the sweep centre of a cut, so the hand and the blade stay on one circle.
-function orbitArm(p){ const a=p[22], c=Math.cos(a), s=Math.sin(a), bend=Math.sqrt(36*36-27*27);
-  p[10]=p[2]+27*c+bend*s; p[11]=p[3]+27*s-bend*c; p[12]=p[2]+ARM*c; p[13]=p[3]+ARM*s; return p; }
-const swingPose=(base,angle,headX)=>{ const p=[...POSES[base]]; p[2]=12; p[3]=-125; p[0]=headX; p[1]=-150; p[22]=angle; return orbitArm(p); };
-POSES.sWind=swingPose('wind',-2.4,3); POSES.sHit=swingPose('slash',0.06,23); POSES.sEnd=swingPose('follow',1.08,28);
-const mixPose=(a,b,u)=>a.map((v,i)=>v+(b[i]-v)*u), smooth=t=>t*t*(3-2*t), clamp01=v=>Math.max(0,Math.min(1,v));
-const TRAIL={none:['#465793','#9eb8d3','#fbf8ef'],fire:['#b8381a','#f08a3c','#fff1c9'],water:['#1f5fae','#6fb7ee','#eefaff'],plant:['#1f7a3e','#7fcf7a','#f3ffe6']};
-const poseNow=[null,null]; let lastRender=0;
-
-// Which pose the fighter is heading for, and how fast to get there.
-function targetPose(v,i,now,age){
-  const f=v.f[i], it=v.items[i][f.held], a=f.act, P=POSES;
-  if(v.phase==='end'||v.phase==='over'){ if(f.hp<=0) return {pose:P.down,rate:10}; if(v.winner===i) return {pose:P.cheer,rate:9}; }
-  if(f.hurt) return {pose:f.g?P.hurt:P.fall,rate:45};
-  if(a&&a.kind==='melee'){
-    const w=a.w||0.3, p=Math.min(1,a.p+age/0.3);
-    if(!it) return {pose:mixPose(P.ready,P.thrust,Math.sin(p*Math.PI)),rate:70};
-    if(p<w) return {pose:mixPose(P.ready,P.sWind,smooth(p/w)),rate:70};
-    const s=(p-w)/(1-w), e=1-Math.pow(1-s,3), ang=-2.4+3.48*e;
-    const body=e<0.71?mixPose(P.sWind,P.sHit,e/0.71):mixPose(P.sHit,P.sEnd,(e-0.71)/0.29); body[22]=ang; orbitArm(body);
-    return {pose:body,rate:200,swing:{s,ang}};
+// Fighter animation. Clips are authored in anim/*.js (see anim/README.md) and played here:
+// attacks follow the move clock from the rules, runs follow distance travelled, everything else runs on its own clock.
+const K=0.6, RUN_PX=193*K;
+// Stand-in clips, so the game still plays if a clip file is missing.
+(function(){
+  const P=ANIM.P, add=(n,c)=>{ if(!ANIM.clips[n]) ANIM.add(n,c); }, still=(n,p,loop)=>add(n,{dur:0.5,loop:!!loop,keys:[{t:0,p},{t:0.5,p}]});
+  still('idle','idle',1); still('fight_idle','ready',1); still('bow_stance','ready',1); still('gun_stance','ready',1);
+  still('rise','leap',1); still('fall','air',1); still('land','ready'); still('skid','ready'); still('guard','guard',1); still('cheer','cheer',1); still('sprint','thrust',1);
+  add('hit_react',{dur:0.22,keys:[{t:0,p:'hurt'},{t:0.22,p:'hurt'}]});
+  add('ko',{dur:0.8,keys:[{t:0,p:'hurt'},{t:0.3,p:'fall',ease:'out'},{t:0.6,p:'down',ease:'in'},{t:0.8,p:'down'}]});
+  add('throw',{dur:0.22,keys:[{t:0,p:'gather'},{t:0.08,p:'cast',ease:'snap'},{t:0.22,p:'ready'}]});
+  add('punch',{dur:0.26,marks:[{t:0.08,type:'hit'}],keys:[{t:0,p:'ready'},{t:0.04,p:P('ready',{fh:[-4,-104],hips:[-4,-66]}),ease:'out'},{t:0.08,p:'thrust',ease:'snap'},{t:0.13,p:'thrust'},{t:0.26,p:'ready'}]});
+  add('run',{dur:0.56,loop:true,keys:[
+    {t:0,p:[24,-143,15,-122,0,-72,-12,-100,-34,-84,30,-104,48,-96,-22,-42,-50,-20,30,-44,46,0,-0.7],ease:'linear'},
+    {t:0.14,p:[22,-148,14,-127,0,-78,2,-102,4,-80,24,-106,40,-92,10,-46,-8,-24,4,-38,0,0,-0.8],ease:'linear'},
+    {t:0.28,p:[24,-143,15,-122,0,-72,14,-104,34,-110,20,-100,36,-84,30,-44,46,0,-22,-42,-50,-20,-0.9],ease:'linear'},
+    {t:0.42,p:[22,-148,14,-127,0,-78,2,-102,4,-80,24,-106,40,-92,4,-38,0,0,10,-46,-8,-24,-0.8],ease:'linear'},
+    {t:0.56,p:[24,-143,15,-122,0,-72,-12,-100,-34,-84,30,-104,48,-96,-22,-42,-50,-20,30,-44,46,0,-0.7],ease:'linear'}]});
+  if(!ANIM.clips.run_aim) ANIM.clips.run_aim=ANIM.clips.run;
+  for(const m in MOVES){
+    if(ANIM.clips[m]) continue; const M=MOVES[m], h=(M.hits||M.shots||[M.dur*0.4])[0];
+    if(M.hits) add(m,{dur:M.dur,weapon:'blade',trail:[[Math.max(0,h-0.06),h+0.06]],keys:[{t:0,p:'ready'},
+      {t:Math.max(0.02,h-0.07),p:P('wind',{neck:[12,-125],head:[3,-150],ang:-2.4}),orbit:1,ease:'out'},{t:h,p:P('slash',{neck:[12,-125],head:[23,-150],ang:0.06}),orbit:1,ease:'snap'},
+      {t:Math.min(M.dur-0.02,h+0.1),p:P('follow',{neck:[12,-125],head:[28,-150],ang:1.08}),orbit:1,ease:'out'},{t:M.dur,p:'ready'}]});
+    else add(m,{dur:M.dur,keys:[{t:0,p:'ready'},{t:Math.max(0.02,h-0.02),p:'thrust',ease:'snap'},{t:M.dur,p:'ready'}]});
   }
-  if(a&&a.kind==='ranged') return {pose:P.thrust,rate:70};
-  if(a&&a.kind==='bomb') return {pose:P.cast,rate:55};
-  if(f.dash) return {pose:P.thrust,rate:70};
-  if(f.sh) return {pose:P.guard,rate:40};
-  if(!f.g) return {pose:f.vy>60?P.leap:P.air,rate:22};
-  if(Math.abs(f.vx)>40&&v.phase==='fight'){ const ph=(((f.x/58)%1)+1)%1*4, n=Math.floor(ph); return {pose:mixPose(RUN[n],RUN[(n+1)%4],ph-n),rate:40}; }
-  const rest=v.phase==='fight'||v.phase==='count'?P.ready:P.idle, b=Math.sin(now/420+i*2)*1.6, p=[...rest]; p[1]+=b; p[3]+=b*0.8; p[7]+=b*0.5; p[11]+=b*0.5;
-  return {pose:p,rate:14};
-}
-function bone(pts,width){ L.lineWidth=width; L.beginPath(); pts.forEach((p,i)=>i?L.lineTo(p[0],p[1]):L.moveTo(p[0],p[1])); L.stroke(); }
-function skeleton(p,col){
-  L.strokeStyle=col; L.lineCap='round'; L.lineJoin='round';
-  bone([[p[4],p[5]],[p[14],p[15]],[p[16],p[17]]],9.5);
-  bone([[p[2],p[3]],[p[6],p[7]],[p[8],p[9]]],9.5);
-  bone([[p[4],p[5]],[p[18],p[19]],[p[20],p[21]]],9.5);
-  bone([[p[2],p[3]],[p[4],p[5]]],11);
-  L.fillStyle='#fff'; L.lineWidth=8; L.beginPath(); L.ellipse(p[0],p[1],17,19,-0.1,0,7); L.fill(); L.stroke();
-  bone([[p[2],p[3]],[p[10],p[11]],[p[12],p[13]]],9.5);
-}
-// Painted crescent that follows the blade: full blade width at the leading edge, tapering to a point behind it.
-function slashTrail(sw,len,el){
-  const R=ARM+len, head=sw.ang, tail=-2.4+3.48*Math.pow(sw.s,2.2), N=22, cols=TRAIL[el]||TRAIL.none;
-  if(head-tail<0.05) return;
-  const band=(v0,v1,col)=>{
-    L.beginPath();
-    for(let j=0;j<=N;j++){ const u=j/N, a=tail+(head-tail)*u, r=R-(R-ARM)*Math.pow(u,1.4)*v0; j?L.lineTo(Math.cos(a)*r,Math.sin(a)*r):L.moveTo(Math.cos(a)*r,Math.sin(a)*r); }
-    for(let j=N;j>=0;j--){ const u=j/N, a=tail+(head-tail)*u, r=R-(R-ARM)*Math.pow(u,1.4)*v1; L.lineTo(Math.cos(a)*r,Math.sin(a)*r); }
-    L.closePath(); L.fillStyle=col; L.fill();
-  };
-  L.save(); L.translate(12,-125); L.globalAlpha=clamp01((1-sw.s)*3.5);
-  band(0,1,cols[0]); band(0.07,0.74,cols[1]); band(0.13,0.42,cols[2]); L.restore();
+})();
+const clipFor=n=>ANIM.clips[n]||ANIM.clips[n.replace(/_b$/,'')]||ANIM.clips.idle;
+const smooth=t=>t*t*(3-2*t);
+const anim=[0,1].map(i=>({name:'',t:0,from:null,blend:1,blendDur:0.07,pose:null,g:1,landT:9,skidT:9,spinT:9,lastAct:'',speed:0,hurt:0,hurtName:'hit_react',runName:'run'}));
+let lastRender=0;
+function resetAnim(){ for(const a of anim){ a.name=''; a.pose=null; a.from=null; a.landT=a.skidT=a.spinT=9; a.lastAct=''; a.runName=Math.random()<0.5&&ANIM.clips.run_b?'run_b':'run'; } }
+// Decide which clip the fighter should be in. Returns [name, drivenTime?].
+function pickClip(v,i,st,age){
+  const f=v.f[i], it=v.items[i][f.held], ranged=it&&it.kind==='ranged';
+  if(v.phase==='end'||v.phase==='over'){ if(f.hp<=0) return ['ko']; if(v.winner===i&&f.g) return ['cheer']; }
+  if(f.hurt) return [st.hurtName];
+  if(f.act) return [f.act.m,f.act.t+age*f.act.r];
+  if(f.dash) return [ranged?'run_aim':'sprint'];
+  if(f.sh) return ['guard'];
+  if(!f.g) return [f.vy>60?'rise':'fall'];
+  if(st.landT<0.16&&Math.abs(f.vx)<120) return ['land'];
+  if(Math.abs(f.vx)>40&&v.phase==='fight'){ const c=clipFor(ranged?'run_aim':st.runName); return [c.name,((((f.x*f.face)/RUN_PX)%1)+1)%1*c.dur]; }
+  if(st.skidT<0.22) return ['skid'];
+  if(st.spinT<0.5&&ranged&&it.style==='gun'&&ANIM.clips.gun_spin) return ['gun_spin'];
+  if(v.phase==='fight'||v.phase==='count') return [ranged?it.style+'_stance':'fight_idle'];
+  return ['idle'];
 }
 function drawFighter(v,i,now,age,dt){
-  const f=v.f[i], col=PCOL[i], d=f.face, fight=v.phase==='fight';
+  const f=v.f[i], col=PCOL[i], d=f.face, fight=v.phase==='fight', st=anim[i];
   const x=f.x+(fight?f.vx*age:0), base=GY-Math.max(0,f.y+(fight&&!f.g?f.vy*age:0));
   const hideItems=net&&v.phase==='draw'&&i!==net.side&&net.side>=0, items=v.items[i];
-  const tp=targetPose(v,i,now,age), u=1-Math.exp(-dt*tp.rate);
-  const p=poseNow[i]=poseNow[i]?mixPose(poseNow[i],tp.pose,u):[...tp.pose];
-  if(tp.swing){ p[22]=tp.swing.ang; orbitArm(p); }
   const k=f.held, it=hideItems?null:items[k], kind=it?it.kind:'melee';
+  // one-off triggers
+  st.landT+=dt; st.skidT+=dt; st.spinT+=dt;
+  // a gun burst ends with a twirl
+  if(!f.act&&/^gun_(shot|rapid)/.test(st.lastAct)&&!f.hurt) st.spinT=0;
+  st.lastAct=f.act?f.act.m:'';
+  if(f.g&&!st.g) st.landT=0;
+  if(f.g&&st.speed>170&&Math.abs(f.vx)<40&&!f.act&&!f.hurt) st.skidT=0;
+  if(f.hurt&&!st.hurt) st.hurtName=Math.random()<0.5&&ANIM.clips.hit_react_b?'hit_react_b':'hit_react';
+  st.g=f.g; st.speed=Math.abs(f.vx); st.hurt=f.hurt;
+  const [name,driven]=pickClip(v,i,st,age), clip=clipFor(name);
+  if(clip.name!==st.name||(driven!==undefined&&!clip.loop&&driven<st.t-0.06)){
+    st.from=st.pose; st.blend=st.pose?0:1; st.name=clip.name; st.t=0;
+    st.blendDur=f.hurt?0.03:f.act?0.05:0.09;
+  }
+  st.t=driven!==undefined?driven:st.t+dt;
+  const s=ANIM.sample(clip,st.t);
+  if(st.blend<1&&st.from){ st.blend=Math.min(1,st.blend+dt/st.blendDur); s.p=ANIM.mix(st.from,s.p,smooth(st.blend)); }
+  st.pose=s.p.slice();
+  const p=s.p, U=n=>n/K;
   // contact shadow
   L.fillStyle='rgba(0,0,0,.09)'; L.beginPath(); L.ellipse(f.x,GY-shadowY(f)+4,28,3.5,0,0,7); L.fill();
   L.save(); L.translate(x,base); L.scale(d*K,K);
   // speed smear behind a dash
-  if(f.dash) for(const [off,al] of [[-70,.12],[-36,.25]]){ L.save(); L.translate(off,0); L.globalAlpha=al; skeleton(p,col); L.restore(); }
-  if(tp.swing&&it) slashTrail(tp.swing,it.sz/K,it.el);
-  // the item not in hand rides on the back
-  if(!hideItems) for(const s of [0,1]){ const o=items[s]; if(!o||s===k||(o.kind==='shield'&&f.sh)) continue;
-    L.save(); L.translate(p[2]-14,p[3]+22); L.rotate(-1.15); L.globalAlpha=.55; sprite(i,s,o.sz*0.6/K,o.kind==='melee'); L.restore(); }
-  skeleton(p,col);
-  if(it){
-    L.save();
-    if(kind==='shield'&&f.sh){ L.translate(p[2]+50,p[3]+22); sprite(i,k,it.sz*1.25/K);
-      L.strokeStyle=PEN[it.el]; L.globalAlpha=.5; L.lineWidth=5; L.beginPath(); L.arc(-20,0,it.sz*0.85/K,-1.1,1.1); L.stroke(); }
-    else{ L.translate(p[12],p[13]);
-      if(kind==='melee'){ L.rotate(p[22]); sprite(i,k,it.sz/K,true); }
-      else if(kind==='ranged'){ L.rotate(p[22]*0.25); L.translate(it.sz*0.3/K,0); sprite(i,k,it.sz/K); }
-      else if(!(kind==='bomb'&&f.cd[k]>0.75)) sprite(i,k,it.sz*(kind==='bomb'?1:0.8)/K); }
-    L.restore();
-  }
+  if(f.dash) for(const [off,al] of [[-70,.12],[-36,.25]]){ L.save(); L.translate(off,0); L.globalAlpha=al; ANIM.draw(L,s,{col}); L.restore(); }
+  if(it&&kind==='melee'&&clip.trail.length) ANIM.trail(L,clip,st.t,U(it.sz),ANIM.TRAIL[it.el]);
+  ANIM.draw(L,s,{col,
+    back(c){ if(hideItems) return; for(const n of [0,1]){ const o=items[n]; if(!o||n===k||(o.kind==='shield'&&f.sh)) continue;
+      c.save(); c.translate(p[2]-14,p[3]+22); c.rotate(-1.15); c.globalAlpha=.55; sprite(i,n,U(o.sz*0.6),o.kind==='melee'); c.restore(); } },
+    weapon(c,ss){
+      if(!it||(kind==='shield'&&f.sh)) return;
+      if(kind==='melee') sprite(i,k,U(it.sz),true);
+      else if(kind==='ranged'&&it.style==='bow'){
+        sprite(i,k,U(it.sz));
+        if(ss.pull>0.03){ const h=U(it.sz)*0.5, bx=-h*0.3, sx=bx-ss.pull*46;
+          c.strokeStyle='#111'; c.lineCap='round'; c.lineJoin='round'; c.lineWidth=2.5; c.beginPath(); c.moveTo(bx,-h); c.lineTo(sx,0); c.lineTo(bx,h); c.stroke();
+          c.strokeStyle=it.el==='none'?'#111':PEN[it.el]; c.lineWidth=4; c.beginPath(); c.moveTo(sx,0); c.lineTo(sx+78,0); c.moveTo(sx+66,-7); c.lineTo(sx+78,0); c.lineTo(sx+66,7); c.stroke(); }
+      }
+      else if(kind==='ranged'){ c.translate(U(it.sz)*0.3,0); sprite(i,k,U(it.sz)); }
+      else if(!(kind==='bomb'&&f.cd[k]>0.75)){ c.rotate(-ss.p[22]); sprite(i,k,U(it.sz*(kind==='bomb'?1:0.8))); }
+    }});
+  if(it&&kind==='shield'&&f.sh){ L.save(); L.translate(p[2]+50,p[3]+22); sprite(i,k,U(it.sz*1.25));
+    L.strokeStyle=PEN[it.el]; L.globalAlpha=.5; L.lineWidth=5; L.beginPath(); L.arc(-20,0,U(it.sz*0.85),-1.1,1.1); L.stroke(); L.restore(); }
   L.restore();
   // status
   L.lineCap='round';
   if(f.burn){ L.strokeStyle=PEN.fire; L.lineWidth=2.5; for(let n=0;n<3;n++){ const fx0=x-12+n*12, fy=base-104-((now/6+n*23)%22); L.beginPath(); L.moveTo(fx0,fy+8); L.lineTo(fx0+3,fy+2); L.lineTo(fx0,fy-4); L.stroke(); } }
   if(f.slow){ L.fillStyle=PEN.water; for(let n=0;n<3;n++){ const fy=base-74+((now/9+n*31)%62); L.beginPath(); L.arc(x-14+n*14,fy,2.5,0,7); L.fill(); } }
-  if(f.hp>0||v.phase==='draw'){ L.font='18px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=col;
-    L.fillText(local[i]&&!(local[0]&&local[1])?'you':NAME[i],x+p[0]*K*d,base+p[1]*K-20); }
+  if(f.hp>0||v.phase==='draw'){ const h=ANIM.xf(s,p[0],p[1]); L.font='18px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=col;
+    L.fillText(local[i]&&!(local[0]&&local[1])?'you':NAME[i],x+h[0]*K*d,base+h[1]*K-20); }
 }
 const shadowY=f=>{ let y=0; for(const p of PLATS) if(f.y>=p.y-1&&f.x>=p.x0-6&&f.x<=p.x1+6) y=Math.max(y,p.y); return y; };
 function render(now){
   const v=view, age=net?Math.min(0.08,(now-viewAt)/1000):0, dt=Math.max(0,Math.min(0.05,(now-(lastRender||now))/1000)); lastRender=now;
-  L.setTransform(1,0,0,1,0,0); L.clearRect(0,0,960,440); L.fillStyle='#fff'; L.fillRect(0,0,960,440);
+  fitCanvas(); L.setTransform(VS,0,0,VS,0,0); L.clearRect(0,0,960,440); L.fillStyle='#fff'; L.fillRect(0,0,960,440);
   shake*=Math.exp(-dt*22); if(shake>0.1) L.translate(Math.sin(now*0.112)*shake,Math.cos(now*0.091)*shake*0.35); else shake=0;
   // ground and platforms: plain ink lines, no scenery
   L.strokeStyle='#111'; L.lineCap='round'; L.lineWidth=4; L.beginPath(); L.moveTo(-10,GY+2); L.lineTo(970,GY+2); L.stroke();
@@ -742,7 +796,10 @@ function render(now){
   // projectiles
   for(const p of v.pr){
     const x=p.x+p.vx*age, y=GY-(p.y+p.vy*age), it=v.items[p.side][p.slot];
-    if(p.k==='shot'){ L.strokeStyle=PEN[p.el]; L.lineWidth=5; const s=Math.sign(p.vx); L.beginPath(); L.moveTo(x-s*26,y); L.lineTo(x,y); L.stroke(); L.fillStyle=PEN[p.el]; L.beginPath(); L.arc(x,y,5,0,7); L.fill(); }
+    if(p.k==='shot'){ const col=p.el==='none'?'#111':PEN[p.el]; L.save(); L.translate(x,y); L.rotate(Math.atan2(-p.vy,p.vx)); L.strokeStyle=col; L.fillStyle=col; L.lineCap='round'; L.lineJoin='round';
+      if(p.st==='bow'){ L.lineWidth=3.5; L.beginPath(); L.moveTo(-44,0); L.lineTo(0,0); L.moveTo(-9,-5); L.lineTo(0,0); L.lineTo(-9,5); L.moveTo(-44,0); L.lineTo(-50,-5); L.moveTo(-44,0); L.lineTo(-50,5); L.stroke(); }
+      else{ L.globalAlpha=.35; L.lineWidth=4; L.beginPath(); L.moveTo(-46,0); L.lineTo(-8,0); L.stroke(); L.globalAlpha=1; L.lineWidth=6; L.beginPath(); L.moveTo(-12,0); L.lineTo(0,0); L.stroke(); }
+      L.restore(); }
     else{ L.save(); L.translate(x,y); L.rotate(now/90*Math.sign(p.vx||1)); if(!it||!sprite(p.side,p.slot,it.sz)){ L.fillStyle=PEN[p.el]; L.beginPath(); L.arc(0,0,10,0,7); L.fill(); } L.restore(); }
   }
   drawFighter(v,1,now,age,dt); drawFighter(v,0,now,age,dt);
@@ -753,11 +810,12 @@ function render(now){
     if(e.e==='hit'){ L.strokeStyle=e.el==='none'?'#111':PEN[e.el]; L.lineCap='round'; for(let n=0;n<9;n++){ const t=n*Math.PI*2/9+0.23, r0=8+a*33, r1=r0+(1-a)*(n%2?19:31); L.lineWidth=n%2?2:3; L.beginPath(); L.moveTo(e.x+Math.cos(t)*r0,y+Math.sin(t)*r0); L.lineTo(e.x+Math.cos(t)*r1,y+Math.sin(t)*r1); L.stroke(); }
       L.font='26px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=PEN[e.el]; L.fillText('-'+e.n,e.x,y-30-a*30); }
     else if(e.e==='block'){ L.font='22px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle='#111'; L.fillText('BLOCK',e.x,y-30-a*24); L.strokeStyle='#111'; L.lineWidth=2; L.beginPath(); L.arc(e.x,y,15+a*35,-1.3,1.3); L.stroke(); }
+    else if(e.e==='shot'){ if(e.st==='gun'&&a<0.14){ L.globalAlpha=1-a/0.14; L.strokeStyle=e.el==='none'?'#111':PEN[e.el]; L.lineCap='round'; for(let n=0;n<7;n++){ const t=(n-3)*0.42, r0=6, r1=(n%2?16:28)*(0.6+a*3); L.lineWidth=n%2?2:3; L.beginPath(); L.moveTo(e.x+Math.cos(t)*r0*e.f,y+Math.sin(t)*r0); L.lineTo(e.x+Math.cos(t)*r1*e.f,y+Math.sin(t)*r1); L.stroke(); } } }
     else if(e.e==='heal'){ L.font='26px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=PEN.plant; L.fillText('+'+e.n,e.x,y-a*30); }
     else if(e.e==='boom'){ L.strokeStyle=e.el==='none'?'#e2a52d':PEN[e.el]; L.lineWidth=6*(1-a)+1; L.beginPath(); L.arc(e.x,y,e.n*(0.3+0.7*Math.min(1,a*2.2)),0,7); L.stroke();
       L.font='30px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=L.strokeStyle; L.fillText('BOOM',e.x,y-e.n*0.6-a*20); }
   }
-  L.globalAlpha=1; L.setTransform(1,0,0,1,0,0);
+  L.globalAlpha=1; L.setTransform(VS,0,0,VS,0,0);
   // banners
   const banner=(t,size,y,col)=>{ L.font=size+'px "Gochi Hand",cursive'; L.textAlign='center'; L.lineWidth=8; L.strokeStyle='#fffdf6'; L.strokeText(t,480,y); L.fillStyle=col||'#1c2541'; L.fillText(t,480,y); };
   if(v.phase==='draw'){ banner('Round '+v.round+': draw your gear!',40,70);

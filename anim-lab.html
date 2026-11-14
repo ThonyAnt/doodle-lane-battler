@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Animation lab</title>
+<style>
+  body{margin:0;background:#fff;color:#111;font:13px system-ui,sans-serif}
+  #bar{padding:8px 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  canvas{display:block}
+  select,button,input{font:inherit}
+</style></head><body>
+<div id="bar">
+  <b>Animation lab</b>
+  <select id="pick"></select>
+  <label>speed <input id="speed" type="range" min="0.05" max="1.5" step="0.05" value="1"></label>
+  <label>blade <input id="len" type="range" min="60" max="190" step="5" value="110"></label>
+  <button id="pause">Pause</button>
+  <span id="info"></span>
+</div>
+<canvas id="c"></canvas>
+<script src="anim/core.js"></script>
+<script src="anim/example.js"></script>
+<script src="anim/locomotion.js"></script>
+<script src="anim/blade.js"></script>
+<script src="anim/bow.js"></script>
+<script src="anim/gun.js"></script>
+<script>
+// Usage:
+//   anim-lab.html                         pick a clip and watch it loop
+//   anim-lab.html?clip=blade1,blade2      play clips back to back
+//   anim-lab.html?clip=blade1&strip=8     still frames side by side (used by tools/strip.js for screenshots)
+//     optional: t0, t1 (seconds within the sequence), cols, len (blade length), ghost=0
+const Q=new URLSearchParams(location.search), cv=document.getElementById('c'), g=cv.getContext('2d');
+const names=Object.keys(ANIM.clips), pick=document.getElementById('pick');
+for(const n of names){ const o=document.createElement('option'); o.value=o.textContent=n; pick.appendChild(o); }
+let seq=(Q.get('clip')||names[0]||'').split(',').filter(n=>ANIM.clips[n]);
+const missing=(Q.get('clip')||'').split(',').filter(n=>n&&!ANIM.clips[n]);
+let bladeLen=+Q.get('len')||110;
+const total=()=>seq.reduce((n,c)=>n+ANIM.clips[c].dur,0);
+function at(t){ let acc=0; for(let i=0;i<seq.length;i++){ const c=ANIM.clips[seq[i]]; if(t<=acc+c.dur||i===seq.length-1) return {clip:c,t:Math.min(c.dur,t-acc),start:acc}; acc+=c.dur; } }
+function figure(x,y,k,time,alpha){
+  const w=at(time), s=ANIM.sample(w.clip,w.t), kind=w.clip.weapon;
+  g.save(); g.translate(x,y); g.scale(k,k); g.globalAlpha=alpha;
+  if(alpha===1&&kind==='blade') ANIM.trail(g,w.clip,w.t,bladeLen);
+  ANIM.draw(g,s,{col:alpha===1?'#111':'#888',weapon:(c,ss)=>ANIM.placeholder[kind](c,ss,bladeLen)});
+  g.restore(); return w;
+}
+function marksBetween(a,b){ const out=[]; let acc=0; for(const n of seq){ const c=ANIM.clips[n]; for(const m of c.marks){ const mt=acc+m.t; if(mt>a&&mt<=b) out.push(m.type.toUpperCase()); } acc+=c.dur; } return out; }
+function strip(n){
+  document.getElementById('bar').style.display='none';
+  const cols=+Q.get('cols')||Math.min(n,6), rows=Math.ceil(n/cols), CW=250, CH=250, T=total();
+  const loop=seq.length===1&&ANIM.clips[seq[0]].loop, t0=+Q.get('t0')||0, t1=Q.has('t1')?+Q.get('t1'):T, ghost=Q.get('ghost')!=='0';
+  cv.width=cols*CW; cv.height=rows*CH+26; g.fillStyle='#fff'; g.fillRect(0,0,cv.width,cv.height);
+  g.fillStyle='#111'; g.font='600 14px system-ui'; g.fillText(seq.join(' + ')+'   ('+T.toFixed(2)+' s total)'+(missing.length?'   MISSING: '+missing.join(', '):''),8,17);
+  let prev=t0-1e-6;
+  for(let i=0;i<n;i++){
+    const t=loop?t0+(t1-t0)*i/n:t0+(t1-t0)*(n>1?i/(n-1):0), cx=(i%cols)*CW, cy=26+Math.floor(i/cols)*CH;
+    g.save(); g.beginPath(); g.rect(cx,cy,CW,CH); g.clip();
+    g.strokeStyle='#ddd'; g.lineWidth=1; g.strokeRect(cx+0.5,cy+0.5,CW-1,CH-1);
+    g.strokeStyle='#bbb'; g.lineWidth=2; g.beginPath(); g.moveTo(cx,cy+CH-34); g.lineTo(cx+CW,cy+CH-34); g.stroke();
+    if(ghost&&i>0) figure(cx+CW*0.42,cy+CH-34,0.78,loop?t0+(t1-t0)*(i-1)/n:t0+(t1-t0)*(i-1)/(n-1),0.22);
+    const w=figure(cx+CW*0.42,cy+CH-34,0.78,t,1);
+    g.restore();
+    g.fillStyle='#111'; g.font='12px system-ui'; g.fillText(t.toFixed(3)+' s  '+w.clip.name,cx+6,cy+CH-10);
+    const m=marksBetween(prev,t); if(m.length){ g.fillStyle='#d11'; g.font='700 13px system-ui'; g.fillText(m.join(' '),cx+6,cy+16); }
+    prev=t;
+  }
+  document.title='strip ready';
+}
+if(Q.has('strip')){ if(seq.length) strip(Math.max(1,+Q.get('strip')||8)); else { cv.width=700; cv.height=60; g.fillStyle='#d11'; g.font='16px system-ui'; g.fillText('No such clip: '+Q.get('clip')+'. Known: '+names.join(', '),8,30); } }
+else{
+  let t=0,last=performance.now(),paused=false;
+  if(seq.length) pick.value=seq[0];
+  pick.onchange=()=>{ seq=[pick.value]; t=0; };
+  document.getElementById('pause').onclick=e=>{ paused=!paused; e.target.textContent=paused?'Play':'Pause'; };
+  document.getElementById('len').oninput=e=>{ bladeLen=+e.target.value; };
+  cv.width=900; cv.height=420;
+  (function frame(now){
+    const dt=Math.min(0.05,(now-last)/1000); last=now;
+    if(seq.length){
+      if(!paused) t+=dt*+document.getElementById('speed').value;
+      const T=total(); if(t>T+0.35) t=0;
+      g.fillStyle='#fff'; g.fillRect(0,0,900,420); g.strokeStyle='#111'; g.lineWidth=4; g.beginPath(); g.moveTo(0,342); g.lineTo(900,342); g.stroke();
+      const w=figure(420,340,1.25,Math.min(t,T),1);
+      document.getElementById('info').textContent=w.clip.name+'  '+Math.min(t,T).toFixed(2)+' / '+T.toFixed(2)+' s'+(w.clip.marks.length?'   marks: '+w.clip.marks.map(m=>m.type+'@'+m.t).join(', '):'');
+    }
+    requestAnimationFrame(frame);
+  })(last);
+}
+</script></body></html>

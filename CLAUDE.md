@@ -14,7 +14,9 @@ Hackathon MVP. A one-lane battler where every unit is something the player draws
 - `duel.html`: live 2-player stickman fight with hand-drawn weapons and abilities. The block between `/*DUEL-START*/` and `/*DUEL-END*/` is the pure rules (item stats, physics, phases, bot). Keep it free of DOM access.
 - `duel-server.js`: routes under `/duel/` (`read`, `room`, `events`, `act`), loaded by `server.js`. Server-authoritative at about 30 Hz over Server-Sent Events; clients send held buttons plus press counts with a sequence number.
 - Phases: draw (two items, 100 shared ink) -> count -> fight (60 s) -> end; first to 2 rounds. Item kinds: melee, ranged, bomb, shield, dash, heal. Tuning lives in `itemStats`.
-- Animation follows `motion-review.html` (the owner's style reference, Alan Becker-like): fighters are a keyframed skeleton (`POSES`, `RUN` in `duel.html`) blended toward a target pose each frame, with wind-up, a shoulder-pinned cut, follow-through, a painted crescent slash trail and ink-burst impacts. Scenery is plain ink lines on white; nothing wobbles.
+- Animation: fighters are a keyframed skeleton in the style of `motion-review.html` (the owner's reference; Alan Becker / 火柴人联盟). Clips are data in `anim/*.js` registered with `ANIM.add`; `anim/core.js` samples them (spline interpolation, IK so limbs never stretch, body spin and somersault channels, painted slash trail) and `anim/README.md` is the authoring guide. Preview with `node tools/strip.js <clip> [frames] [out.png]` (needs Chrome) or open `/anim-lab.html`.
+- Attacks are moves in the `MOVES` table inside the rules block (duration, hit or shot times, cancel time, next move). Each move has a clip of the same name whose marks must match; some have a `_b` alternate animation. Blades chain blade1 -> blade2 -> blade3 on repeated taps, with running, air and down+attack variants; ranged items are bows or guns (the vision model returns `style`).
+- The arena canvas and item sprites are rendered at the display's pixel density.
 - Bot-vs-bot simulation gives a median round of about 22 s; melee wins most often between bots. Not tested on real tablets.
 
 ## Online play
