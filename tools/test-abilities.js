@@ -2,7 +2,7 @@
 // the server gives a model's answer. No server, no network. Run: node tools/test-abilities.js
 const fs=require('fs'), path=require('path'), dir=path.join(__dirname,'..');
 const src=fs.readFileSync(path.join(dir,'duel.html'),'utf8').replace(/\r\n/g,'\n');
-const D=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,replayDuel,makeBot,validItem,stockItem,STOCK,KINDS,HP,ABILITY_API,ABILITY_LIMITS,abilityAllowance,abilityClean,abilitiesFit,builtinAbilities,customCatalog,templateOf,templateCall,TEMPLATE_AXES,TEMPLATE_TIPS,abText};')();
+const D=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,replayDuel,makeBot,validItem,stockItem,STOCK,KINDS,HP,ABILITY_API,ABILITY_LIMITS,abilityAllowance,abilityClean,abilitiesFit,builtinAbilities,customCatalog,templateOf,templateCall,TEMPLATE_AXES,TEMPLATE_TIPS,abText,localCreativity};')();
 const IS=require(path.join(dir,'inkscript.js')), AB=require(path.join(dir,'abilities.js'))({D,InkScript:IS}), compile=AB.compile;
 let bad=0; const ok=(name,cond,info)=>{ let c=false; try{ c=typeof cond==='function'?cond():cond; }catch(e){ info=String(e&&e.stack||e).slice(0,300); } if(!c) bad++; console.log((c?'ok   ':'FAIL ')+name+(info!==undefined?'  '+JSON.stringify(info).slice(0,240):'')); };
 const sword=()=>{ const s=D.stockItem('sword','none').spec; delete s.creativity; delete s.why; delete s.abilities; return s; };
@@ -14,7 +14,8 @@ ok('the score buys 0, 1, 2 or 3 abilities',[1,3,4,6,7,8,9,10].map(s=>D.abilityAl
 ok('never more than the cap',D.ABILITY_LIMITS.max===3&&D.abilityAllowance(99).n<=3);
 ok('a nonsense score counts as a plain drawing',D.abilityAllowance('x').n===0&&D.abilityAllowance(undefined).n===0);
 ok('the player\'s name wins as the item\'s name',D.validItem({name:'Sword',kind:'melee',style:'blade'},null,'Fire Cat').name==='Fire Cat');
-ok('every special preset has a score and abilities that fit it',()=>Object.keys(D.STOCK).filter(k=>D.STOCK[k].fancy).every(k=>{ const sp=D.stockItem(k,'none').spec; return sp.creativity>=1&&sp.abilities.length<=D.abilityAllowance(sp.creativity).n&&sp.abilities.length<=3; }));
+ok('every special preset has a score, and in a match keeps as many abilities as that score buys',()=>{ const S=D.createDuel({seed:2,compile}); return Object.keys(D.STOCK).filter(k=>D.STOCK[k].fancy).every(k=>{ const sp=D.stockItem(k,'none').spec, it=S.setItem(0,0,sp,45), n=D.abilityAllowance(sp.creativity).n; return sp.creativity>=1&&sp.creativity<=8&&it.abilities.length===Math.min(n,sp.abilities.length)&&n>=1; }); });
+ok('an odd name counts for more than a grand one when there is no reader',()=>{ const st=[{el:'none',pts:[[10,10],[60,60]]},{el:'none',pts:[[20,50],[50,20]]}], c=n=>D.localCreativity(st,n).creativity; return c('frog')>c('banana gun')&&c('banana gun')>c('mega fire sword')&&c('mega fire sword')===c('')&&c('Doomblade')===c('sword'); });
 
 // the round waits for abilities
 { const S=D.createDuel({seed:3,record:true,compile}); const a=S.setItem(0,0,Object.assign(sword(),{pending:true}),45); S.setItem(1,0,sword(),45); S.setReady(0); S.setReady(1); run(S,2);
