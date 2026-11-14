@@ -2,7 +2,7 @@
 // Run: node tools/test-world.js
 const fs=require('fs'), path=require('path');
 const src=fs.readFileSync(path.join(__dirname,'..','duel.html'),'utf8').replace(/\r\n/g,'\n');
-const D=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,INK,boardCells,MOVES,replayDuel,CUSTOMS,CUSTOM_BUDGET,fitCustoms,customPoints,customsTotal,validItem};')();
+const D=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,INK,boardCells,MOVES,replayDuel,CUSTOMS,CUSTOM_BUDGET,fitCustoms,customPoints,customsTotal,validItem,replayDuel,LEAVES,LEAVE_CAP};')();
 const T=D.INK.T, toPts=D.INK.toPts;
 const HP0=D.createDuel({practice:true}).f[0].hp;   // full health, whatever the rules set it to
 let bad=0; const ok=(name,cond,info)=>{ if(!cond) bad++; console.log((cond?'ok   ':'FAIL ')+name+(info!==undefined?'  '+JSON.stringify(info):'')); };
@@ -368,5 +368,67 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
       return {S,shaped}; };
     const A=play(), B=play(), h=A.S.hash(), R=replayDuel(A.S.log());
     ok('shape: a match with customized weapons on both sides plays the same twice',h===B.S.hash()&&A.shaped>50&&A.S.sane(),{h,shaped:A.shaped}); ok('shape: and its replay ends on the same fingerprint',R.hash()===h,R.hash()); }
+}
+{ // leaves: what a weapon leaves behind (LEAVES, S.leaveSet)
+  const F=BOARD.floor, arm=(kind,style,cu,side)=>{ const S=fresh(); S.setItem(side||0,0,{kind,style,element:'none',name:'T'},50); S.leaveSet(side||0,0,cu); return S; };
+  const at=(S,ax,gap)=>{ const a=S.f[0], b=S.f[1]; a.x=ax; b.x=ax+gap; a.face=1; b.face=-1; return [a,b]; };
+  const left=(S,side)=>S.lv.filter(o=>o.side===side).length+S.objs.filter(o=>o.leaf===side&&o.life>0).length;
+  { const S=fresh(); ok('leaves: no item, nothing to leaveSet',S.leaveSet(0,0,['fire'])===null);
+    S.setItem(0,0,{kind:'melee',style:'blade',element:'none',name:'T'},50); let threw=0, outs=[];
+    for(const j of [undefined,null,7,'x',{},[null,3,'nope',{id:'__proto__'},{id:5}],[{id:'fire',size:'big',secs:NaN}],[{id:'fire',size:99,secs:-4}],['fire','fire','slick','mine'],['step']]){ try{ outs.push(S.leaveSet(0,0,j)); }catch(e){ threw++; } }
+    for(const [a,b] of [[-1,0],[2,0],[0,5],['a','b']]){ try{ S.leaveSet(a,b,['fire']); }catch(e){ threw++; } }
+    ok('leaves: bad ids, sides and numbers never throw and are dropped',threw===0&&outs.slice(0,6).every(o=>o.length===0),outs.map(o=>o.map(c=>c.id)));
+    ok('leaves: size and time are held to 0.6..1.5 and scale the cost',outs[7][0].size===1.5&&outs[7][0].secs===0.6&&outs[7][0].cost===+(D.LEAVES.fire.cost*0.9).toFixed(1),outs[7]);
+    ok('leaves: two at most, no repeats, only what the kind can carry',outs[8].map(c=>c.id).join()==='fire,slick'&&outs[9].length===0);
+    S.leaveSet(0,0,['fire']); ok('leaves: a tweak keeps them',S.tweak(0,0,{tune:1}).customs[0].id==='fire'); ok('leaves: the snapshot shows them',S.snapshot().items[0][0].cu[0].id==='fire');
+    const M=D.createDuel({seed:1}); M.setItem(0,0,{kind:'melee',style:'blade',element:'none',name:'T'},50); const d=M.leaveSet(0,0,['mine']); M.setReady(0);
+    ok('leaves: set while drawing, not once ready',d.length===1&&M.leaveSet(0,0,['fire'])===null&&M.items[0][0].customs[0].id==='mine'); }
+  { const S=arm('melee','blade',['fire']), [a,b]=at(S,400,60); S.play(0,'blade1'); run(S,0.5); const o=S.lv.find(o=>o.k==='fire');
+    ok('fire trail: a swing leaves flames on the ground in front',!!o&&o.x>a.x&&o.y===F&&o.side===0,o&&[Math.round(o.x),o.y,Math.round(o.w)]);
+    b.x=o.x; b.y=F; b.vx=0; const hp=b.hp; a.x=o.x-10; const ha=a.hp; run(S,1); ok('fire trail: the foe standing in it burns, its owner does not',b.burn>0&&b.hp<hp-2&&a.burn<=0&&a.hp>=ha,+(hp-b.hp).toFixed(1));
+    run(S,4); ok('fire trail: it goes out',!S.lv.length);
+    const T=arm('ranged','gun',['fire']); at(T,300,600); T.f[1].x=980; T.play(0,'gun_shot'); for(let i=0;i<36;i++){ T.f[1].y=F+300; T.f[1].vy=0; T.step(1/60); }
+    ok('fire trail: a shot lights the ground under its path',T.lv.filter(o=>o.k==='fire').reduce((n,o)=>n+o.w,0)>250,T.lv.map(o=>[o.k,Math.round(o.x),Math.round(o.w)])); }
+  { const S=arm('melee','blade',['slick']), [a,b]=at(S,400,60); S.play(0,'blade1'); run(S,0.5); const o=S.lv.find(o=>o.k==='slick');
+    ok('slick: a hit leaves a puddle under the foe',!!o&&o.y===F,o&&[Math.round(o.x),o.w]);
+    const slide=x=>{ b.hurt=0; b.x=x; b.y=F; b.vx=200; a.x=250; let n=0; while(Math.abs(b.vx)>5&&n<600){ S.step(1/120); n++; } return Math.round(b.x-x); };
+    const wet=slide(o.x-50), dry=slide(700); ok('slick: a fighter on it keeps sliding',wet>dry*2,{wet,dry}); }
+  { const S=arm('melee','blade',['mine']), [a,b]=at(S,300,500); for(let i=0;i<3;i++){ S.play(0,'blade1'); run(S,0.5); } const o=S.lv.find(o=>o.k==='mine');
+    ok('mines: the third attack drops one at the feet',S.lv.length===1&&!!o&&Math.abs(o.x-a.x)<40,o&&[Math.round(o.x),o.y]);
+    const hp=b.hp; a.x=600; b.x=o.x+10; b.y=F; S.snapshot(); run(S,0.2); ok('mines: it goes off when the foe comes near',b.hp<hp&&!S.lv.length&&evs(S).includes('boom'),+(hp-b.hp).toFixed(1));
+    b.x=950; for(let i=0;i<12;i++){ a.x=250+i*40; S.play(0,'blade1'); run(S,0.5); } ok('mines: never more than '+D.LEAVES.mine.most+' out',S.lv.filter(o=>o.k==='mine').length===D.LEAVES.mine.most); }
+  { const S=arm('melee','blade',['spikes']), [a,b]=at(S,300,500); S.play(0,'blade1'); run(S,0.6); const none=!S.lv.length; S.play(0,'blade3'); run(S,0.9); const o=S.lv.find(o=>o.k==='spikes');
+    ok('spikes: only a finishing blow raises them',none&&!!o,o&&[Math.round(o.x),o.w]);
+    const hp=b.hp; b.x=o.x; b.y=F; run(S,0.15); ok('spikes: they hurt the foe and throw them up',b.hp<hp&&b.y>F,[+(hp-b.hp).toFixed(1),Math.round(b.y-F)]);
+    const T=arm('ranged','bow',['spikes']); at(T,400,300); T.play(0,'bow_shot'); run(T,1.2); ok('spikes: a shot raises them where it lands',T.lv.some(o=>o.k==='spikes')); }
+  { const S=arm('melee','blade',['wall']), [a,b]=at(S,500,70); S.snapshot(); S.play(0,'blade3'); run(S,0.5); const w=S.objs.find(o=>o.leaf===0&&o.kind==='wall'), ev=S.snapshot().ev.filter(e=>e.e==='obj');
+    ok('wall: a finishing blow that lands leaves one behind the foe, sent to the page with its strokes',!!w&&w.x>570&&w.solid&&ev.length===1&&ev[0].o.strokes.length>0,w&&[w.x,w.y,w.h]);
+    run(S,4.5); ok('wall: it goes after a few seconds',!S.objs.some(o=>o.leaf===0));
+    const T=arm('melee','blade',['wall']); at(T,300,500); T.play(0,'blade3'); run(T,0.9); ok('wall: a miss leaves none',!T.objs.some(o=>o.leaf===0));
+    const U=arm('ranged','gun',['wall']); at(U,300,300); U.play(0,'gun_shot'); run(U,1); const plain=!U.objs.some(o=>o.leaf===0); U.play(0,'gun_power'); run(U,1.2);
+    ok('wall: of shots, only a charged one leaves a wall',plain&&U.objs.some(o=>o.leaf===0&&o.kind==='wall')); }
+  { const S=arm('ranged','gun',['step']), [a,b]=at(S,250,600); b.x=980; S.play(0,'gun_shot'); for(let i=0;i<100;i++){ b.y=F+300; b.vy=0; S.step(1/60); } const p=S.objs.find(o=>o.leaf===0&&o.kind==='platform');
+    ok('step: a shot that hits nothing leaves a platform where it ran out',!!p&&-p.y>F+40,p&&[Math.round(p.x),p.y,p.w]);
+    if(p){ a.x=p.x+p.w/2; a.y=-p.y+40; a.vy=0; a.ground=false; for(let i=0;i<60;i++){ b.y=F+300; b.vy=0; S.step(1/60); } ok('step: a fighter can stand on it',a.ground&&Math.abs(a.y+p.y)<1,[a.y,-p.y]); }
+    const T=arm('ranged','gun',['step']); at(T,400,300); T.play(0,'gun_shot'); run(T,1); ok('step: a shot that hits leaves none',!T.objs.some(o=>o.leaf===0)); }
+  { const S=arm('melee','blade',['cloud']), [a,b]=at(S,400,60); S.play(0,'blade1'); run(S,0.4); const o=S.lv.find(o=>o.k==='cloud');
+    ok('cloud: a hit leaves one on the foe',!!o,o&&[Math.round(o.x),o.y,o.w]);
+    b.x=o.x; b.y=F; a.x=o.x+10; a.slow=0; b.slow=0; run(S,0.2); ok('cloud: it soaks the foe inside, not its owner',b.slow>0&&a.slow<=0);
+    a.x=b.x-60; a.face=1; S.play(0,'blade1'); run(S,0.4); ok('cloud: a second hit close by renews it',S.lv.filter(o=>o.k==='cloud').length===1); }
+  { const S=arm('ranged','gun',['cloud','spikes']), a=S.f[0], b=S.f[1]; let most=0;
+    for(let i=0;i<10;i++){ a.x=220+i*8; a.face=1; b.x=330+i*65; S.play(0,'gun_shot'); for(let j=0;j<42;j++){ S.step(1/60); most=Math.max(most,left(S,0)); } }
+    ok('leaves: one fighter never has more than LEAVE_CAP things out',most===D.LEAVE_CAP,most); }
+  { const S=arm('ranged','gun',['spikes','cloud']), [a,b]=at(S,400,300); a.od=100; const go=S.startUlt(0); run(S,5); ok('leaves: an ultimate leaves nothing behind',go&&left(S,0)===0);
+    const T=arm('melee','blade',['mine'],1), c=T.f[0], d=T.f[1]; T.setItem(0,0,{kind:'melee',style:'hammer',element:'none',name:'H'},50);
+    for(let i=0;i<3;i++){ c.x=300; d.x=800; T.play(1,'blade1'); run(T,0.5); } const m=T.lv.find(o=>o.k==='mine'); c.x=m.x+30; d.x=m.x-300; c.od=100; const st=T.startUlt(0), hp=c.hp; let kept=true;
+    for(let i=0;i<60;i++){ T.step(1/60); if(!c.act||!D.MOVES[c.act.m].ult) kept=false; }
+    ok('leaves: a mine does not go off under a fighter whose ultimate is playing',st&&kept&&c.hp===hp&&T.lv.includes(m),{st,kept}); }
+  { const S=D.createDuel({practice:true,stage:'sheet'}); S.step(1/60); S.setItem(0,0,{kind:'melee',style:'blade',element:'none',name:'T'},50); S.leaveSet(0,0,['fire','spikes']);
+    const a=S.f[0], b=S.f[1]; a.x=400; a.y=0; b.x=460; b.y=0; a.face=1; S.play(0,'blade3'); run(S,0.9); ok('leaves: they work on the spreadsheet stage',S.lv.length===2,S.lv.map(o=>o.k)); }
+  { const S=D.createDuel({seed:9,record:true,width:1400,plats:[]}); S.setItem(0,0,{kind:'melee',style:'blade',element:'none',name:'A'},50); S.setItem(1,0,{kind:'ranged',style:'gun',element:'none',name:'B'},50);
+    S.leaveSet(0,0,['fire','mine']); S.leaveSet(1,0,['step','cloud']); S.setReady(0); S.setReady(1); const c=[{l:0,r:1,d:0,j:0,a:0,b:0},{l:1,r:0,d:0,j:0,a:0,b:0}]; let seen=0;
+    for(let i=0;i<120*12;i++){ if(i%30===0){ const s=i/30%2|0; c[s].a++; if(i%210===0) c[s].j++; S.setInput(s,Object.assign({},c[s])); } S.ticks(1); seen=Math.max(seen,S.lv.length); }
+    const h=S.hash(), R=D.replayDuel(JSON.parse(JSON.stringify(S.log()))); ok('leaves: a match that uses them replays to the same hash',seen>0&&S.phase==='fight'&&R.hash()===h,{seen,phase:S.phase,h,r:R.hash()});
+    const n=S.lv.length; S.lv.push({id:999,lq:999,k:'fire',side:0,x:5,y:0,w:10,life:1,max:1,t:0,cd:0}); ok('leaves: the hash covers what is left behind',S.hash()!==h); S.lv.length=n; }
 }
 console.log(bad?bad+' failed':'all world rules pass'); process.exit(bad?1:0);

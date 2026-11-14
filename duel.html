@@ -1252,7 +1252,7 @@ const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet s
 // A recording holds about LOG_ROOM characters of commands (some forty long matches' worth). When it is full it stops:
 // the match goes on, the log is marked full, and it replays up to the tick it stopped at.
 const LOG_ROOM=2e6;
-const LOG_V=1, COMMANDS=['setItem','tweak','setCustoms','targetSet','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold','trigSet','shapeSet'];
+const LOG_V=1, COMMANDS=['setItem','tweak','setCustoms','targetSet','leaveSet','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold','trigSet','shapeSet'];
 const INPUT_KEYS=['l','r','d','j','a','b','m','q','h','u'], viaJSON=v=>JSON.parse(JSON.stringify(v)), round1=v=>Math.round(v*10)/10;
 const packInput=i=>{ const o={}; for(const k of INPUT_KEYS){ const v=i?i[k]:undefined; o[k]=k==='l'||k==='r'||k==='d'?(v?1:0):v===undefined?null:v; } return viaJSON(o); };   // held buttons as 0 or 1, press counts as given, a missing one as null
 const unpackInput=o=>{ const i={}; for(const k of INPUT_KEYS) if(o[k]!==null&&o[k]!==undefined) i[k]=o[k]; return i; };
@@ -1439,6 +1439,39 @@ function trigLevel(w,st,f){
     case 'first': return st.fb>0?1:0;
   }
   return 0;
+}
+/* ---------- leaves: what a weapon leaves behind in the arena ----------
+   One of the axes of weapon customization. An item may carry customizations in it.customs, a list of
+   {id,size,secs,cost}; the ids here are the "leaves" blocks. Each has a point cost (a first guess, not tuned), the item
+   kinds that may carry it, and its own numbers. size (how big) and secs (how long it stays) are each 0.6 to 1.5 and
+   scale the cost. Set with S.leaveSet(side,slot,list); leaveCustoms never throws and drops what it does not know.
+   What each one does is in createDuel, section "leaves". */
+const LEAVES={
+  fire:  {name:'Fire trail',cost:4,kinds:['melee','ranged','bomb'],life:3.5,shotLife:2,dps:4,
+          blurb:'Swings and shots leave flames on the ground that burn the foe standing in them.'},
+  slick: {name:'Slick',cost:2,kinds:['melee','ranged','bomb'],life:5,w:150,grip:0.1,
+          blurb:'A hit, or where a shot lands, leaves a slippery puddle: anyone on it keeps sliding.'},
+  mine:  {name:'Mines',cost:3,kinds:['melee','ranged'],life:12,every:3,arm:0.5,r:46,dmg:9,most:3,
+          blurb:'Every third attack drops a mine at your feet. It goes off when the foe comes near.'},
+  spikes:{name:'Spikes',cost:3,kinds:['melee','ranged','bomb'],life:3,w:84,rise:0.3,dmg:6,again:0.9,
+          blurb:'A finishing blow, or where a shot lands, raises spikes from the floor for a few seconds.'},
+  wall:  {name:'Wall',cost:4,kinds:['melee','ranged'],life:4,h:110,
+          blurb:'A finishing blow that lands, or a charged shot, leaves a short wall behind the foe or where it struck.'},
+  step:  {name:'Step',cost:1,kinds:['ranged'],life:5,w:90,
+          blurb:'A shot that hits nothing leaves a small platform in the air where it ran out.'},
+  cloud: {name:'Cloud',cost:2,kinds:['melee','ranged','bomb'],life:4.5,r:64,
+          blurb:'A hit, or where a shot lands, leaves a cloud that hides whoever is inside and soaks the foe.'}
+};
+const LEAVE_CAP=6, LEAVE_MAX=2;      // left-behind things one fighter may have at once (the oldest goes); customizations per item
+function leaveCustoms(list,kind){
+  const out=[]; if(!Array.isArray(list)) return out;
+  const num=(v,d)=>{ v=+v; return Number.isFinite(v)?Math.max(0.6,Math.min(1.5,v)):d; };
+  for(const c of list){
+    const id=c&&typeof c==='object'?c.id:c; if(typeof id!=='string'||!Object.prototype.hasOwnProperty.call(LEAVES,id)) continue;
+    const L=LEAVES[id]; if(!L.kinds.includes(kind)||out.some(o=>o.id===id)||out.length>=LEAVE_MAX) continue;
+    const size=num(c&&c.size,1), secs=num(c&&c.secs,1); out.push({id,size,secs,cost:Math.round(L.cost*size*secs*10)/10});
+  }
+  return out;
 }
 function createDuel(opts){
   if(opts&&opts.record) opts=viaJSON(opts);       // a recorded match keeps its own copy of what it was made with (see S.log)
@@ -1653,7 +1686,7 @@ function createDuel(opts){
     const style=styleOf(spec.kind,spec.style), tune=Math.max(-2,Math.min(2,Math.round(+spec.tune||0)));
     const raw={power:clampStat(spec.power),range:clampStat(spec.range),speed:clampStat(spec.speed)}, stats=balanceStats(raw,tune);
     const traits=traitChoices(spec.kind,spec.traits,spec.name), trait=traits.includes(spec.trait)?spec.trait:traits[0];
-    return {name:spec.name||nameFor(spec),kind:spec.kind,style,el:spec.element,cost,raw,tune,stats,trait,traits,ammo:AMMO.includes(spec.ammo)?spec.ammo:undefined,st:itemStats(spec.kind,spec.element,cost,stats),ver:++S.ver,customs:fitCustoms(spec.customs,spec.kind,style)};
+    return {name:spec.name||nameFor(spec),kind:spec.kind,style,el:spec.element,cost,raw,tune,stats,trait,traits,ammo:AMMO.includes(spec.ammo)?spec.ammo:undefined,st:itemStats(spec.kind,spec.element,cost,stats),ver:++S.ver,customs:fitCustoms(spec.customs,spec.kind,style),customs:leaveCustoms(spec.customs,spec.kind)};
   }
   // Change an item that is already made, while still drawing: what it is, which of its two traits it uses, or its tuning.
   S.tweak=(side,k,ch)=>{
@@ -1834,7 +1867,7 @@ function createDuel(opts){
   function startMove(f,k,m){
     const it=m==='mine'?PICK:itemOf(f.side,k), M=MOVES[m], p=it.st.p;
     f.act={k,m,v:ALT.includes(m)&&S.rand()<0.5?1:0,t:0,dur:M.dur,rate:(f.overclock>0?1/0.7:1)*(it.st.rate||1)/(it.kind==='ranged'?0.75+0.25*p:0.85+0.15*p),done:0,lunged:false};
-    f.buf[k]=0; f.held=k; if(m!=='mine') cfire('move',f,k,f.act);      // wielder customizations
+    f.buf[k]=0; f.held=k; if(m!=='mine') cfire('move',f,k,f.act);      // wielder customizations leaveAttack(f,it,k);
     if(M.carry) f.vx=f.face*Math.max(Math.abs(f.vx),M.carry);
     if(M.dive&&!f.ground){ f.vy=-M.dive; f.vx=f.face*Math.max(Math.abs(f.vx),M.dive*0.5); }
     if(M.hop&&f.ground){ f.vy=M.hop; f.ground=false; f.jumps=1; } else if(M.hop) f.vy=Math.max(f.vy,M.hop);
@@ -1919,9 +1952,9 @@ function createDuel(opts){
         const sw={reach:st.reach*(M.reach||1)*sty.reach,dmg:st.dmg*M.dmg*sty.dmg,kb:M.kb*sty.kb*(0.7+0.3*st.p)*(st.push||1),m:a.m}; if(!M.mine) cfire('swing',f,k,sw);      // wielder customizations may change the swing
         const dx=(e.x-f.x)*f.face, reach=sw.reach;
         if(M.quake&&!a.quaked){ a.quaked=true; S.events.push({e:'quake',x:Math.round(f.x+f.face*reach*0.7),y:Math.round(f.y),n:Math.round(reach)}); }
-        if(dx>-14&&dx<reach+14&&Math.abs(e.y-f.y)<(M.tall||72)){ a.done++; hurt(e,sw.dmg,it.el,f.face*sw.kb,M.lift,f,f.x,undefined,it.trait,undefined,M.end&&!M.mine&&a.done>=marks.length?1:0,M.mine?undefined:k); continue; }
+        if(dx>-14&&dx<reach+14&&Math.abs(e.y-f.y)<(M.tall||72)){ a.done++; hurt(e,sw.dmg,it.el,f.face*sw.kb,M.lift,f,f.x,undefined,it.trait,undefined,M.end&&!M.mine&&a.done>=marks.length?1:0,M.mine?undefined:k); leaveSwing(f,it,M,e,reach,1,a.done>=marks.length); continue; }
         if(a.t<marks[a.done]+0.07) break;      // the blade stays dangerous for a moment
-        a.done++;
+        a.done++; leaveSwing(f,it,M,e,reach,0,a.done>=marks.length);
       }else{
         const aim=M.aims?M.aims[a.done]:M.aim||0, mz=(M.mzs&&M.mzs[a.done])||M.mz||MUZZLE[it.style]||MUZZLE.gun; a.done++;
         // A shot flies as far as the item's range allows (a charged shot a third further), then fades.
@@ -1956,11 +1989,11 @@ function createDuel(opts){
       if(f.dash<=0) f.vx*=0.35;
     }else{
       const stunned=f.hurt>0||f.stun>0||f.trap>0, dir=stunned?0:(inp.r-inp.l)*targetDir(f);
-      if(stunned){ f.vx*=Math.max(0,1-3*dt); f.jq=0; }
+      if(stunned){ f.vx*=Math.max(0,1-3*dt*leaveGrip(f)); f.jq=0; }
       else{
         if(dir&&(!f.act||(MOVES[f.act.m]&&MOVES[f.act.m].shots))) f.face=dir;   // a fighter can turn mid-volley: the shots still to come follow
         // While committed to a move the fighter can only drift.
-        const max=RUN_SPEED*(f.slow>0?0.55:1)*(f.shield>0?(f.shieldMove||0.6):1)*(carries(f.side,'swift')?1.12:1)*(f.overclock>0?1.18:1)*(f.scale<0.85?0.85:1)*f.run, a=(f.act?(f.ground?900:500):(f.ground?2600:1500))*dt, want=f.act?dir*max*0.3:dir*max;
+        const max=RUN_SPEED*(f.slow>0?0.55:1)*(f.shield>0?(f.shieldMove||0.6):1)*(carries(f.side,'swift')?1.12:1)*(f.overclock>0?1.18:1)*(f.scale<0.85?0.85:1)*f.run, a=(f.act?(f.ground?900:500):(f.ground?2600:1500))*dt*leaveGrip(f), want=f.act?dir*max*0.3:dir*max;
         if(f.flung<=0){ const g=a*targetGrip(f); f.vx+=Math.max(-g,Math.min(g,want-f.vx)); }          // a flung fighter keeps its momentum
         if(f.jq>0){ f.jq--; if(!f.act){ const j={ok:f.ground||f.jumps<2,air:!f.ground,n:f.jumps,vy:f.ground?640:560}; cfire('jump',f,f.held,j);      // wielder customizations may allow another jump
           if(j.ok){ if(!f.ground) puff(f.x,-f.y,PCOLS[f.side],6); f.vy=j.vy; f.jumps=f.ground?1:Math.max(2,f.jumps+1); f.ground=false; } } }
@@ -2150,6 +2183,7 @@ function createDuel(opts){
       if(p.x<-30||p.x>W+30||(p.ruled&&p.y>900)) p.ttl=0;      // out of the arena; a rule may have sent it up and out as well
     }
     trgP=null;
+    for(const p of S.pr) if(p.ttl<=0) leaveLand(p);
     S.pr=S.pr.filter(p=>p.ttl>0);
   }
   /* ---------- InkShop world (adapted from Alex's prototype) ----------
@@ -2187,7 +2221,7 @@ function createDuel(opts){
   function resetWorld(){
     if(S.bins) for(const b of S.bins.slice()) unbin(b);
     S.bins=[];
-    S.objs=[]; S.fields=[]; S.groups=[null,null]; S.hack=null; S.effects=[]; S.broken=null; S.breached=false; S.cells=boardCells(BOARD); fx('clear',{});
+    S.objs=[]; S.lv=[]; S.fields=[]; S.groups=[null,null]; S.hack=null; S.effects=[]; S.broken=null; S.breached=false; S.cells=boardCells(BOARD); fx('clear',{});
     if(S.sheet) sheetReset();
     if(!BOARD) return;
     const b=BOARD, w=b.x1-b.x0, fl=-b.floor;
@@ -2409,6 +2443,125 @@ function createDuel(opts){
     for(const e of S.effects){ e.t-=dt; if(e.t<=0&&!e.ended){ e.ended=true; e.end(); } } S.effects=S.effects.filter(e=>!e.ended);
     if(S.broken) S.broken.t=Math.max(0,S.broken.t-dt);
   }
+  /* -- leaves: what a weapon leaves behind (the blocks and their numbers are in LEAVES) --
+     Things that lie on a surface are in S.lv: {id,lq,k,side,x,y,w,life,max,t,cd}. x is the middle, y the height of the
+     surface it lies on (for a cloud, of its middle), w the width (for a cloud, the radius). Walls and steps are ordinary
+     drawn objects in S.objs, marked `leaf` with their owner's side, so they are drawn, mined and erased like any other.
+     Flames, mines, spikes and a cloud's soaking act only on the owner's foe; a puddle is slippery for both fighters;
+     walls and steps are solid for both. A fighter may have LEAVE_CAP of all these at once: the oldest goes.
+     An ultimate leaves nothing, and nothing here moves or acts while one plays (leaveStep is not run then), so a
+     caster is never interrupted; outside one, what hurts goes through hurt(), which already lets a caster stand firm.
+     Works the same on the spreadsheet stage: things lie on the banker's cells and drop when he deletes them. */
+  S.lv=[]; let lvSeq=1;
+  // Set an item's customizations (see LEAVES): a list of ids or of {id,size,secs}. While drawing, or in practice.
+  // Returns the list as kept (unknown ids, ones the item's kind cannot carry, repeats and extras are dropped) or null.
+  S.leaveSet=(side,k,list)=>{
+    const it=(side===0||side===1)&&(k===0||k===1)?S.items[side][k]:null; if(!it||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
+    return it.customs=leaveCustoms(list,it.kind);
+  };
+  // The highest thing to stand on at x that is not above height y: the floor, a solid's top or a ledge.
+  function surfaceUnder(x,y){
+    let best=0; for(const o of SOL) if(x>=o.x0&&x<=o.x1&&o.y1<=y+6&&o.y1>best) best=o.y1;
+    for(const p of oneWays()) if(x>=p.x0&&x<=p.x1&&p.y<=y+6&&p.y>best) best=p.y;
+    return best;
+  }
+  const leaveGrip=f=>f.slip&&S.ult<0?LEAVES.slick.grip:1;      // how much of its footing a fighter has (see control)
+  const leavesOf=side=>S.lv.filter(o=>o.side===side).concat(S.objs.filter(o=>o.leaf===side&&o.life>0));
+  function leaveCap(side,k,most){
+    for(let all=leavesOf(side).filter(o=>!k||o.k===k), n=0; all.length>(most||LEAVE_CAP)&&n<40; n++){
+      let old=all[0]; for(const o of all) if(o.lq<old.lq) old=o;
+      if(old.leaf!==undefined){ old.life=0; puff(old.x+old.w/2,old.y,'#999',5); } else{ S.lv.splice(S.lv.indexOf(old),1); puff(old.x,-old.y-8,'#999',5); }
+      all=all.filter(o=>o!==old);
+    }
+  }
+  // Lay something down. A new piece that touches one of the same kind and owner joins it (up to maxW wide) and renews it.
+  function leavePut(k,side,x,y,w,life,maxW){
+    x=clamp(x,10,W-10);
+    for(const o of S.lv){
+      if(o.k!==k||o.side!==side||k==='mine') continue;
+      if(k==='cloud'){ if(Math.hypot(o.x-x,o.y-y)<o.w){ o.life=Math.max(o.life,life); return o; } continue; }
+      if(Math.abs(o.y-y)>10) continue;
+      const a=Math.min(o.x-o.w/2,x-w/2), b=Math.max(o.x+o.w/2,x+w/2);
+      if(b-a<=o.w+w&&b-a<=Math.max(maxW||0,w*1.5,o.w)){ o.x=(a+b)/2; o.w=b-a; o.life=Math.max(o.life,life); return o; }
+    }
+    const o={id:lvSeq,lq:lvSeq++,k,side,x,y,w,life,max:life,t:0,cd:0}; S.lv.push(o); puff(x,-y-8,PCOLS[side],5);
+    if(k==='mine') leaveCap(side,'mine',LEAVES.mine.most); leaveCap(side); return o;
+  }
+  const leaveGround=(k,side,x,y,w,life)=>{ const g=surfaceUnder(x,y); return y-g<200?leavePut(k,side,x,g,w,life):null; };
+  function leaveWall(side,x,y,c){
+    const L=LEAVES.wall, h=L.h*c.size, g=surfaceUnder(x,y), life=L.life*c.secs; if(y-g>200) return;
+    x=clamp(x,30,W-30);
+    for(const o of S.objs) if(o.leaf===side&&o.kind==='wall'&&o.life>0&&Math.abs(o.x+8-x)<40){ o.life=Math.max(o.life,life); return; }      // one already stands here
+    const side2=dx=>{ const pts=[]; for(let i=0;i<=6;i++) pts.push({x:x+dx+(i%2?2:-2),y:-g-h*i/6}); return pts; };
+    const o=addObj({kind:'wall',solid:true,x:x-8,y:-(g+h),w:16,h,strokes:[side2(-7),side2(7),[{x:x-9,y:-g-h},{x:x,y:-g-h-9},{x:x+9,y:-g-h}],[{x:x-7,y:-g-h*0.35},{x:x+7,y:-g-h*0.5}],[{x:x-7,y:-g-h*0.65},{x:x+7,y:-g-h*0.8}]],
+      color:PCOLS[side],life,owner:side,leaf:side,lq:lvSeq++});
+    burst(x,-g-h/2,PCOLS[side],10); fx('quake',{x:rr(x),y:rr(g),n:40}); leaveCap(side); return o;
+  }
+  function leaveStepAt(side,x,y,c){
+    const L=LEAVES.step, w=L.w*c.size, x0=clamp(x-w/2,0,W-w), pts=[]; for(let i=0;i<=8;i++) pts.push({x:x0+w*i/8,y:-y+(i%2?1.5:-1.5)});
+    const o=addObj({kind:'platform',x:x0,y:-y,w,strokes:[pts,[{x:x0+6,y:-y+7},{x:x0+w-6,y:-y+7}]],color:PCOLS[side],life:L.life*c.secs,owner:side,leaf:side,lq:lvSeq++});
+    ring(x,-y,PCOLS[side]); leaveCap(side); return o;
+  }
+  // An attack move begins: every few of them drop a mine at the fighter's feet.
+  function leaveAttack(f,it,k){
+    const c=it.customs&&it.customs.find(c=>c.id==='mine'); if(!c||(it.kind!=='melee'&&it.kind!=='ranged')) return;
+    f.lvN=(f.lvN||0)+1; if(f.lvN<LEAVES.mine.every) return;
+    const g=surfaceUnder(f.x,f.y); if(f.y-g>200) return;       // too high up: it is dropped at the next attack instead
+    f.lvN=0; leavePut('mine',f.side,f.x-f.face*6,g,LEAVES.mine.r*c.size,LEAVES.mine.life*c.secs);
+  }
+  // A melee blow's moment, whether it lands (hit) or not; last: it is the move's last blow.
+  function leaveSwing(f,it,M,e,reach,hit,last){
+    const cs=it.customs; if(!cs||!cs.length||it.kind!=='melee'||M.mine) return;
+    const g=surfaceUnder(f.x,f.y), near=f.y-g<130, fin=M.end&&last;
+    for(const c of cs){ const L=LEAVES[c.id];
+      if(c.id==='fire'){ if(near){ const w=Math.max(60,reach)*c.size; leavePut('fire',f.side,f.x+f.face*(w/2+6),g,w,L.life*c.secs,w*2); } }
+      else if(c.id==='slick'){ if(hit) leaveGround('slick',f.side,e.x,e.y,L.w*c.size,L.life*c.secs); }
+      else if(c.id==='spikes'){ if(fin&&near){ const w=L.w*c.size; leavePut('spikes',f.side,f.x+f.face*Math.max(w/2+14,reach*0.8),g,w,L.life*c.secs); } }
+      else if(c.id==='wall'){ if(fin&&hit) leaveWall(f.side,e.x+f.face*44,e.y,c); }
+      else if(c.id==='cloud'){ if(hit) leavePut('cloud',f.side,e.x,e.y+50,L.r*c.size,L.life*c.secs); }
+    }
+  }
+  // A shot or a bomb is over (see the end of projectiles): on the foe, in something solid, on the ground, or in the air.
+  function leaveLand(p){
+    if(p.tr==='fleet'||p.os!==undefined||p.hover||(p.k!=='shot'&&p.k!=='bomb')||p.x<0||p.x>W||S.phase!=='fight') return;
+    const it=S.items[p.side][p.slot], cs=it&&it.customs; if(!cs||!cs.length) return;
+    const e=S.f[1-p.side], y=Math.max(0,p.y), dir=Math.sign(p.vx)||1, side=p.side;
+    const hit=Math.abs(p.x-e.x)<40+10*(p.big||0)&&y>e.y-16&&y<e.y+100*e.scale, inWall=!hit&&SOL.some(o=>p.x>o.x0&&p.x<o.x1&&y>o.y0&&y<o.y1), at=hit?e.x:p.x;
+    for(const c of cs){ const L=LEAVES[c.id];
+      if(c.id==='fire'){ if(p.k==='bomb') leaveGround('fire',side,p.x,y,Math.min(220,(p.radius||60)*2)*c.size,L.life*c.secs); }      // a shot lays its trail as it flies (leaveStep)
+      else if(c.id==='slick') leaveGround('slick',side,at,y,L.w*c.size,L.life*c.secs);
+      else if(c.id==='spikes') leaveGround('spikes',side,at,y,L.w*c.size,L.life*c.secs);
+      else if(c.id==='wall'){ if(p.k==='shot'&&p.fin&&!inWall) leaveWall(side,hit?e.x+dir*44:p.x,hit?e.y:y,c); }
+      else if(c.id==='step'){ if(p.k==='shot'&&!hit&&!inWall&&y-surfaceUnder(p.x,y)>=40) leaveStepAt(side,p.x,y,c); }
+      else if(c.id==='cloud') leavePut('cloud',side,at,Math.max(40,hit?e.y+50:y),L.r*c.size,L.life*c.secs);
+    }
+  }
+  function leaveStep(dt){
+    // a flying shot with the fire trail lights the ground under it
+    for(const p of S.pr){ if(p.k!=='shot'||p.tr==='fleet'||p.os!==undefined||p.hover||p.x<0||p.x>W) continue;
+      const it=S.items[p.side][p.slot], c=it&&it.customs&&it.customs.find(c=>c.id==='fire'); if(!c) continue;
+      const g=surfaceUnder(p.x,p.y); if(p.y-g<150) leavePut('fire',p.side,p.x,g,40,LEAVES.fire.shotLife*c.secs,320*c.size); }
+    for(const f of S.f) if(f.slip) f.slip=0;
+    const settle=S.tickN%12===0;
+    for(const o of S.lv){
+      o.life-=dt; o.t+=dt; if(o.cd>0) o.cd-=dt;
+      if(settle&&o.k!=='cloud'){ const g=surfaceUnder(o.x,o.y+2); if(g<o.y-1) o.y=g; }      // what it lay on is gone: it drops
+      const e=S.f[1-o.side], dx=e.x-o.x, L=LEAVES[o.k], on=e.ground&&Math.abs(e.y-o.y)<8;
+      if(o.k==='slick'){ for(const f of S.f) if(f.ground&&Math.abs(f.y-o.y)<8&&Math.abs(f.x-o.x)<o.w/2) f.slip=1; }
+      else if(e.hp<=0) continue;
+      else if(o.k==='fire'){ if(on&&Math.abs(dx)<o.w/2+8){ if(e.burn<=0) e.burnDps=0; e.burnDps=Math.max(e.burnDps,L.dps); e.burn=Math.max(e.burn,0.5); } }
+      else if(o.k==='mine'){ if(o.t>=L.arm&&Math.abs(dx)<o.w&&e.y>o.y-20&&e.y<o.y+70){ o.life=0;
+          S.events.push({e:'boom',x:rr(o.x),y:rr(o.y+10),n:rr(o.w+24),el:'none',s:1}); hurt(e,L.dmg,'none',(sgn(dx)||1)*220,320,S.f[o.side],o.x,0.25,undefined,'slam'); } }
+      else if(o.k==='spikes'){ if(o.t>=L.rise&&o.cd<=0&&Math.abs(dx)<o.w/2+6&&e.y>o.y-4&&e.y<o.y+34){ o.cd=L.again;
+          hurt(e,L.dmg,'none',(sgn(dx)||1)*120,300,S.f[o.side],o.x,0.25,undefined,'slam'); } }
+      else if(o.k==='cloud'){ if(Math.hypot(dx,e.y+50*e.scale-o.y)<o.w+10) e.slow=Math.max(e.slow,0.3); }
+    }
+    S.lv=S.lv.filter(o=>o.life>0);
+  }
+  // For the page: [id, kind, owner, x, y, width, seconds left, 0..1 (spikes: how far up; a mine: armed; else: faded in)].
+  const leaveView=()=>S.lv.map(o=>[o.id,o.k,o.side,r1(o.x),r1(o.y),r1(o.w),r1(o.life),o.k==='mine'?(o.t>=LEAVES.mine.arm?1:0):r1(Math.min(1,o.t/(o.k==='spikes'?LEAVES.spikes.rise:0.25)))]);
+  // For S.hash: everything left behind, as numbers.
+  const leaveState=()=>S.lv.concat(S.objs.filter(o=>o.leaf!==undefined).map(o=>[o.id,o.leaf,o.x,o.y,o.w,o.life]));
   /* -- Spreadsheet stage. A banker is building a valuation model and the fight happens in his sheet. It is a script, not a
         simulation: one fixed minute of edits. Cells he fills in are platforms; he drags, pastes and deletes them; halfway
         through he deletes everything in a rage and the errors rain down; near the end he notices the two fighters and
@@ -2507,7 +2660,7 @@ function createDuel(opts){
       if(S.rules.length) ruleStep(dt);
       for(const f of S.f){ f.run=1; f.grav=1; cfire('tick',f,-1,dt); }      // wielder customizations
       for(const f of S.f) control(f,dt);
-      projectiles(dt,-1); stepMotes(dt); world(dt); if(S.sheet) sheetTick(dt);
+      projectiles(dt,-1); stepMotes(dt); world(dt); leaveStep(dt); if(S.sheet) sheetTick(dt);
       targetStep(dt);      // target: statuses run down (not while an ultimate plays: their clocks stop with the round's)
     }
     const a=S.f[0], b=S.f[1], d0=a.hp<=0, d1=b.hp<=0;
@@ -2520,11 +2673,11 @@ function createDuel(opts){
   S.step=dt=>{ acc+=Math.min(0.25,dt); while(acc>=STEP){ acc-=STEP; tick(STEP); S.tickN++; } };
   S.snapshot=()=>({phase:S.phase,t:+S.t.toFixed(2),round:S.round,wins:S.wins,ready:S.ready,winner:S.winner,champ:S.champ,ink:[S.inkLeft(0),S.inkLeft(1)],practice:S.practice,hs:S.phase==='fight'&&S.stop>0?1:0,ul:S.phase==='fight'&&S.ult>=0?[S.ult,+S.ultT.toFixed(2)]:null,
     w:W,board:BOARD,sheet:sheetView(),broken:S.broken&&{t:r1(S.broken.t),hole:S.broken.hole},breached:S.breached,cells:S.cells.filter(c=>c.hp<2&&c.side!=='c').map(c=>[c.id,c.hp]),
-    objs:S.objs.map(o=>[o.id,r1(o.x),r1(o.y),o.life===Infinity?-1:r1(o.life)]),fields:S.fields.map(q=>({a:q.a,b:q.b,u:q.u,life:r1(q.life),max:q.max,col:q.col})),
+    objs:S.objs.map(o=>[o.id,r1(o.x),r1(o.y),o.life===Infinity?-1:r1(o.life)]),fields:S.fields.map(q=>({a:q.a,b:q.b,u:q.u,life:r1(q.life),max:q.max,col:q.col})),lv:leaveView(),
     hack:S.hack&&{by:S.hack.by,target:S.hack.target,name:S.hack.def.name,desc:S.hack.def.desc,t:+S.hack.t.toFixed(2),max:S.hack.max,counter:S.hack.counter},
     fxs:S.effects.map(e=>({by:e.by,target:e.target,counter:e.counter,name:e.name})),
     items:S.items.map(a=>a.map(it=>it&&{name:it.name,kind:it.kind,style:it.style,el:it.el,cost:Math.round(it.cost),ver:it.ver,sz:Math.round(it.st.size),
-      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune,am:it.ammo,cu:it.customs&&it.customs.length?it.customs:undefined,cu:it.customs,cu:it.customs,cu:it.customs})),
+      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune,am:it.ammo,cu:it.customs&&it.customs.length?it.customs:undefined,cu:it.customs,cu:it.customs,cu:it.customs,cu:it.customs&&it.customs.length?it.customs:undefined})),
     f:S.f.map(f=>({x:r1(f.x),y:r1(f.y),vx:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vx),vy:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vy),face:f.face,hp:Math.max(0,r1(f.hp)),g:f.ground?1:0,
       act:f.act?{k:f.act.k,m:f.act.m+(f.act.v?'_b':''),t:+f.act.t.toFixed(3),r:+f.act.rate.toFixed(2)}:null,
       sh:f.shield>0?1:0,hurt:f.hurt>0?1:0,burn:f.burn>0?1:0,slow:f.slow>0?1:0,dash:f.dash>0?1:0,held:f.held,
@@ -2549,6 +2702,7 @@ function createDuel(opts){
     for(const f of S.f) put(f,0);
     for(const p of S.pr) put(p,0);
     for(const m of S.motes) put(m,0);
+    for(const o of leaveState()) put(o,0);
     return fnv1a(out.join(','));
   };
   if(S.sheet) sheetReset();
@@ -4541,6 +4695,64 @@ function worldFront(v,now){
   FXI.drawFlash(cx,v.board?-(v.board.floor+(v.board.top-v.board.floor)*0.58):-230);
   L.restore();
 }
+/* ---------- leaves: what weapons leave behind, on screen (v.lv; see LEAVES in the rules) ----------
+   Each row is [id, kind, owner, x, y, width, seconds left, 0..1]. Everything is edged or marked in its owner's colour, so
+   it is plain whose weapon left it. Flames, puddles, spikes and mines are drawn behind the fighters; a cloud is drawn
+   over them, which is how it hides whoever is inside. Walls and steps are drawn objects and need nothing here. */
+function leavesDraw(v,now,front){
+  const list=v.lv; if(!list||!list.length) return;
+  const jit=(id,n)=>{ const s=Math.sin(id*12.9898+n*78.233)*43758.5453; return s-Math.floor(s); };
+  L.save(); L.translate(0,GY); L.lineCap='round'; L.lineJoin='round';
+  for(const [id,k,side,x,yUp,w,life,a] of list){
+    if((k==='cloud')!==!!front) continue;
+    const y=-yUp, col=PCOL[side]||'#111', fade=Math.min(1,life/0.6); L.save(); L.globalAlpha=fade;
+    if(k==='fire'){
+      // a row of tongues that flicker, each on its own beat; an owner-coloured scorch line under them
+      const n=Math.max(3,Math.round(w/20)), x0=x-w/2, grow=Math.min(1,a+0.3);
+      L.strokeStyle=col; L.lineWidth=6; L.beginPath(); L.moveTo(x0-4,y+4); L.lineTo(x0+w+4,y+4); L.stroke();
+      for(const [fill,sc] of [['#e2552d',1],['#f6b21b',0.62],['#fff3c4',0.3]]){ L.fillStyle=fill; L.beginPath();
+        for(let i=0;i<n;i++){ const tx=x0+(i+0.5)*w/n, h=(30+26*jit(id,i))*(0.7+0.3*Math.sin(now/(70+30*jit(id,i+9))+i*1.7))*sc*grow*(0.6+0.4*fade), hw=w/n*0.62*sc, lean=Math.sin(now/130+i)*4*sc;
+          L.moveTo(tx-hw,y); L.quadraticCurveTo(tx-hw*0.9,y-h*0.5,tx+lean,y-h); L.quadraticCurveTo(tx+hw*0.9,y-h*0.5,tx+hw,y); L.closePath(); }
+        L.fill(); }
+      L.strokeStyle='#e2552d'; L.lineWidth=2; for(let i=0;i<3;i++){ const u=((now/600+jit(id,i+20))%1), ex=x0+w*jit(id,i+30); L.globalAlpha=fade*(1-u); L.beginPath(); L.moveTo(ex,y-44-u*40); L.lineTo(ex+3,y-50-u*40); L.stroke(); }
+    }else if(k==='slick'){
+      // a flat glossy puddle: owner-coloured rim, a sheen that slides along it
+      const rx=w/2*Math.min(1,0.4+a*0.6);
+      L.fillStyle='rgba(42,127,212,0.42)'; L.beginPath(); L.ellipse(x,y,rx,10,0,0,7); L.fill();
+      L.strokeStyle=col; L.lineWidth=3; L.beginPath(); L.ellipse(x,y,rx,10,0,0,7); L.stroke();
+      L.strokeStyle='#fff'; L.lineWidth=2; for(let i=0;i<3;i++){ const u=((now/900+i/3)%1), sx=x-rx*0.8+u*rx*1.6; L.globalAlpha=fade*Math.sin(u*Math.PI); L.beginPath(); L.moveTo(sx-12,y-3); L.lineTo(sx+12,y-3); L.stroke(); }
+      L.globalAlpha=fade; L.strokeStyle='#2a7fd4'; L.lineWidth=2; for(let i=0;i<4;i++){ const dx=(jit(id,i)-0.5)*rx*1.5; L.beginPath(); L.moveTo(x+dx-5,y+4); L.lineTo(x+dx+5,y+4); L.stroke(); }
+    }else if(k==='mine'){
+      // a studded dome with a lamp: slow blink while it arms, quick once it is live, and the ground it watches marked out
+      const live=a>=1, blink=Math.sin(now/(live?70:260))>0;
+      if(live){ L.strokeStyle=col; L.globalAlpha=fade*0.45; L.lineWidth=2; L.setLineDash([5,6]); L.beginPath(); L.moveTo(x-w,y+1); L.lineTo(x+w,y+1); L.stroke(); L.setLineDash([]); L.globalAlpha=fade; }
+      L.fillStyle='#111'; L.strokeStyle='#111'; L.lineWidth=3; L.beginPath(); L.arc(x,y,16,Math.PI,Math.PI*2); L.closePath(); L.fill();
+      for(const t of [-2.5,-1.57,-0.64]){ L.beginPath(); L.moveTo(x+Math.cos(t)*15,y+Math.sin(t)*15); L.lineTo(x+Math.cos(t)*25,y+Math.sin(t)*25); L.stroke(); }
+      L.fillStyle=col; L.beginPath(); L.arc(x,y-7,7,0,7); L.fill();
+      if(blink){ L.fillStyle=live?'#ff3b30':'#fff'; L.shadowColor='#ff3b30'; L.shadowBlur=live?12:0; L.beginPath(); L.arc(x,y-7,4.5,0,7); L.fill(); L.shadowBlur=0; }
+      if(live){ const u=(now/700)%1; L.strokeStyle='#ff3b30'; L.lineWidth=2; L.globalAlpha=fade*(1-u)*0.8; L.beginPath(); L.arc(x,y,16+u*(w-16),Math.PI,Math.PI*2); L.stroke(); }
+    }else if(k==='spikes'){
+      // a row of teeth that shoot up out of the floor, owner-coloured with an ink edge, on a cracked line
+      const n=Math.max(3,Math.round(w/17)), x0=x-w/2, up=a*(2-a);
+      L.strokeStyle='#111'; L.lineWidth=3; L.beginPath(); L.moveTo(x0-8,y+1); L.lineTo(x0+w+8,y+1); L.stroke();
+      L.fillStyle=col; L.lineWidth=2.5; L.beginPath();
+      for(let i=0;i<n;i++){ const sx=x0+(i+0.5)*w/n, h=(36+14*jit(id,i))*up, hw=w/n*0.42; L.moveTo(sx-hw,y); L.lineTo(sx+(jit(id,i+5)-0.5)*4,y-h); L.lineTo(sx+hw,y); L.closePath(); }
+      L.fill(); L.stroke();
+      if(a<1){ L.strokeStyle='#111'; L.lineWidth=2; for(let i=0;i<4;i++){ const dx=(jit(id,i+11)-0.5)*w; L.beginPath(); L.moveTo(x+dx,y-2); L.lineTo(x+dx*1.2,y-12-20*a); L.stroke(); } }
+    }else if(k==='cloud'){
+      // puffs that drift and overlap, thick enough to hide a fighter; rain under it, an owner-coloured outline round it
+      const r=w*Math.min(1,0.35+a*0.65), puffs=7;
+      L.strokeStyle='#2a7fd4'; L.lineWidth=2; L.globalAlpha=fade*0.7; for(let i=0;i<6;i++){ const u=((now/420+jit(id,i))%1), rx=x+(jit(id,i+40)-0.5)*r*1.5, ry=y+r*0.5+u*Math.max(10,yUp-r*0.5); L.beginPath(); L.moveTo(rx,ry); L.lineTo(rx-2,ry+9); L.stroke(); }
+      L.globalAlpha=fade;
+      const at=i=>{ const t=i/puffs*Math.PI*2+now/2600*(i%2?1:-1); return [x+Math.cos(t)*r*0.55+Math.sin(now/700+i)*4,y+Math.sin(t)*r*0.42,r*(0.52+0.16*jit(id,i))]; };
+      L.strokeStyle=col; L.lineWidth=5; for(let i=0;i<puffs;i++){ const [px,py,pr]=at(i); L.beginPath(); L.arc(px,py,pr,0,7); L.stroke(); }
+      L.fillStyle='#e9edf3'; for(let i=0;i<puffs;i++){ const [px,py,pr]=at(i); L.beginPath(); L.arc(px,py,pr,0,7); L.fill(); } L.beginPath(); L.arc(x,y,r*0.62,0,7); L.fill();
+      L.strokeStyle='#aab3c2'; L.lineWidth=2.5; for(let i=0;i<4;i++){ const [px,py,pr]=at(i*2); L.beginPath(); L.arc(px,py,pr*0.6,Math.PI*1.1,Math.PI*1.7); L.stroke(); }
+    }
+    L.restore();
+  }
+  L.restore();
+}
 const shadowY=f=>{ let y=0; for(const p of ARENA_PLATS) if(f.y>=p.y-1&&f.x>=p.x0-6&&f.x<=p.x1+6) y=Math.max(y,p.y); return y; };
 /* ---------- spreadsheet stage ---------- */
 // The banker's sheet: a formula bar showing what he is typing, column and row headings, faint figures that keep changing,
@@ -4804,7 +5016,7 @@ function render(now){
   if(terrain){ L.strokeStyle='#ffd84a'; L.globalAlpha=RETRO?0:.85; L.lineWidth=3; }else L.lineWidth=5;
   if(!v.sheet) for(const p of ARENA_PLATS){ L.beginPath(); L.moveTo(p.x0+(terrain?3:0),GY-p.y+(terrain?0:2)); L.lineTo(p.x1-(terrain?3:0),GY-p.y+(terrain?0:2)); L.stroke(); }
   L.globalAlpha=1; L.strokeStyle='#111';
-  worldBack(v,now);
+  worldBack(v,now); leavesDraw(v,now,0);
   // an ultimate is playing: the stage goes dark around its caster (see ultBack)
   ultBack(v,now);
   // projectiles
@@ -4852,7 +5064,7 @@ function render(now){
     else{ L.save(); L.translate(x,y); L.rotate(now/90*Math.sign(p.vx||1)); if(!it||!sprite(ps,p.slot,it.sz)){ L.fillStyle=PEN[p.el]; L.beginPath(); L.arc(0,0,10,0,7); L.fill(); } L.restore(); }
   }
   if(fleetSeen.size>40) for(const id of [...fleetSeen.keys()]) if(!v.pr.some(p=>p.id===id)) fleetSeen.delete(id);
-  drawFighter(v,1,now,age,dt); drawFighter(v,0,now,age,dt);
+  drawFighter(v,1,now,age,dt); drawFighter(v,0,now,age,dt); leavesDraw(v,now,1);
   if(v.mo) for(const m of v.mo){ const T=TELLS[m.c], ma=v.ul?0:age; if(T&&T.mote){ L.save(); T.mote(L,m,{x:m.x+m.vx*ma,y:GY-(m.y+m.vy*ma),now,v,col:tellCol(v,m.side,m.slot)}); L.restore(); } }      // wielder customizations: motes, over the fighters
   worldFront(v,now);
   if(v.sheet) sheetFront(v,now);
@@ -5014,8 +5226,8 @@ function labShapeBuild(el){
 // works, so runs, jumps and combos can be tried by hand too.
 const LAB_STOCK={blade:'sword',spear:'spear',hammer:'hammer',fist:'gloves',dual:'twins',bow:'bow',gun:'gun',akimbo:'pistols',staff:'staff',hurl:'star'};
 const LAB_NAME={blade:'Sword',spear:'Spear',hammer:'Hammer',fist:'Fists',dual:'Twin blades',bow:'Bow',gun:'Gun',akimbo:'Twin pistols',staff:'Staff',hurl:'Thrown'};
-const lab={style:'blade',el:'none',speed:1,loop:false,gap:220,last:null,idle:0,customs:[],low:false,todo:[],cu:[],trig:'',wound:false};
-function labEquip(){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,Object.assign({},st.spec,{customs:lab.customs}),50); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0; if(desk[0]) updateDesk(desk[0]); labCustoms(); labTarget(); labTrig(); }
+const lab={style:'blade',el:'none',speed:1,loop:false,gap:220,last:null,idle:0,customs:[],low:false,todo:[],cu:[],trig:'',wound:false,leaves:[]};
+function labEquip(){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,Object.assign({},st.spec,{customs:lab.customs}),50); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0; labLeaves(); if(desk[0]) updateDesk(desk[0]); labCustoms(); labTarget(); labTrig(); }
 // wielder customizations in the move tester: a button for every block in CUSTOMS, by axis, and a slider for every
 // parameter of the ones switched on. All of it is read from the table; a new block needs no line here.
 function labCustoms(){
@@ -5044,6 +5256,14 @@ function labPlay(m,alt){
   labPlace(); const f=sim.f[0];
   if(m==='ult'){ f.od=100; sim.startUlt(0); } else sim.play(0,m,alt);
 }
+// leaves: the "Leaves behind" row. Each button switches one block on for the weapon under test (S.leaveSet keeps at most
+// LEAVE_MAX and only those the weapon's kind can carry); Clear removes everything left in the arena.
+function labLeaves(){
+  const it=sim.items[0][0], kept=it?sim.leaveSet(0,0,lab.leaves)||[]:[]; lab.leaves=kept.map(c=>c.id);
+  document.querySelectorAll('#labLeaves button[data-id]').forEach(b=>{ const L=LEAVES[b.dataset.id]; b.classList.toggle('on',lab.leaves.includes(b.dataset.id)); b.disabled=!it||!L.kinds.includes(it.kind); });
+  const note=$('labLeavesNote'); if(note) note.textContent=kept.length?kept.map(c=>LEAVES[c.id].name+' ('+c.cost+' pt): '+LEAVES[c.id].blurb).join('  '):'Nothing switched on.';
+}
+function labLeavesClear(){ sim.lv.length=0; for(const o of sim.objs) if(o.leaf!==undefined) o.life=0; }
 // target: the "On hit" row. The chosen blocks go on the weapon under test through the rules' own call, and the buttons
 // show what the rules kept. The dummy gets gloves carrying the same blocks, so "Take a hit" puts them on the blue fighter.
 function labTarget(){
@@ -5095,7 +5315,8 @@ function labBuild(){
     <div class="row"><b>On hit</b><span id="labTarget" class="row" style="margin:0"></span><span id="labTargetN" style="font-size:13px;color:var(--muted)"></span></div>
     <div class="row"><b>Trigger</b><span id="labTrigs" class="row" style="margin:0"></span><b id="labTrigV" style="min-width:110px"></b></div>
     <div class="row"><b></b><span id="labTrigTip" style="font-size:13px;color:var(--muted);flex:1 1 300px"></span>
-      <label><input type="checkbox" id="labWound"> Keep blue wounded</label><button id="labInk0">Empty blue's ink</button><button id="labRearm">Reset trigger</button></div>`;
+      <label><input type="checkbox" id="labWound"> Keep blue wounded</label><button id="labInk0">Empty blue's ink</button><button id="labRearm">Reset trigger</button></div>
+    <div class="row"><b>Leaves behind</b><span id="labLeaves" class="row" style="margin:0"></span></div><p id="labLeavesNote" style="margin:0"></p>`;
   document.querySelector('.arenawrap').after(el);
   labShapeBuild(el);      // shape: the customization row
   const styles=$('labStyles'), els=$('labEls');
@@ -5119,6 +5340,9 @@ function labBuild(){
   $('labWound').onchange=e=>{ lab.wound=e.target.checked; if(!lab.wound) sim.f[0].hp=HP; };
   $('labInk0').onclick=e=>{ e.target.blur(); sim.f[0].ink2=0; }; $('labRearm').onclick=e=>{ e.target.blur(); labTrig(); };
   pickTrig('');
+  $('labLeaves').innerHTML=Object.keys(LEAVES).map(id=>`<button data-id="${id}" title="${LEAVES[id].blurb}">${LEAVES[id].name} ${LEAVES[id].cost}</button>`).join('')+'<button id="labLeavesClear">Clear</button>';
+  $('labLeaves').querySelectorAll('button[data-id]').forEach(b=>b.onclick=()=>{ b.blur(); const id=b.dataset.id, on=lab.leaves.includes(id); lab.leaves=on?lab.leaves.filter(x=>x!==id):[id].concat(lab.leaves); labLeaves(); if(lab.last) labPlay(lab.last[0],lab.last[1]); });
+  $('labLeavesClear').onclick=e=>{ e.target.blur(); labLeavesClear(); };
   sim.step(0.05); pickEl('none'); pickStyle('blade');
 }
 if(REPLAY) setReplay(REPLAY);      // duel?replay=CODE: watch that room's match again
