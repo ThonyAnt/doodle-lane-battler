@@ -47,7 +47,10 @@ body.playing .arenawrap{border-left:0;border-right:0;border-radius:0;box-shadow:
 .hp b{white-space:nowrap}
 .pips{letter-spacing:2px;white-space:nowrap}
 .bar{flex:1;height:16px;border:2px solid var(--ink);border-radius:8px;background:#eef1f7;overflow:hidden;min-width:40px}
-.bar i{display:block;height:100%;width:100%;transition:width .12s}
+.bar{position:relative}
+.bar i{display:block;height:100%;width:100%;transition:width .12s;position:relative}
+.bar i.gh{position:absolute;top:0;bottom:0;left:0;background:#ffd84a!important;transition:none;margin:0!important}
+.hp.right .bar i.gh{left:auto;right:0}
 .hp.left .bar i{background:var(--p1)} .hp.right .bar i{background:var(--p2);margin-left:auto}
 #clock{font-family:var(--display);font-size:26px;min-width:96px;text-align:center;white-space:nowrap}
 .overlay{position:absolute;inset:46px 0 0 0;display:flex;align-items:center;justify-content:center;padding:12px;background:rgba(243,246,251,.86)}
@@ -480,9 +483,9 @@ Window titlebars = platforms
 
   <section class="arenawrap" aria-label="Arena">
     <div class="hud">
-      <div class="hp left"><b>Blue</b><span class="pips" id="pip0"></span><div class="bar"><i id="hp0"></i></div></div>
+      <div class="hp left"><b>Blue</b><span class="pips" id="pip0"></span><div class="bar"><i class="gh" id="hpg0"></i><i id="hp0"></i></div></div>
       <div id="clock"></div>
-      <div class="hp right"><b>Red</b><span class="pips" id="pip1"></span><div class="bar"><i id="hp1"></i></div></div>
+      <div class="hp right"><b>Red</b><span class="pips" id="pip1"></span><div class="bar"><i class="gh" id="hpg1"></i><i id="hp1"></i></div></div>
     </div>
     <canvas id="arena" width="960" height="440"></canvas>
     <div class="overlay" id="overlay" hidden></div>
@@ -1016,7 +1019,7 @@ function createDuel(opts){
       if(el==='plant'&&by&&by.hp>0) by.hp=Math.min(HP,by.hp+dmg*0.3);
     }
     if(tr==='flurry'&&!blocked) for(const dy of [44,66]) S.events.push({e:'hit',x:Math.round(t.x),y:Math.round(t.y+dy),n:Math.max(1,Math.round(dmg/2)),el,side:t.side,hap:hap||'thud',dir:kx<0?'L':'R'});
-    else S.events.push({e:blocked?'block':'hit',x:Math.round(t.x),y:Math.round(t.y+52),n:Math.max(1,Math.round(dmg)),el,side:t.side,hap:hap||'thud',dir:kx<0?'L':'R',w:+w.toFixed(2),fin:fin&&!blocked?1:0,ult:tr==='fleet'?1:0});
+    else S.events.push({e:blocked?'block':'hit',x:Math.round(t.x),y:Math.round(t.y+52),n:Math.max(1,Math.round(dmg)),el,side:t.side,hap:hap||'thud',dir:kx<0?'L':'R',w:+w.toFixed(2),fin:fin&&!blocked?1:0,ult:tr==='fleet'?1:0,d:tr==='fleet'?+dmg.toFixed(2):undefined});
     if(tr==='blast'&&!blocked) S.events.push({e:'boom',x:Math.round(t.x),y:Math.round(t.y+45),n:26,el,s:1});
   }
   // Begin a move: the fighter is committed until it ends or chains.
@@ -1683,6 +1686,9 @@ new ResizeObserver(fitCanvas).observe(cv); fitCanvas();
 let mode='bot', sim=null, bot=null, view=null, viewAt=0, net=null, local=[true,false], fx=[], shake=0, impactUntil=0, impactAt=-9999, serverInfo={}, canRead=location.protocol.startsWith('http');
 const art=[[null,null],[null,null]], artStrokes=[[null,null],[null,null]], desk=[null,null];
 const inp=[0,1].map(()=>({l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0,u:0}));
+// An ultimate's damage is shown as one big running total over whoever is being hit (ultDmg, per victim), and the health
+// it removed stays lit on their bar for a moment before draining away (hpGhost).
+const ultDmg=[null,null], hpGhost=[100,100], hpSeen=[100,100], hpHold=[0,0];
 // People who ask their system for less motion get no screen flashes and a much smaller shake.
 const CALM=matchMedia('(prefers-reduced-motion: reduce)').matches, PFLASH=['#b9c6ff','#ffb3b8'];
 // His interface and effects. Built once; the windows only show on the retro desktop, the effects are used everywhere.
@@ -2053,6 +2059,12 @@ function accept(v){
     // is inverted for a few frames (on a white stage a plain white flash would not show). Ordinary attacks and knockouts
     // never black the screen out.
     if(e.e==='hit'){ shake=Math.max(shake,(2.5+9*(e.w||0))*soft); if(e.fin&&e.ult&&now-impactAt>400){ impactAt=now; impactUntil=now+70; } }
+    if(e.e==='hit'&&e.ult){                              // add this piece to the running total over the victim
+      let u=ultDmg[e.side]; const by=1-e.side, it=v.items[by][v.f[by].held];
+      if(!u||u.fin||now-u.last>1500) u=ultDmg[e.side]={sum:0,shown:0,hits:0,t0:now,fin:0,by,name:(ULTS[it&&it.style]||ULTS.blade).name};
+      u.sum+=e.d!==undefined?e.d:e.n; u.hits++; u.last=u.pop=now; if(e.fin){ u.fin=now; shake=Math.max(shake,16*soft); }
+      hpHold[e.side]=now+1100;
+    }
     if(e.e==='ko') shake=Math.max(shake,14*soft);
     if(e.e==='ult'){ shake=Math.max(shake,7*soft); FXI.ring(e.x,-(e.y+60),PCOL[e.side]); FXI.burst(e.x,-(e.y+60),PCOL[e.side],22); }
     if(e.e==='zip') FXI.spark(e.x,-e.y,PCOL[e.side]);
@@ -2459,12 +2471,45 @@ function drawFighter(v,i,now,age,dt){
   if(f.slow){ L.fillStyle=PEN.water; for(let n=0;n<3;n++){ const fy=base-74+((now/9+n*31)%62); L.beginPath(); L.arc(x-14+n*14,fy,2.5,0,7); L.fill(); } }
   if(f.hp>0||v.phase==='draw'){ const h=ANIM.xf(s,p[0],p[1]); L.font='18px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=col;
     const tag=local[i]&&!(local[0]&&local[1])?'you':NAME[i], tx=x+h[0]*K*d, ty=base+h[1]*K-20;
-    if(RETRO||DESK){ retroStatus(L,f,tag,col,Math.round(tx),Math.round(ty),v.phase!=='draw',DESK?v.wins[i]:-1); return; }
+    if(RETRO||DESK){ f.gh=hpGhost[i]; retroStatus(L,f,tag,col,Math.round(tx),Math.round(ty),v.phase!=='draw',DESK?v.wins[i]:-1); return; }
     L.fillText(tag,tx,ty); }
 }
 // Retro desktop and the desktop overlay: the tag above a fighter is a small grey bevelled plate holding sunken bars, drawn to match the Fighters
 // panel in inkshop.css (.bevel, .bar.hp, .bar.ink, .bar.od): health, then ink and overdrive once the round is on.
 // The overlay has no scoreboard, so there the plate also shows rounds won as small squares (wins >= 0).
+// Health that has just been lost stays on the bar in yellow for a moment, then drains: a hit reads as a chunk taken out.
+// An ultimate holds it for longer.
+function hpGhostStep(v,now,dt){
+  for(const i of [0,1]){ const hp=v.phase==='draw'?100:Math.max(0,v.f[i].hp);
+    if(hp<hpSeen[i]-0.05) hpHold[i]=Math.max(hpHold[i],now+420);
+    hpSeen[i]=hp;
+    if(hpGhost[i]<hp||v.phase==='draw') hpGhost[i]=hp; else if(now>hpHold[i]) hpGhost[i]=Math.max(hp,hpGhost[i]-70*dt);
+    const g=document.getElementById('hpg'+i); if(g) g.style.width=hpGhost[i]+'%'; }
+}
+// The running total of an ultimate over its victim: it counts up as the pieces land, jumps with each one, and slams when the
+// last one hits, with the ultimate's name over it and the number of hits under it.
+function ultDamageDraw(v,now,dt){
+  for(const side of [0,1]){
+    const u=ultDmg[side]; if(!u) continue;
+    const end=(u.fin||u.last)+(u.fin?1700:1300), fade=450; if(now>end+fade||v.phase==='draw'){ ultDmg[side]=null; continue; }
+    u.shown+=(u.sum-u.shown)*Math.min(1,dt*16); if(u.sum-u.shown<0.3) u.shown=u.sum;
+    const f=v.f[side], col=PCOL[u.by], top=-OY/VS+86, x=Math.max(-OX+150,Math.min(VW-OX-150,f.x)), y=Math.max(top,GY-(f.y+178));
+    const pop=CALM?0:0.4*Math.exp(-(now-u.pop)/85), slam=u.fin&&!CALM?1.0*Math.exp(-(now-u.fin)/170):0, k=(u.fin?1.25:1)+pop+slam, a=now>end?1-(now-end)/fade:1;
+    const jig=u.fin||CALM?0:Math.sin(now/23+u.hits)*0.05, txt='−'+Math.round(u.shown);
+    L.save(); L.globalAlpha=Math.max(0,a); L.translate(x,y); L.rotate(jig);
+    if(u.fin&&now-u.fin<260&&!CALM){                    // a burst of rays behind the number as it lands
+      const g=(now-u.fin)/260; L.strokeStyle=col; L.lineCap='round'; L.globalAlpha=Math.max(0,a)*(1-g);
+      for(let n=0;n<14;n++){ const t=n*Math.PI*2/14+0.2, r0=58+g*70, r1=r0+34+(n%2?26:0); L.lineWidth=n%2?5:8; L.beginPath(); L.moveTo(Math.cos(t)*r0,Math.sin(t)*r0*0.7); L.lineTo(Math.cos(t)*r1,Math.sin(t)*r1*0.7); L.stroke(); }
+      L.globalAlpha=Math.max(0,a); }
+    L.textAlign='center'; L.textBaseline='middle'; L.lineJoin='round';
+    L.font='900 '+Math.round(66*k)+'px "Arial Black",Impact,Arial,sans-serif';
+    L.lineWidth=16*k; L.strokeStyle='#111'; L.strokeText(txt,0,0); L.lineWidth=9*k; L.strokeStyle='#fff'; L.strokeText(txt,0,0);
+    L.fillStyle=u.fin&&now-u.fin<240&&Math.floor((now-u.fin)/60)%2===0&&!CALM?'#fff':col; L.fillText(txt,0,0);
+    L.font='900 19px "Arial Black",Impact,Arial,sans-serif'; L.lineWidth=6; L.strokeStyle='#111'; L.strokeText(u.name,0,-52*k); L.fillStyle='#ffd84a'; L.fillText(u.name,0,-52*k);
+    if(u.hits>1){ const h=u.hits+' HITS'; L.font='900 15px "Arial Black",Impact,Arial,sans-serif'; L.lineWidth=5; L.strokeStyle='#111'; L.strokeText(h,0,46*k); L.fillStyle='#fff'; L.fillText(h,0,46*k); }
+    L.restore();
+  }
+}
 function retroStatus(c,f,tag,col,tx,ty,meters,wins){
   const w=62, bh=7, mh=4, pip=wins>=0?8:0, ph=(meters?bh+mh+9:bh+6)+pip, x0=tx-w/2, y0=ty-ph-4;
   const edge=(x,y,w,h,a,b)=>{ c.fillStyle=a; c.fillRect(x,y,w,1); c.fillRect(x,y,1,h); c.fillStyle=b; c.fillRect(x,y+h-1,w,1); c.fillRect(x+w-1,y,1,h); };
@@ -2476,6 +2521,7 @@ function retroStatus(c,f,tag,col,tx,ty,meters,wins){
   c.fillStyle='#c3c3c3'; c.fillRect(x0,y0,w,ph); edge(x0,y0,w,ph,'#fff','#404040'); edge(x0+1,y0+1,w-2,ph-2,'#dfdfdf','#808080');
   for(let n=0;n<WINS&&pip;n++) well(x0+3+n*8,y0+3,6,6,n<wins?1:0,col);
   well(x0+3,y0+3+pip,w-6,bh,f.hp/100,grad(y0+3+pip,bh,'#5d5','#2a2'));
+  if(f.gh>f.hp+0.4){ const a=Math.round((w-8)*Math.max(0,f.hp)/100), b=Math.round((w-8)*Math.min(100,f.gh)/100); if(b>a){ c.fillStyle=Math.floor(performance.now()/90)%2?'#ffe45c':'#fff3a8'; c.fillRect(x0+4+a,y0+4+pip,b-a,bh-2); } }
   if(meters){ const y=y0+bh+5+pip, hw=(w-8)/2, od=(f.od||0)/100;
     well(x0+3,y,hw,mh,(f.ink2===undefined?100:f.ink2)/100,grad(y,mh,'#57f','#22b'));
     well(x0+5+hw,y,hw,mh,od,od>=1&&Math.floor(performance.now()/200)%2?'#fff':'#e90'); }
@@ -2713,13 +2759,14 @@ function render(now){
   drawFighter(v,1,now,age,dt); drawFighter(v,0,now,age,dt);
   worldFront(v,now);
   if(v.sheet) sheetFront(v,now);
+  hpGhostStep(v,now,dt);
   // effects
   fx=fx.filter(e=>now-e.t0<700);
   for(const e of fx){
     const a=(now-e.t0)/700, y=GY-(e.y||0); L.globalAlpha=1-a;
     if(e.e==='hit'){ L.strokeStyle=e.el==='none'?'#111':PEN[e.el]; L.lineCap='round'; for(let n=0;n<9;n++){ const t=n*Math.PI*2/9+0.23, r0=8+a*33, r1=r0+(1-a)*(n%2?19:31); L.lineWidth=n%2?2:3; L.beginPath(); L.moveTo(e.x+Math.cos(t)*r0,y+Math.sin(t)*r0); L.lineTo(e.x+Math.cos(t)*r1,y+Math.sin(t)*r1); L.stroke(); }
       if(a<0.3){ const g=1-a/0.3, tilt=((e.x*7+e.n*13)%10)/10*1.6-0.8, len=70+e.n*5, cx=Math.cos(tilt), sy=Math.sin(tilt); L.globalAlpha=g; L.fillStyle=e.el==='none'?'#111':PEN[e.el]; L.beginPath(); L.moveTo(e.x-cx*len,y-sy*len); L.lineTo(e.x+sy*5*g,y-cx*5*g); L.lineTo(e.x+cx*len,y+sy*len); L.lineTo(e.x-sy*5*g,y+cx*5*g); L.closePath(); L.fill(); L.fillStyle='#fff'; L.beginPath(); L.moveTo(e.x-cx*len*0.7,y-sy*len*0.7); L.lineTo(e.x+sy*1.6*g,y-cx*1.6*g); L.lineTo(e.x+cx*len*0.7,y+sy*len*0.7); L.lineTo(e.x-sy*1.6*g,y+cx*1.6*g); L.closePath(); L.fill(); L.globalAlpha=1-a; }
-      L.font='26px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=PEN[e.el]; L.fillText('-'+e.n,e.x,y-30-a*30); }
+      if(!e.ult){ L.font='26px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=PEN[e.el]; L.fillText('-'+e.n,e.x,y-30-a*30); } }
     else if(e.e==='block'){ L.font='22px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle='#111'; L.fillText('BLOCK',e.x,y-30-a*24); L.strokeStyle='#111'; L.lineWidth=2; L.beginPath(); L.arc(e.x,y,15+a*35,-1.3,1.3); L.stroke(); }
     else if(e.e==='shot'){ if((e.st==='gun'||e.st==='akimbo')&&a<0.14){ L.globalAlpha=1-a/0.14; L.strokeStyle=e.el==='none'?'#111':PEN[e.el]; L.lineCap='round'; for(let n=0;n<7;n++){ const t=(n-3)*0.42, r0=6, r1=(n%2?16:28)*(0.6+a*3); L.lineWidth=n%2?2:3; L.beginPath(); L.moveTo(e.x+Math.cos(t)*r0*e.f,y+Math.sin(t)*r0); L.lineTo(e.x+Math.cos(t)*r1*e.f,y+Math.sin(t)*r1); L.stroke(); } } }
     else if(e.e==='slash'){ if(a<0.4){ const g=1-a/0.4, col=PCOL[e.side], x0=Math.min(e.x,e.x2)-40, x1=Math.max(e.x,e.x2)+40, tilt=((e.x*3)%7-3)*6;   // the cut left behind by a blink
@@ -2736,6 +2783,7 @@ function render(now){
   if(now<impactUntil&&!DESK&&!CALM){ L.save(); const b=v.board&&!v.breached&&!v.broken?v.board:null, R=b?[b.x0,GY-b.top,b.x1-b.x0,b.top-b.floor]:[-OX-20,-OY/VS-20,VW+40,cv.height/VS+40];
     L.fillStyle='#fff'; L.globalCompositeOperation='destination-over'; L.fillRect(R[0],R[1],R[2],R[3]); L.globalCompositeOperation='difference'; L.fillRect(R[0],R[1],R[2],R[3]); L.restore(); }
   // banners
+  ultDamageDraw(v,now,dt);
   const banner=(t,size,y,col)=>{ L.font=size+'px "Gochi Hand",cursive'; L.textAlign='center'; L.lineWidth=8; const bx=v.board?(v.board.x0+v.board.x1)/2:ARENA_W/2, by=v.board?y-(v.board.floor+Math.max(0,v.board.top-v.board.floor-330)):y; L.strokeStyle='#fffdf6'; L.strokeText(t,bx,by); L.fillStyle=col||'#1c2541'; L.fillText(t,bx,by); };
   if(v.phase==='draw'&&RETRO&&(local[0]||local[1]||!$('overlay').hidden)){ /* a window is open there: the sketchbook, or the join code, which must stay scannable */ }
   else if(v.phase==='draw'){ banner('Round '+v.round+': draw your gear!',40,70);
