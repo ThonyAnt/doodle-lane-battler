@@ -48,7 +48,7 @@ Skip this step only when the scene reuses a window that already exists.
 ### 3. Write the beat sheet and get it agreed
 
 A beat sheet is the scene's script as a timed table: when, what the user of the program does, what changes under the
-fighters, what the user "says", and how the players are warned. `references/beat-sheet.md` has the template and the
+fighters, and what the user "says". `references/beat-sheet.md` has the template and the
 spreadsheet's as a worked example. Check it against the six principles below, then show it to the owner. Changing a
 row of a table is cheap; changing a built scene is not.
 
@@ -73,9 +73,11 @@ about where the fighters can stand should change every few seconds, and over the
 three different ways: ground appears, ground moves (and carries whoever is on it), ground vanishes, the whole layout is
 replaced. Each scene should have one signature change that no other scene has.
 
-Change has to be fair. Every change is announced about a second ahead by something the program's user visibly does:
-the cursor travels there, text is typed, a button is pressed in, a dialog starts to open. Players should lose ground to
-their own inattention, never to a surprise.
+Do not announce changes to the arena. No countdowns, warning flashes, highlighted danger zones or "watch out" text,
+and no pause added before a change so players can get ready. The program's user is not thinking about the fighters,
+so the ground simply changes when they act; being caught out by it is part of the fun, and a scene that telegraphs
+every move plays like a tutorial. What the user visibly does (the pointer moving, text being typed) is there because
+it is how the program looks in use, not as a courtesy to the players.
 
 ### 2. Every obstacle is a piece of the program
 
@@ -132,8 +134,9 @@ most rounds end before the finale, so the best part is never seen. The round clo
 `ROUND_TIME`), so the finale must be a state that keeps escalating until the round ends, as the spreadsheet's hunt does
 by getting quicker each time.
 
-The script is the same every round and uses no randomness. Players learn a scene the way they learn a level, replays
-and the bot's training depend on rounds being repeatable, and a fixed script cannot favour one side by luck.
+Randomness is welcome. The story's beats come in the same order every round, but which cell, which dialog, where the
+error lands, or which of two bad ideas the user has next can differ, so a scene stays surprising on the tenth play.
+Keep the randomness even-handed: it should not lean toward the left or the right start.
 
 ### 6. An exact clone of the retro interface
 
@@ -145,11 +148,12 @@ invent every name, logo and icon.
 
 - The pitch was agreed, the inside-joke question was asked, and the beat sheet was shown before building.
 - The script runs thirty to sixty seconds, has three acts, and its finale escalates until the round ends.
-- The ground changes every few seconds, in at least three different ways, each one announced ahead of time.
+- The ground changes every few seconds, in at least three different ways, and none of the changes is announced.
 - At least four interface elements are obstacles, and none is a generic game hazard.
 - The user of the program has a voice, and the biggest joke changes the arena.
 - A new program window was researched and matches the desktop around it; all names and icons are invented.
-- The scene is fair to both sides, freezes during an ultimate, and works in an online room (see `references/anatomy.md`).
+- The scene does not favour either starting side, freezes during an ultimate, and works in an online room (see
+  `references/anatomy.md`).
 - The owner has a link to it, and knows what was and was not checked.
 
 ## Reference files

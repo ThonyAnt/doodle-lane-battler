@@ -12,7 +12,8 @@ page) and `duel-server.js` for `stage`.
 ### 1. Rules (in `duel.html`, between `/*DUEL-START*/` and `/*DUEL-END*/`)
 
 This block is the match itself. The server runs the same text for online rooms, so it must not touch the page: no
-`document`, no canvas, no timers, no `Math.random` in a scene's script.
+`document`, no canvas, no timers. `Math.random` is fine: in a room the server rolls the dice and every device sees the
+same result in the snapshot.
 
 | Piece | In the spreadsheet stage | What a new scene needs |
 |---|---|---|
@@ -66,15 +67,18 @@ the scene as a parameter instead of copying it.
 
 ## Constraints that keep a scene fair and working
 
-- **The same every round.** No randomness in the script. Replays (`record:true` in rooms) and the bot's training
-  replay matches from their inputs; a scene that rolls dice breaks both, and can hand a round to one side by luck.
+- **Randomness is allowed.** The owner wants scenes free to vary from round to round. Two things to know: draw the
+  random numbers in the rules, never in the page, so every device in a room sees the same thing; and recorded matches
+  (`record:true`) and the bot's training replay rounds from their inputs, so a scene that uses chance will not replay
+  exactly. The owner has said that is acceptable.
 - **Symmetry.** A hazard that targets a fighter must take turns or pick by a rule both players can read (the hunt
   starts with whoever has more health, then alternates). Layouts should not favour the left or right start.
 - **The players decide the round.** Scene damage is a seasoning. The spreadsheet's errors do 5 and its delete 12
   against `HP` of 160; a scene that kills on its own is a cutscene with victims.
-- **Warn, then act.** About a second between the visible warning and the effect, as in the beat sheet.
+- **No announcements.** Do not add warnings, countdowns or marked danger zones before the arena changes; the owner
+  does not want changes telegraphed.
 - **Always somewhere to stand.** Even at the scene's emptiest moment the floor remains, unless removing it is the
-  signature and is announced.
+  scene's signature.
 - **Light on the wire.** The scene's snapshot field is sent constantly: round the numbers, send ids and positions,
   let the page work out the rest. Things that never change (the document's static content) are drawn by the page
   from its own data, not sent.
