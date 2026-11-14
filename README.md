@@ -58,6 +58,10 @@ Press **Stage** in the header (or open `/duel?stage=sheet`) to fight inside a ba
 
 Press Stage twice (or open `/duel?stage=deck`) to fight inside a founder's pitch deck in "Podium 97". The ledges are whatever is on the slide: placeholder boxes, bullet points that fly in, the bars of a revenue chart as they grow, the boxes of an org chart. Every time the founder presses Next the whole arena is replaced, and the slide transition itself comes through the stage: a Wipe shoves you along, a Cover Down presses from above, a Checkerboard takes the floor away in patches. Then the chart collapses, clip art is dropped in, the founder notices the fighters and goes after them with the pen, and finally just hammers the space bar. The floating Speaker Notes window says what the founder is thinking, and you can stand on it.
 
+## Making a new scene
+
+The repo carries a Claude Code skill for this, `scene-creation`, in `.claude/skills/scene-creation`. It is a project skill: it comes with the repo, so anyone who opens this folder in Claude Code has it without installing anything. Ask for a new scene, stage or arena (or just describe the program to fight in) and Claude follows it: pitch, a question about an inside joke, research into the real program, a timed script to agree on, then the build. The slideshow stage was made this way.
+
 ## Replays
 
 - **Every knockout is shown again.** When a round ends, the last second before the knockout plays back at a third of the speed under a REPLAY banner, then the next round's drawing begins as usual. The knockout that wins the match is not replayed: the champion screen comes straight up. Add `?ko=0` to the address to switch the replays off (`/duel?ko=0`).
