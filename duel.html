@@ -804,9 +804,13 @@ const PAIRED=['dual','akimbo'];   // styles fought with a weapon in each hand
 // steady button presses added; each was adjusted until every style won about half its rounds. They even out the bot's play,
 // which is a guess at how people play, so expect to retune after watching real matches. The two paired styles (dual, akimbo)
 // were added later: their moves are scaled from blade and gun for the faster hit rate, and their damage set the same way.
-const STYLE={pick:{reach:1,dmg:1,kb:1},blade:{reach:1,dmg:0.98,kb:1},spear:{reach:1.4,dmg:0.71,kb:0.9},hammer:{reach:1.05,dmg:0.94,kb:1.3},fist:{reach:0.62,dmg:0.98,kb:0.9},
-  bow:{reach:1,dmg:1.31,kb:1},gun:{reach:1,dmg:1.73,kb:1},staff:{reach:1,dmg:0.8,kb:1},hurl:{reach:1,dmg:1.6,kb:1},
-  dual:{reach:0.8,dmg:0.82,kb:0.85},akimbo:{reach:1,dmg:1.64,kb:0.9}};
+// Re-fitted with `tools/balance.js tune --seed=1 --n=240` once the bench made its bots afresh each round: before that a
+// bot carried its memory of shot ids from one round into the next and dodged every shot at once, which made the ranged
+// styles look weaker than they are (they were winning 51 to 62% of real rounds, melee 41 to 48%). Checked on another
+// seed: every style 48 to 52%, melee against ranged 47%.
+const STYLE={pick:{reach:1,dmg:1,kb:1},blade:{reach:1,dmg:1.18,kb:1},spear:{reach:1.4,dmg:0.85,kb:0.9},hammer:{reach:1.05,dmg:1.02,kb:1.3},fist:{reach:0.62,dmg:1.04,kb:0.9},
+  bow:{reach:1,dmg:1.11,kb:1},gun:{reach:1,dmg:1.61,kb:1},staff:{reach:1,dmg:0.67,kb:1},hurl:{reach:1,dmg:1.56,kb:1},
+  dual:{reach:0.8,dmg:0.95,kb:0.85},akimbo:{reach:1,dmg:1.39,kb:0.9}};
 const MUZZLE={bow:[40,72],gun:[48,71],staff:[66,70],hurl:[46,68],akimbo:[48,72]};
 const styleOf=(kind,style)=>kind==='melee'?(MELEE_STYLES.includes(style)?style:'blade'):kind==='ranged'?(RANGED_STYLES.includes(style)?style:'gun'):'';
 const ALT=['blade1','blade2','bow_shot','bow_quick','gun_shot','gun_rapid','spear1','spear2','hammer1','hammer2','fist1','fist3','staff_shot','staff_quick','hurl_shot','hurl_quick'];   // moves with a second animation, name + '_b'
