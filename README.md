@@ -52,7 +52,7 @@ The server runs the match; each device only draws and displays, so both players 
 - `index.html`: the whole game (simulation, bot, drawing pads, rendering).
 - `server.js`: serves the page, reads drawings with OpenAI (the key never reaches the browser), and runs online rooms. It loads the match rules from the marked block in `index.html`, so there is one copy of the rules.
 - `duel.html` and `duel-server.js`: Doodle Duel. Same pattern: the rules sit in a marked block in `duel.html` and the server runs that block for online rooms.
-- `anim/`: Doodle Duel animation clips (run, blade combo, bow, gun) and the engine that plays them; see `anim/README.md`. `anim-lab.html` previews clips and `tools/strip.js` renders them to frame strips.
+- `anim/`: Doodle Duel animation clips (running, and a move set each for blade, spear, hammer, fists, bow, gun, magic staff and thrown weapons) and the engine that plays them; see `anim/README.md`. `anim-lab.html` previews clips and `tools/strip.js` renders them to frame strips.
 - `qrcode.js`: QR Code Generator by Kazuhiko Arase (MIT), used for the join code.
 
 ## Status

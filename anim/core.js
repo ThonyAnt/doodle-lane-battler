@@ -86,7 +86,7 @@
   //          pull   0..1: bow string draw amount
   //   trail  [[t0,t1],...] time windows where the blade leaves a painted slash trail
   //   marks  [{t,type}] gameplay moments (hit, shot, step, land). Must match the move spec.
-  //   weapon 'blade' | 'bow' | 'gun' | 'none'  (what the lab draws in the front hand)
+  //   weapon 'blade' | 'spear' | 'hammer' | 'fist' | 'bow' | 'gun' | 'staff' | 'star' | 'none'  (what the lab draws in the front hand)
   //   spline false to interpolate linearly instead of with a smooth curve through the keys
   A.add=function(name,c){
     if(!c||!c.keys||c.keys.length<2) throw new Error('ANIM.add('+name+'): need at least 2 keys');
@@ -192,6 +192,17 @@
       if(pull>0.05){ ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(sx,0); ctx.lineTo(sx+78,0); ctx.stroke(); ctx.beginPath(); ctx.moveTo(sx+78,0); ctx.lineTo(sx+68,-5); ctx.moveTo(sx+78,0); ctx.lineTo(sx+68,5); ctx.stroke(); } },
     gun(ctx){ ctx.strokeStyle='#111'; ctx.fillStyle='#d9ddff'; ctx.lineJoin='round'; ctx.lineWidth=3;
       ctx.beginPath(); ctx.moveTo(-6,-9); ctx.lineTo(46,-9); ctx.lineTo(46,1); ctx.lineTo(8,1); ctx.lineTo(4,18); ctx.lineTo(-8,18); ctx.closePath(); ctx.fill(); ctx.stroke(); },
+    spear(ctx){ ctx.strokeStyle='#111'; ctx.lineCap='round'; ctx.lineJoin='round'; bone(ctx,[-46,0,138,0],5);
+      ctx.lineWidth=3; ctx.fillStyle='#d9ddff'; ctx.beginPath(); ctx.moveTo(136,-9); ctx.lineTo(172,0); ctx.lineTo(136,9); ctx.closePath(); ctx.fill(); ctx.stroke(); },
+    hammer(ctx){ ctx.strokeStyle='#111'; ctx.lineCap='round'; ctx.lineJoin='round'; bone(ctx,[-18,0,96,0],6);
+      ctx.lineWidth=3; ctx.fillStyle='#d9ddff'; ctx.beginPath(); ctx.rect(88,-30,40,60); ctx.fill(); ctx.stroke(); },
+    staff(ctx){ ctx.strokeStyle='#111'; ctx.lineCap='round'; bone(ctx,[-56,0,74,0],5);
+      ctx.lineWidth=3; ctx.fillStyle='#d9ddff'; ctx.beginPath(); ctx.arc(88,0,14,0,7); ctx.fill(); ctx.stroke(); },
+    star(ctx){ ctx.strokeStyle='#111'; ctx.lineJoin='round'; ctx.lineWidth=3; ctx.fillStyle='#d9ddff'; ctx.beginPath();
+      for(let i=0;i<8;i++){ const r=i%2?7:19,a=i*Math.PI/4; i?ctx.lineTo(8+Math.cos(a)*r,Math.sin(a)*r):ctx.moveTo(8+Math.cos(a)*r,Math.sin(a)*r); } ctx.closePath(); ctx.fill(); ctx.stroke(); },
+    fist(ctx){ ctx.strokeStyle='#111'; ctx.lineWidth=3; ctx.fillStyle='#d9ddff'; ctx.beginPath(); ctx.arc(4,0,12,0,7); ctx.fill(); ctx.stroke(); },
     none(){}
   };
+  // Length from the hand to the weapon tip, for the slash trail in the lab.
+  A.placeholderLen={blade:110,spear:172,hammer:128};
 })(typeof window!=='undefined'?window:globalThis);

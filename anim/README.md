@@ -10,6 +10,11 @@ Fighter animation for `duel.html` is authored as data: keyframed skeleton poses 
 | `blade.js` | Broadblade combo and variants. |
 | `bow.js` | Bow shots. |
 | `gun.js` | Gun shots. |
+| `spear.js` | Spear combo and variants. |
+| `hammer.js` | War hammer combo and variants. |
+| `fist.js` | Punches and kicks; also used when nothing is drawn. |
+| `staff.js` | Magic staff casts. |
+| `hurl.js` | Thrown weapons (shuriken, knives, rocks). |
 
 ## Style target
 

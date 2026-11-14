@@ -2,7 +2,7 @@
 // Loaded by server.js. The match rules come from the marked block in duel.html, so there is one copy of them.
 const fs=require('fs'), path=require('path');
 
-const PROMPT="You are the referee of a stick-figure fighting game. The attached image is a quick doodle a player drew as their fighter's weapon or ability.\nDecide what it is and classify it. Reply with JSON only, no other text:\n{\"name\":\"2-3 word name of what was drawn\",\"kind\":\"melee|ranged|bomb|shield|dash|heal\",\"style\":\"bow|gun\",\"element\":\"fire|water|plant|none\"}\nRules: kind is \"melee\" for anything swung, stabbed or punched with (sword, axe, hammer, club, fist, claw, whip).\n\"ranged\" for anything that shoots or flies straight (gun, bow, wand, laser, shuriken, arrow).\nstyle only matters for ranged: \"bow\" for bows, crossbows, slingshots and anything drawn back or thrown; \"gun\" for guns, cannons, wands, lasers and anything with a trigger.\n\"bomb\" for anything that explodes or splashes over an area (bomb, grenade, flask, meteor, firework).\n\"shield\" for anything that blocks or protects (shield, wall, armour, helmet, umbrella).\n\"dash\" for anything that makes you fast or lets you fly (wings, rocket, boots, skateboard, lightning bolt, spring).\n\"heal\" for anything that restores health (heart, food, drink, bandage, medkit).\nelement is \"fire\" for flames, heat or lava, \"water\" for water or ice, \"plant\" for leaves, wood or vines, otherwise \"none\". Ink colour is a hint (red fire, blue water, green plant) but the content of the drawing decides.\nAlways pick the closest fit, even for a scribble.";
+const PROMPT="You are the referee of a stick-figure fighting game. The attached image is a quick doodle a player drew as their fighter's weapon or ability.\nDecide what it is and classify it. Reply with JSON only, no other text:\n{\"name\":\"2-3 word name of what was drawn\",\"kind\":\"melee|ranged|bomb|shield|dash|heal\",\"style\":\"blade|spear|hammer|fist|bow|gun|staff|hurl\",\"element\":\"fire|water|plant|none\"}\nRules: kind is \"melee\" for anything swung, stabbed or punched with (sword, axe, hammer, club, fist, claw, whip).\n\"ranged\" for anything that shoots or flies straight (gun, bow, wand, laser, shuriken, arrow).\nstyle is how it is fought with. For melee: \"blade\" for swords, knives, axes and anything with an edge; \"spear\" for spears, lances, tridents, poles and other long thrusting weapons; \"hammer\" for hammers, maces, clubs, bats and other heavy blunt weapons; \"fist\" for gloves, gauntlets, claws, fists and feet. For ranged: \"bow\" for bows, crossbows and slingshots; \"gun\" for guns, cannons, lasers and anything with a trigger; \"staff\" for magic staffs, wands, orbs and spell books; \"hurl\" for things thrown by hand such as shuriken, knives, boomerangs, rocks and cards. For other kinds use \"\".\n\"bomb\" for anything that explodes or splashes over an area (bomb, grenade, flask, meteor, firework).\n\"shield\" for anything that blocks or protects (shield, wall, armour, helmet, umbrella).\n\"dash\" for anything that makes you fast or lets you fly (wings, rocket, boots, skateboard, lightning bolt, spring).\n\"heal\" for anything that restores health (heart, food, drink, bandage, medkit).\nelement is \"fire\" for flames, heat or lava, \"water\" for water or ice, \"plant\" for leaves, wood or vines, otherwise \"none\". Ink colour is a hint (red fire, blue water, green plant) but the content of the drawing decides.\nAlways pick the closest fit, even for a scribble.";
 
 module.exports=function({readBody,KEY,MODEL,BASE}){
   const page=path.join(__dirname,'duel.html'), src=fs.readFileSync(page,'utf8');
@@ -79,8 +79,8 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
     if(room.sim!==S) return [409,{error:'The match was restarted.'}];
     const it=S.setItem(side,slot,spec,D.inkCost(strokes));
     if(!it) return [409,{error:'Too late: the round has started.'}];
-    room.art[side][slot]={strokes,ver:it.ver,kind:it.kind}; room.dirty=true;
-    broadcast(room,'item',{side,slot,strokes,ver:it.ver,kind:it.kind});
+    room.art[side][slot]={strokes,ver:it.ver,kind:it.kind,style:it.style}; room.dirty=true;
+    broadcast(room,'item',{side,slot,strokes,ver:it.ver,kind:it.kind,style:it.style});
     return [200,{name:it.name,kind:it.kind,style:it.style,element:it.el,source}];
   }
 
@@ -120,7 +120,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       }
       const client={res,id,side,seq:-1}; room.clients.add(client); room.seen=Date.now();
       sse(res,'hello',{side,code:room.code});
-      room.art.forEach((a,s)=>a.forEach((x,slot)=>{ if(x) sse(res,'item',{side:s,slot,strokes:x.strokes,ver:x.ver,kind:x.kind}); }));
+      room.art.forEach((a,s)=>a.forEach((x,slot)=>{ if(x) sse(res,'item',{side:s,slot,strokes:x.strokes,ver:x.ver,kind:x.kind,style:x.style}); }));
       broadcast(room,'players',{present:present(room)});
       sse(res,'state',room.sim.snapshot());
       req.on('close',()=>{
