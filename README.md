@@ -124,6 +124,17 @@ The socket's gain in time is the wait it removes: on the event stream a press ma
 
 Not yet tried: a real browser. This was written and tested without one. The nearest it has come is Node's own `WebSocket` (written by others to the standard browsers follow), which the tests use against this server, with the page's script running in a pretend browser; `EventSource` there is a stand-in. Also untried: real tablets, a real network, a tablet that sleeps and wakes, and Render's proxy (if it does not pass the upgrade, the page should fall back within 1.5 s). States are drawn as they arrive, as before; there is no smoothing buffer.
 
+## INK-OS: the machine rewrites the game (LangChain deepagents)
+
+The fight happens inside an old computer, and that computer is a deep agent. Type a request into the `INK-OS` terminal on the desktop ("make the floor lava", "low gravity", "a storm that zaps everyone") and the machine ships it as an update for the next round, in about 30 to 45 seconds.
+
+- **Who does the work:** one deep agent, `ink-os`, plans the job with a to-do list and runs three sub-agents. The **designer** turns the request into `/design.md`. The **engineer** writes `/update.json` and fixes it until `check_update` passes. The **tester** plays it in headless matches of the real game with `playtest` and writes `/qa-report.md` with a PASS or FAIL. A FAIL goes back to the engineer. Only a play-tested update can be installed.
+- **What an update is:** data, never JavaScript. Match settings (`gravity`, `speed`, `jump`, `damage`, `knockback`, `shotSpeed`, `size`, `health`, `overdrive`, each in a fixed range) and up to three world rules written in the game's own small rule language, which the game interprets itself. `MODS` in `duel.html` and `osforge.js` hold the tables; the manual the agents read is generated from them.
+- **Nothing the agent writes is trusted:** its tools check the update, and the game server checks and play-tests it again before it reaches a room. A request the game cannot do literally (a new weapon, something for one side only) gets the closest fair change, and the patch notes say so.
+- **Watching it work:** the terminal shows the plan ticking off, each hand-over, each file written, the check, and the play-test numbers beside the normal game's. Every run keeps its files in `os-agent/work/<run>/`.
+- **Run it:** `cd os-agent && npm install && node server.mjs` (port 3130, needs `OPENAI_API_KEY`; `OS_AGENT_MODEL` picks the model, default `gpt-6-luna`). The game server finds it at `OS_AGENT_URL` (default `http://127.0.0.1:3130`). Type `reset` in the terminal to remove the installed update.
+- **Not tested:** nobody outside the team has typed into it, and it has only been run with `gpt-6-luna`.
+
 ## Run
 
 Needs Node 18 or newer. No dependencies.

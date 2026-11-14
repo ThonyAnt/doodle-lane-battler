@@ -11,6 +11,7 @@ Hackathon MVP. A one-lane battler where every unit is something the player draws
 - `index.html`: the whole client. The block between `/*SIM-START*/` and `/*SIM-END*/` is the pure match logic (stats, combat, bot, drawing fallback guess). Keep it free of DOM access.
 - `server.js`: zero-dependency Node server (Node 18+). Serves the page, reads drawings via OpenAI (`POST /read`), and runs online rooms. It extracts and runs the SIM block from `index.html`, so rules exist in one place.
 - `qrcode.js`: vendored QR library (MIT). Do not edit.
+- `haptics.js` (`window.HAP`): the haptic headband (six vibration motors on an Arduino, Web Serial). `accept` in `duel.html` passes every event to `HAP.hear`; the patterns run in the page and the board (`hardware/headband/headband.ino`) is streamed motor levels as `M` lines about 30 times a second, so nothing on the board waits. The Headband buttons are in the Game setup window. The sketch also keeps the hardware team's typed commands (`test`, `hit,left,0.8`, `help`) for checking motors by hand; the game does not send them. Checked against a pretend serial port only, not on the real board.
 - `.env`: holds `OPENAI_API_KEY` (git-ignored). `.env.example` is the template.
 
 ## Doodle Duel (`/duel`)

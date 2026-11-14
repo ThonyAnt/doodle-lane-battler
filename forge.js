@@ -20,7 +20,8 @@
 const tokenCap=(model,n)=>/^(gpt-[5-9]|o\d)/.test(model)?Object.assign({max_completion_tokens:n},/^gpt-6/.test(model)?{reasoning_effort:'none'}:null):{max_tokens:n};
 module.exports=function({D,ForgeScript:FS,ask,now,retryMs,onNew}){
   now=now||Date.now;
-  const API=D.FORGE_API, FL=D.FORGE_LIMITS, MOVES=D.MOVES||{};
+  // The item rules' four events. `world` is the machine's own kind of rule (osforge.js), not one a pair of items can have.
+  const API=Object.fromEntries(Object.entries(D.FORGE_API).filter(([k])=>k!=='world')), FL=D.FORGE_LIMITS, MOVES=D.MOVES||{};
   const KINDS=D.KINDS||['melee','ranged','bomb','shield','dash','heal'], ELS=D.ELS||['none','fire','water','plant'];
   const SIDES=['blue','red'], COST=45, STEP=1/120, own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
   const probe=D.createDuel({practice:true}), HP=probe.f[0].hp, WIDE=probe.snapshot().w;

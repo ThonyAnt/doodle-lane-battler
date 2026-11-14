@@ -76,7 +76,7 @@ function buildUI(){const tb=$('#tools');for(const[t,title,k,svg]of TOOLS){const 
   drawGlyphMini(c.getContext('2d'),n,25,17,26);d.appendChild(c);d.appendChild(document.createTextNode(l));d.title='click to stamp';d.onmousedown=e=>{e.stopPropagation();stamp(n)};gl.appendChild(d)});
  for(const k of['jelly','stretch','flab','exag','speed','diff']){const s=$('#s-'+k),v=$('#v-'+k);s.value=P[k];v.textContent=(+P[k]).toFixed(2);s.oninput=()=>{P[k]=+s.value;v.textContent=(+s.value).toFixed(2)}}
  $('#c-onion').onchange=e=>P.onion=e.target.checked;$('#c-rig').onchange=e=>P.rig=e.target.checked;
- $('#net-go').onmousedown=e=>{e.stopPropagation();netMsg()};['nm-host','nm-join'].forEach(id=>$('#'+id).onchange=()=>{netMsg();$('#nm-cpu').checked=true});
+ $('#net-go').onmousedown=e=>{e.stopPropagation();netMsg()};
  const fr=$('#frames');for(let i=0;i<40;i++){const n=document.createElement('span');n.className='fnum';n.style.left=(i*45+2)+'px';n.textContent=i*5+1;fr.appendChild(n)}
  setTool('fight')}
 /* --- END verbatim --- */

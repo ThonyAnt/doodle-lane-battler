@@ -11,7 +11,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   // How closely the reader looks at a drawing: "high" sees thin lines better and costs a little more time; "low" is quicker.
   const DETAIL=['low','high','auto'].includes(process.env.OPENAI_DETAIL)?process.env.OPENAI_DETAIL:'high';
   const page=path.join(__dirname,'duel.html'), src=fs.readFileSync(page,'utf8'), block=src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0];
-  const D=new Function(block+';return {createDuel,replayDuel,fnv1a,validItem,localGuess,nameFor,inkCost,stockItem,makeBot,botLoadout,makeNetBot,botFeatures,netForward,NET_SHAPE,INK_MAX,PAD_W,PAD_H,MOVES,KINDS,ELS,FORGE_API,FORGE_LIMITS};')();
+  const D=new Function(block+';return {createDuel,replayDuel,fnv1a,validItem,localGuess,nameFor,inkCost,stockItem,makeBot,botLoadout,makeNetBot,botFeatures,netForward,NET_SHAPE,INK_MAX,PAD_W,PAD_H,MOVES,KINDS,ELS,FORGE_API,FORGE_LIMITS,MODS,WORLD_BUDGET,HP};')();
   // A stamp of the rules this server is running: a replay only plays back right under the very same rules, and the page
   // works out the same stamp from its own copy to check (rulesOf in duel.html).
   const RULES=D.fnv1a(block.replace(/\r\n/g,'\n'));
@@ -77,6 +77,52 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   // need no model the next time, also after a restart. tools/forge-warm.js fills it for the ready-made items.
   const FORGE_FILE=process.env.FORGE_CACHE===undefined?path.join(__dirname,'forge-cache.json'):process.env.FORGE_CACHE;
   let saveForge=null;
+  /* ---------- INK-OS: updates the machine writes for itself ----------
+     A player types a request into the terminal on the desktop. The request goes to the OS agent (os-agent/, a deep
+     agent with a designer, an engineer and a tester), whose progress is passed back line by line. What it installs is
+     data: match settings and world rules (see MODS in duel.html). It is checked and play-tested again here before it
+     touches a room, and takes effect when the next round's drawing starts. OS_AGENT_URL says where the agent listens. */
+  const OSF=require('./osforge.js')({D,ForgeScript:require('./forgescript.js')}), OS_URL=(process.env.OS_AGENT_URL||'http://127.0.0.1:3130').replace(/\/$/,'');
+  let osKey=0;
+  // The game's own gate: the update must be well formed, and a short play-test of it must not break a match.
+  function osGate(raw){
+    const c=OSF.clean(raw); if(c.errors.length) return {error:c.errors[0]};
+    const t=OSF.playtest(c.patch,{rounds:10,seed:99}), bad=t.problems.filter(x=>/^(CRASH|BROKEN|FAULTS)/.test(x));
+    return bad.length?{error:bad[0]}:{patch:Object.assign({key:++osKey},c.patch)};
+  }
+  // Keep a room's match in step with its update: installed while a round is being drawn, so it starts with the round.
+  function osSync(room){
+    const S=room.sim, want=room.patch?room.patch.key:0;
+    if(S.phase!=='draw'||(S._os||0)===want) return;
+    OSF.install(S,room.patch||{mods:{},rules:[]}); S._os=want; room.dirty=true;
+    broadcast(room,'os',room.patch?{state:'installed',patch:room.patch}:{state:'none'});
+  }
+  async function osRun(req,res,body){
+    const room=body&&typeof body.room==='string'?rooms.get(body.room.toUpperCase()):null, text=String(body&&body.text||'').replace(/[\x00-\x1f\x7f]+/g,' ').trim().slice(0,240);
+    res.writeHead(200,{'Content-Type':'application/x-ndjson','Cache-Control':'no-cache'});
+    const line=o=>{ if(!res.writableEnded) res.write(JSON.stringify(o)+'\n'); };
+    if(!text){ line({type:'error',message:'Type what you want changed.'}); res.end(); return; }
+    if(/^(reset|uninstall|undo|restore|default|defaults|normal)$/i.test(text)){
+      if(room){ room.patch=null; osSync(room); } line({type:'uninstall'}); line({type:'say',text:'Update removed. Factory settings restored from the next round.'}); line({type:'done',ok:true,ms:0}); res.end(); return; }
+    const S=room&&room.sim, items=S?S.items.map(a=>a.map(it=>it&&{name:it.name,kind:it.kind})):Array.isArray(body.items)?body.items:[];
+    let up;
+    try{ up=await fetch(OS_URL+'/run',{method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.timeout(250000),
+      body:JSON.stringify({request:text,context:{stage:room?room.stage||'desktop':String(body.stage||'desktop'),items,installed:room&&room.patch?room.patch.name:''}})}); }
+    catch(e){ line({type:'error',message:'INK-OS is not answering. Start it with: cd os-agent && node server.mjs'}); line({type:'done',ok:false,ms:0}); res.end(); return; }
+    let buf=''; const dec=new TextDecoder();
+    try{ for await(const chunk of up.body){ buf+=dec.decode(chunk,{stream:true}); let k;
+      while((k=buf.indexOf('\n'))>=0){ const raw=buf.slice(0,k); buf=buf.slice(k+1); if(!raw.trim()) continue; let ev; try{ ev=JSON.parse(raw); }catch(e){ continue; }
+        if(ev.type==='install'){
+          const g=osGate(ev.patch);
+          if(g.error){ line({type:'error',message:'The game refused the update: '+g.error}); continue; }
+          if(room){ room.patch=g.patch; osSync(room); }
+          line({type:'install',patch:g.patch,when:room&&room.sim.phase!=='draw'?'next round':'now'}); console.log('duel os: installed',JSON.stringify(g.patch.name),'in',room?room.code:'a page match');
+        }else line(ev);
+      } } }
+    catch(e){ line({type:'error',message:'The line to INK-OS dropped.'}); }
+    if(!res.writableEnded) res.end();
+  }
+
   const F=Forge({D,ForgeScript:require('./forgescript.js'),ask:KEY?Forge.openai({key:KEY,base:BASE,model:FORGE_MODEL,log:m=>console.error('duel forge:',m)}):undefined,
     onNew:()=>{ if(saveForge&&!saveForge()) console.error('duel forge: could not write',FORGE_FILE); }});
   if(FORGE_ON&&FORGE_FILE) saveForge=Forge.keep(F,FORGE_FILE);
@@ -164,7 +210,8 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
     room.art.forEach((a,s)=>a.forEach((x,slot)=>{ if(x) tell(client,'item',{side:s,slot,strokes:x.strokes,ver:x.ver,kind:x.kind,style:x.style}); }));
     broadcast(room,'players',roster(room));
     if(room.plats) tell(client,'plats',{plats:room.plats});
-    if(FORGE_ON&&room.forge.state!=='idle') tell(client,'forge',forgeMsg(room.forge));      // the rules of the match so far, for a device that joins or comes back late
+    if(FORGE_ON&&room.forge.state!=='idle') tell(client,'forge',forgeMsg(room.forge));
+    if(room.patch) tell(client,'os',{state:'installed',patch:room.patch});      // the rules of the match so far, for a device that joins or comes back late
     tell(client,'state',room.sim.snapshot());
     return client;
   }
@@ -188,6 +235,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       // A controller repeats its buttons several times a second; one that goes quiet with a direction held has lost its release.
       if(room.heldAt) for(const s of [0,1]) if(room.heldAt[s]&&now-room.heldAt[s]>900){ const b=room.lastIn[s]; room.heldAt[s]=0;
         S.setInput(s,{l:false,r:false,d:false,j:+b.j||0,a:+b.a||0,b:+b.b||0,m:+b.m||0,q:+b.q||0,u:+b.u||0,h:Math.max(0,Math.min(4,b.h|0))}); }
+      osSync(room);
       if(both){ if(room.bot){ room.bot(S,dt); if(S.phase==='draw'&&!S.ready[1]) S.setReady(1); } S.step(dt); }
       // The countdown has begun and the rules are still being written: it waits for them, once, and four seconds at most (S.setHold).
       if(S.phase==='count'&&room.forge.state==='working'&&room.forge.held!==S.round){ room.forge.held=S.round; S.setHold(D.FORGE_LIMITS.hold); } else if(S.phase==='draw') room.forge.held=null;
@@ -241,7 +289,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   const handle=async function(req,res,url){
     const p=url.pathname;
     // Animation clip files and the preview lab are plain static files.
-    if(req.method==='GET'&&(/^\/anim\/[a-z_]+\.js$/.test(p)||p==='/anim-lab.html'||p==='/inkshop.js'||p==='/forgescript.js'||p==='/wire.js'||p==='/sfx.js'||p==='/inkshop.css')){      // forgescript.js: the rule language, for matches simulated in the page; wire.js: state frames, for a page on a socket
+    if(req.method==='GET'&&(/^\/anim\/[a-z_]+\.js$/.test(p)||p==='/anim-lab.html'||p==='/inkshop.js'||p==='/forgescript.js'||p==='/wire.js'||p==='/sfx.js'||p==='/haptics.js'||p==='/inkshop.css')){      // forgescript.js: the rule language, for matches simulated in the page; wire.js: state frames, for a page on a socket
       const file=path.join(__dirname,p.slice(1));
       if(!fs.existsSync(file)){ res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-cache'}); res.end('/* '+p+' is not written yet */'); return true; }
       res.writeHead(200,{'Content-Type':(p.endsWith('.html')?'text/html':p.endsWith('.css')?'text/css':'text/javascript')+'; charset=utf-8','Cache-Control':'no-cache'}); fs.createReadStream(file).pipe(res); return true;
@@ -267,6 +315,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       return true;
     }
     // Matches played in the page (against the bot there, two on one keyboard) ask here for their rules.
+    if(req.method==='POST'&&p==='/duel/os'){ let body={}; try{ body=JSON.parse((await readBody(req,8000)).toString('utf8')); }catch(e){} await osRun(req,res,body); return true; }
     if(FORGE_ON&&req.method==='POST'&&p==='/duel/forge'){
       let body; try{ body=JSON.parse((await readBody(req,8000)).toString('utf8')); }catch(e){ send(400,{error:'Bad request.'}); return true; }
       const items=F.cleanItems(body&&body.items); if(!items||!items.every(row=>row.some(Boolean))){ send(400,{error:'Two sides with an item each are needed.'}); return true; }

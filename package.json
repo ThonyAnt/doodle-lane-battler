@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "overlay": "electron overlay/main.js",
-    "overlay:setup": "node node_modules/electron/install.js"
+    "overlay:setup": "node node_modules/electron/install.js",
+    "os": "node os-agent/server.mjs"
   },
   "engines": {
     "node": ">=18"
