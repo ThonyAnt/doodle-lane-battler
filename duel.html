@@ -138,7 +138,7 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
   <ul class="rules">
     <li><b>Draw two things</b> before each round: a sword, a bow, a bomb, a shield, wings, a snack. You share 100 ink between them, and more ink means a stronger item.</li>
     <li><b>Fight live:</b> move, double jump, and use your two drawings. An empty slot is a punch. First to 2 rounds wins.</li>
-    <li><b>How to trigger each move</b> (A and B are your two drawings; F and G on a keyboard, K and L for the second player):
+    <li><b>How to trigger each move</b> (A and B are your two drawings: <b>J</b> and <b>K</b> on a keyboard; with two players on one keyboard the second player uses <b>,</b> and <b>.</b>):
       <br>· <b>Combo:</b> stand still and tap the button again and again. Swords, spears and hammers chain 3 moves, fists chain 4.
       <br>· <b>Running attack:</b> hold a direction until you are sprinting, then press.
       <br>· <b>Air attack:</b> jump, then press.
@@ -548,7 +548,7 @@ function buildSprite(strokes,axis){
   const g=can.getContext('2d'); g.translate(m-x0*k,m-y0*k); g.scale(k,k); drawStrokes(g,R,31/k);
   return {cv:can,w:can.width,h:can.height};
 }
-function setArt(side,k,strokes,ver,kind,style){ art[side][k]=strokes?{ver,sprite:buildSprite(strokes,(kind==='melee'&&style!=='fist')||style==='staff')}:null; }
+function setArt(side,k,strokes,ver,kind,style){ art[side][k]=strokes?{ver,strokes,sprite:buildSprite(strokes,(kind==='melee'&&style!=='fist')||style==='staff')}:null; }
 function sprite(side,k,size,grip){
   const a=art[side][k]; if(!a) return false; const sp=a.sprite, sc=size/Math.max(sp.w,sp.h);
   L.drawImage(sp.cv,grip?-14*sc:-sp.w*sc/2,-sp.h*sc/2,sp.w*sc,sp.h*sc); return true;
@@ -596,7 +596,11 @@ function buildDesks(){
 // Ink available for the slot being drawn: the full pot minus what the other slot already holds.
 function budget(d){ const o=view&&view.items[d.side][1-d.k]; return INK_MAX-(o?o.cost:0); }
 function updateDesk(d){
-  const g=d.g; g.setTransform(2,0,0,2,0,0); g.fillStyle='#fff'; g.fillRect(0,0,PAD_W,PAD_H); drawStrokes(g,d.strokes,5);
+  const g=d.g; g.setTransform(2,0,0,2,0,0); g.fillStyle='#fff'; g.fillRect(0,0,PAD_W,PAD_H);
+  // With nothing being drawn, the pad shows what is already in the selected slot.
+  const held=!d.strokes.length&&art[d.side][d.k]&&view&&view.items[d.side][d.k]?art[d.side][d.k]:null;
+  drawStrokes(g,held?held.strokes:d.strokes,5);
+  if(held){ g.fillStyle='#59658a'; g.font='600 13px Karla,system-ui,sans-serif'; g.textAlign='left'; g.fillText('In slot '+'AB'[d.k]+' now. Draw here to replace it.',10,PAD_H-10); }
   const items=view?view.items[d.side]:[null,null], cost=d.strokes.length?inkCost(d.strokes):0, have=budget(d), ready=!!(view&&view.ready[d.side]);
   d.el.querySelectorAll('.slot').forEach(b=>{ const k=+b.dataset.k, it=items[k];
     b.setAttribute('aria-pressed',k===d.k);
@@ -625,10 +629,10 @@ async function makeItem(d){
       if(canRead) try{ const r=await fetch('/duel/read',{method:'POST',body:await (await fetch('data:image/png;base64,'+png)).blob()}); if(r.ok){ spec=validItem(await r.json()); source='OpenAI'; } }catch(e){}
       if(!spec){ spec=localGuess(strokes); source='local guess'; }
       const it=sim.setItem(d.side,k,spec,inkCost(strokes)); if(!it) throw new Error('Too late: the round has started.');
-      setArt(d.side,k,strokes,it.ver,it.kind,it.style); spec={name:it.name,kind:it.kind,element:it.el};
+      setArt(d.side,k,strokes,it.ver,it.kind,it.style); accept(sim.snapshot()); spec={name:it.name,kind:it.kind,element:it.el};
     }
     read.innerHTML=`<b>${esc(spec.name)}</b>: ${spec.kind}${spec.element!=='none'?', '+spec.element:''} (read by ${esc(source)}). ${HINT[spec.kind]}`;
-    d.strokes=[]; const other=view&&view.items[d.side][1-k]; if(!other) d.k=1-k;
+    d.strokes=[]; if(!(view&&view.items[d.side][1-k])) read.innerHTML+=' Slot '+'AB'[1-k]+' is still empty.';
   }catch(e){ read.textContent=e.message; }
   d.busy=false; updateDesk(d);
 }
@@ -643,17 +647,18 @@ async function takeStock(d,key){
       const o=await r.json(); d.busy=false; if(!r.ok) throw new Error(o.error||'The server could not add that.'); spec=o;
     }else{
       const it=sim.setItem(d.side,k,made.spec,cost); if(!it) throw new Error('Not enough ink left for that.');
-      setArt(d.side,k,made.strokes,it.ver,it.kind,it.style); spec={name:it.name,kind:it.kind,style:it.style,element:it.el};
+      setArt(d.side,k,made.strokes,it.ver,it.kind,it.style); accept(sim.snapshot()); spec={name:it.name,kind:it.kind,style:it.style,element:it.el};
     }
     read.innerHTML=`<b>${esc(spec.name)}</b>: ${spec.kind}${spec.style?' ('+spec.style+')':''}${spec.element!=='none'?', '+spec.element:''}. ${HINT[spec.kind]}`;
-    d.strokes=[]; if(!(view&&view.items[d.side][1-k])&&!view.practice) d.k=1-k;
+    d.strokes=[]; if(!(view&&view.items[d.side][1-k])) read.innerHTML+=' Slot '+'AB'[1-k]+' is still empty.';
   }catch(e){ d.busy=false; read.textContent=e.message; }
   updateDesk(d);
 }
 const HINT={melee:'Tap again and again for a combo; down + attack is a special; try it running or in the air.',ranged:'Tap to keep firing; hold down and press for a charged shot.',bomb:'Lobbed in an arc; mind the blast.',shield:'Blocks hits from the front for a moment.',dash:'A burst of speed that rams.',heal:'Restores health, 3 uses a round.'};
 
 /* ---------- controls ---------- */
-const KEYS1={KeyA:'l',KeyD:'r',KeyW:'j',KeyS:'d',KeyF:'a',KeyG:'b'}, KEYS2={ArrowLeft:'l',ArrowRight:'r',ArrowUp:'j',ArrowDown:'d',KeyK:'a',KeyL:'b'};
+// Player one attacks with J and K. On a shared keyboard player two uses the arrows with , and . (or numpad 1 and 2).
+const KEYS1={KeyA:'l',KeyD:'r',KeyW:'j',KeyS:'d',KeyJ:'a',KeyK:'b'}, KEYS2={ArrowLeft:'l',ArrowRight:'r',ArrowUp:'j',ArrowDown:'d',Comma:'a',Period:'b',Numpad1:'a',Numpad2:'b'}, SOLO={Space:'j',KeyF:'a',KeyG:'b'};
 function press(side,k,down){
   const i=inp[side];
   if('lrd'.includes(k)){ if(i[k]===(down?1:0)) return; i[k]=down?1:0; } else if(down) i[k]++; else return;
@@ -661,7 +666,7 @@ function press(side,k,down){
 }
 function keyTarget(code){
   if(mode==='2p') return KEYS1[code]?[0,KEYS1[code]]:KEYS2[code]?[1,KEYS2[code]]:null;
-  const k=KEYS1[code]||KEYS2[code]||(code==='Space'?'j':null); return k?[mySide(),k]:null;
+  const k=KEYS1[code]||KEYS2[code]||SOLO[code]; return k?[mySide(),k]:null;
 }
 addEventListener('keydown',e=>{ if(e.target.tagName==='INPUT'||e.repeat&&keyTarget(e.code)){ if(e.target.tagName!=='INPUT') e.preventDefault(); return; }
   const t=keyTarget(e.code); if(!t||!view||view.phase==='draw'||view.phase==='over') return; e.preventDefault(); press(t[0],t[1],true); });
@@ -671,7 +676,7 @@ function buildControls(){
   const box=$('tcs'); box.innerHTML='';
   for(const side of [0,1]){
     if(!local[side]) continue;
-    const keys=mode==='2p'?(side?'← → move · ↑ jump · ↓ drop · K / L use':'A D move · W jump · S drop · F / G use'):'A D or ← → move · W / Space jump · S drop · F / G use';
+    const keys=mode==='2p'?(side?'← → move · ↑ jump · ↓ down · , and . attack':'A D move · W jump · S down · J and K attack'):'A D or ← → move · W / Space jump · S down · J attack 1 · K attack 2';
     const el=document.createElement('div'); el.className='tc'; el.dataset.side=side;
     el.innerHTML=`<div class="grp"><button data-k="l" aria-label="Move left">◀</button><button data-k="d" aria-label="Down">▼</button><button data-k="r" aria-label="Move right">▶</button></div><div class="keys">${keys}</div>
       <div class="grp"><button data-k="a"><span class="cdfill"></span>A<small></small></button><button data-k="b"><span class="cdfill"></span>B<small></small></button><button data-k="j" aria-label="Jump">⤒<small>jump</small></button></div>`;
@@ -713,7 +718,7 @@ function joinRoom(code){
   on('hello',d=>{ net.side=d.side; local=[d.side===0,d.side===1]; buildDesks(); buildControls(); lastPhase=''; });
   on('players',d=>{ net.present=d.present; });
   on('state',accept);
-  on('item',d=>setArt(d.side,d.slot,d.strokes,d.ver,d.kind,d.style));
+  on('item',d=>{ setArt(d.side,d.slot,d.strokes,d.ver,d.kind,d.style); if(desk[d.side]) updateDesk(desk[d.side]); });
   on('reset',()=>{ for(const s of [0,1]) art[s]=[null,null]; fx=[]; for(const d of desk) if(d){ d.strokes=[]; d.k=0; } });
   on('gone',()=>{ net.gone=true; es.close(); });
 }
