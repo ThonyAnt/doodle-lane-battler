@@ -161,4 +161,46 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
   ok('fire on a soaked fighter bursts into steam and dries them',Math.abs(steam.d/base-1.25)<0.03&&steam.tag==='steam'&&steam.b.slow===0,+steam.d.toFixed(1));
   const g=hit('plant','plant',b=>{ b.slow=2; }); ok('a plant hit on a soaked fighter is tagged overgrown',g.tag==='grow');
 }
+{ // arena customizations: a weapon's block changes the stage for a few seconds (ARENAS, S.setCustoms, S.startArena)
+  const sword=S=>S.setItem(0,0,{kind:'melee',style:'blade',element:'none',name:'Sword'},50), go=(id,pre)=>{ const S=fresh(); sword(S); if(pre) pre(S); S.startArena(0,id); return S; };
+  { const S=fresh(); sword(S); const kept=S.setCustoms(0,0,[{id:'gust',secs:99},{id:'moon'}]); let threw='';
+    ok('an item takes one arena block, its length clamped, and is told its cost',kept.length===1&&kept[0].id==='gust'&&kept[0].secs===7&&kept[0].cost>4&&S.items[0][0].customs.length===1,kept);
+    for(const j of [null,7,'wind',{},[null,{id:'nope'},{id:'constructor'},{id:7}],[{id:'moon',secs:'x'}]]){ try{ S.setCustoms(0,0,j); S.startArena(0,j); }catch(e){ threw+=e.message; } }
+    ok('junk never throws, and an unknown id leaves the item with no block',!threw&&S.setCustoms(0,0,[{id:'nope'}]).length===0&&S.setCustoms(3,0,[])===null&&S.setCustoms(1,1,[{id:'gust'}])===null&&!S.arena,threw);
+    S.setCustoms(0,0,[{id:'quake'}]); ok('a tweak keeps the block',S.tweak(0,0,{tune:1}).customs[0].id==='quake');
+    ok('a match with no blocks has nothing about them in its snapshot',D.createDuel({plats:[]}).snapshot().ar===null&&S.snapshot().ar.it[0][0]==='quake'); }
+  { const S=fresh(), a=S.f[0], b=S.f[1]; sword(S); S.setCustoms(0,0,[{id:'moon'}]); b.x=a.x+60; let n=0;
+    for(let i=0;i<360&&!S.arena;i++){ if(i%12===0) inp(S,0,{a:++n}); S.step(1/120); } const ev=S.snapshot().ev;
+    ok('the last hit of the combo sets the block off, and the weapon then cools down',!!S.arena&&S.arena.id==='moon'&&S.arena.side===0&&ev.filter(e=>e.e==='hit').length>=3&&ev.some(e=>e.e==='arena'&&e.id==='moon')&&a.acd[0]>8,{acd:a.acd});
+    S.arena=null; b.x=a.x+60; for(let i=0;i<360;i++){ if(i%12===0) inp(S,0,{a:++n}); S.step(1/120); } ok('it cannot be set off again while cooling',!S.arena&&a.acd[0]>0); }
+  { const S=go('gust'), a=S.f[0], b=S.f[1], ax=a.x, bx=b.x; ok('gust blows away from its holder',S.arena.dir===1); run(S,2);
+    S.pr.push({id:999,k:'shot',st:'gun',side:1,slot:0,x:b.x-40,y:b.y+200,vx:-600,vy:0,grav:0,dmg:1,el:'none',kb:0,stun:0,life:2,ttl:2}); const p=S.pr[S.pr.length-1]; run(S,0.4);
+    ok('it carries both fighters and slows a shot flying into it',a.x-ax>120&&b.x-bx>60&&p.vx>-450,[Math.round(a.x-ax),Math.round(b.x-bx),Math.round(p.vx)]);
+    run(S,3); ok('and ends by itself, saying so',!S.arena&&S.snapshot().ev.some(e=>e.e==='arenaend'&&e.id==='gust')); }
+  { const jump=moon=>{ const S=fresh(), a=S.f[0]; sword(S); a.x=600; if(moon) S.startArena(0,'moon'); run(S,0.5); inp(S,0,{j:1}); let top=0; for(let i=0;i<300;i++){ S.step(1/120); top=Math.max(top,a.y); } return Math.round(top-BOARD.floor); };
+    const n=jump(false), m=jump(true); ok('moon: a jump goes much higher',m>n*1.7,{normal:n,moon:m}); }
+  { const S=go('night'), x=[S.f[0].x,S.f[1].x]; run(S,1); const on=S.snapshot().ar.on; ok('night changes nothing but the picture',S.f[0].x===x[0]&&S.f[1].x===x[1]&&on.id==='night'&&on.side===0&&on.t>0.9,on); }
+  { const S=go('rain',S=>{ S.f[0].x=488; S.f[0].burn=2; S.f[0].burnDps=1; }), a=S.f[0], b=S.f[1]; run(S,0.5);
+    ok('rain soaks a fighter in the open and puts out the burn, and spares one under a ledge',a.slow>0&&a.burn===0&&b.slow===0,{a:a.slow,b:b.slow,bx:b.x}); }
+  { const S=go('quake',S=>{ S.f[0].x=600; }), a=S.f[0], b=S.f[1]; run(S,0.9); const nx=S.snapshot().ar.on.nx, was=a.ground; run(S,0.15);
+    ok('quake: the cue counts down, then the jolt hops and staggers whoever is standing',nx>0&&nx<0.2&&was&&!a.ground&&!b.ground&&a.hurt>0,{nx,hurt:a.hurt});
+    run(S,1.0); inp(S,0,{j:1}); run(S,0.28); const up=!a.ground; run(S,0.2); ok('a fighter who jumps the jolt is spared',up&&a.hurt===0&&S.arena.n===2,{up,hurt:a.hurt,n:S.arena&&S.arena.n}); }
+  { const S=go('ring'), a=S.f[0], b=S.f[1]; run(S,2); const A=S.arena;
+    ok('ring: the walls close to a pen and carry the fighters in',Math.abs(A.r-A.l-380)<1&&a.x>=A.l+15&&b.x<=A.r-15,[A.l,A.r,Math.round(a.x),Math.round(b.x)]);
+    const l=A.l; inp(S,0,{l:1}); run(S,1); ok('a fighter cannot walk through a wall',a.x>=l+15.9,a.x); run(S,3.5); ok('then the walls go back',!S.arena&&a.x<l,a.x); }
+  { const S=fresh(), b=S.f[1]; S.setItem(0,0,{kind:'shield',element:'none',name:'Shield'},30); S.setCustoms(0,0,[{id:'night'}]); S.setItem(1,0,{kind:'shield',element:'none',name:'Shield'},30); S.setCustoms(1,0,[{id:'gust'}]);
+    inp(S,0,{a:1}); run(S,0.3); inp(S,1,{a:1}); run(S,0.3); ok('only one at a time: a second inside the first moments is refused and keeps its cooldown',S.arena.id==='night'&&!(b.acd&&b.acd[0]>0));
+    run(S,3.2); inp(S,1,{a:2}); run(S,0.3); ok('later a new one replaces the one running',!!S.arena&&S.arena.id==='gust'&&S.arena.side===1&&S.snapshot().ev.some(e=>e.e==='arenaend'&&e.id==='night'&&e.cut===1),S.arena&&S.arena.id); }
+  { const still=[]; for(const id of ['gust','moon','rain','quake','ring']){ const S=fresh(), a=S.f[0], b=S.f[1]; sword(S); S.setItem(1,0,{kind:'ranged',style:'bow',element:'none',name:'Bow'},50); S.startArena(1,id); run(S,0.6);
+      a.od=100; S.startUlt(0); const t0=S.arena.t, m=a.act.m, dur=a.act.dur, bx=b.x, by=b.y; let last=0, n=0, bad2='';
+      while(S.ult>=0&&n++<1500){ S.step(1/120); if(a.act&&a.act.m===m) last=a.act.t; if(S.ult>=0&&(!S.arena||S.arena.t!==t0)) bad2='RAN ON'; if(S.ult>=0&&(b.x!==bx||b.y!==by)) bad2='MOVED'; }
+      still.push(id+' '+bad2+(last>=dur-0.03?'':' CUT SHORT')); }
+    ok('an arena effect waits while an ultimate plays: the cast runs its whole length and nobody is moved',still.every(s=>!/[A-Z]{3}/.test(s)),still); }
+  { const once=()=>{ const S=D.createDuel({seed:9,plats:[]}); S.setItem(0,0,{kind:'shield',element:'none',name:'Shield'},30); S.setCustoms(0,0,[{id:'quake'}]); S.setItem(1,0,{kind:'melee',style:'blade',element:'none',name:'Sword'},50); S.setCustoms(1,0,[{id:'ring'}]);
+      S.setReady(0); S.setReady(1); let n=0; const seen=[]; for(let i=0;i<120*14;i++){ if(i%30===0){ n++; S.setInput(0,{l:0,r:i%240<120?1:0,d:0,j:n%5===0?n:0,a:n,b:0}); S.setInput(1,{l:1,r:0,d:0,j:0,a:n,b:0}); } S.step(1/120); if(S.arena&&!seen.includes(S.arena.id)) seen.push(S.arena.id); } return [S.hash(),seen.join()]; };
+    const h1=once(), h2=once(); ok('the same match with arena blocks played twice ends on the same fingerprint',h1[0]===h2[0]&&h1[1].length>0,h1);
+    const M=D.createDuel({plats:[]}); M.setItem(0,0,{kind:'shield',element:'none',name:'Shield'},30); M.setCustoms(0,0,[{id:'night'}]); M.setReady(0); ok('in a match a block cannot be changed once ready, nor an effect started from outside',M.setCustoms(0,0,[{id:'gust'}])===null&&M.startArena(0,'gust')===false);
+    M.setReady(1); for(let i=0;i<400;i++) M.step(1/120); M.setInput(0,{a:1}); for(let i=0;i<60;i++) M.step(1/120); const live=!!M.arena; M.f[1].hp=0; for(let i=0;i<120*5;i++) M.step(1/120);
+    ok('a new round starts with no effect running and no cooldown',live&&M.phase==='draw'&&M.arena===null&&!M.f[0].acd,{live,phase:M.phase}); }
+}
 console.log(bad?bad+' failed':'all world rules pass'); process.exit(bad?1:0);
