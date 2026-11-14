@@ -1,17 +1,19 @@
 // The machine's updates, as data: what an update may contain, checking one, play-testing one in headless matches, and
 // installing one in a match. The OS agent (os-agent/) writes updates with these as its tools; the game server runs the same
 // checks again before anything reaches a live room, so nothing here trusts who wrote the update.
-//   const OS=require('./osforge.js')({D, ForgeScript})      D: the rules block's exports (createDuel, makeBot, botLoadout, MODS, FORGE_API, FORGE_LIMITS)
+//   const OS=require('./osforge.js')({D, InkScript})      D: the rules block's exports (createDuel, makeBot, botLoadout, MODS, WORLD_TIER, ABILITY_API, ABILITY_LIMITS, HP)
 //   OS.manual()                 -> text: everything an update can do (generated from the rules' own tables)
 //   OS.clean(raw)               -> {patch, errors}: a tidy copy of an update, and what is wrong with it
 //   OS.playtest(patch, {rounds, seed}) -> numbers from bot matches with the update, beside the same matches without it
 //   OS.install(S, patch)        -> puts a checked update into a match
 // An update: {name, notes:[...], mods:{gravity:0.4,...}, rules:[{name, blurb, cooldown, code}]}
 'use strict';
-module.exports=function({D,ForgeScript}){
-  const FS=ForgeScript, MODS=D.MODS, API=D.FORGE_API.world, FL=D.FORGE_LIMITS, HP=D.HP||160;
+module.exports=function({D,InkScript}){
+  const FS=InkScript, MODS=D.MODS, API=D.ABILITY_API.tick, FL=D.ABILITY_LIMITS, WT=D.WORLD_TIER, HP=D.HP||160;
+  // World rules are ability scripts for the moment `tick` (see ABILITY_API in duel.html), compiled by the rule language's own interpreter.
+  const compile=(code,on)=>{ if(!Object.prototype.hasOwnProperty.call(D.ABILITY_API,on)) return null; const p=FS.parse(code); return p.ok&&!FS.check(p.ast,D.ABILITY_API[on]).length?FS.compile(p.ast):null; };
   const text=(v,max)=>String(v===undefined||v===null?'':v).replace(/[\x00-\x1f\x7f<>]+/g,' ').trim().slice(0,max);
-  const EFFECT=/\b(push|burn|soak|stun|heal|hurt)\s*\(/;
+  const EFFECT=/\b(push|burn|soak|stun|heal|hurt|hop|dash)\s*\(/, WEAPON_ONLY=/\b(grant|status|leave|summon|arena|shoot)\s*\(/;
   // What an update looks like on screen: only the page draws it, the rules never see it.
   const LOOK={floor:['none','lava','ice','slime','void','grass'],weather:['none','embers','rain','snow','stars','sparks','wind','bubbles']};
 
@@ -44,7 +46,8 @@ module.exports=function({D,ForgeScript}){
       const parsed=FS.parse(code);
       if(!parsed.ok){ errors.push(at+': line '+parsed.errors[0].line+' col '+parsed.errors[0].col+': '+parsed.errors[0].msg); return; }
       const bad=FS.check(parsed.ast,API); if(bad.length){ errors.push(at+': line '+bad[0].line+' col '+bad[0].col+': '+bad[0].msg); return; }
-      if(!EFFECT.test(code)) errors.push(at+': the code only shouts or sparks; a world rule must call push, burn, soak, stun, heal or hurt');
+      if(WEAPON_ONLY.test(code)){ errors.push(at+': grant, status, leave, summon, arena and shoot belong to weapons and do nothing in a world rule; use push, hop, dash, burn, soak, stun, heal or hurt'); return; }
+      if(!EFFECT.test(code)) errors.push(at+': the code only shows things; a world rule must call push, hop, dash, burn, soak, stun, heal or hurt');
       p.rules.push({name,blurb:text(r.blurb,70),cooldown:cd,code});
     });
     if(!Object.keys(p.mods).length&&!p.rules.length&&!errors.length) errors.push('the update changes nothing: set at least one of mods, or write a rule');
@@ -54,26 +57,24 @@ module.exports=function({D,ForgeScript}){
   // Put a checked update into a match: the settings, then its world rules (each compiled by the rule language's own
   // interpreter, never by the JavaScript engine). Returns the ids of the rules that went in.
   function install(S,patch){
-    S.setMods(patch&&patch.mods||{}); S.clearWorld(); const ids=[];
-    for(const r of (patch&&patch.rules)||[]){ const p=FS.parse(r.code); if(!p.ok||FS.check(p.ast,API).length) continue; ids.push(S.addWorldRule({name:r.name,blurb:r.blurb,cooldown:r.cooldown,run:FS.compile(p.ast),code:r.code})); }
-    return ids;
+    S.setMods(patch&&patch.mods||{}); return S.setWorld((patch&&patch.rules)||[]);
   }
 
   // One round between two of the game's own bots holding the same random loadout, with or without the update.
   function round(patch,seed){
-    const S=D.createDuel({seed}), items=D.botLoadout(seed+7);
+    const S=D.createDuel({seed,compile}), items=D.botLoadout(seed+7);
     for(let s=0;s<2;s++) items.forEach((b,k)=>S.setItem(s,k,b.spec,b.cost));
     if(patch) install(S,patch);
     const bots=[D.makeBot(0,()=>0.55,seed+1),D.makeBot(1,()=>0.55,seed+2)]; S.setReady(0); S.setReady(1);
     let t=0, air=0, ticks=0, top=0, sane=true, fires=0, hits=0; const side=[0,0];
     while(S.phase!=='end'&&S.phase!=='over'&&t<110){
       t+=1/60; bots[0](S,1/60); bots[1](S,1/60); S.step(1/60);
-      for(const e of S.events.splice(0)){ if(e.e==='rule'&&e.w){ fires++; side[e.side]++; } else if(e.e==='hit') hits++; }
+      for(const e of S.events.splice(0)){ if(e.e==='ab'&&e.slot==='w'){ fires++; side[e.side]++; } else if(e.e==='hit') hits++; }
       if(S.phase==='fight'){ ticks++; for(const f of S.f){ if(!f.ground) air+=0.5; if(f.y>top) top=f.y; } if(ticks%60===0&&!S.sane()) sane=false; }
     }
-    const done=S.phase==='end'||S.phase==='over', ko=done&&(S.f[0].hp<=0||S.f[1].hp<=0);
-    return {side,secs:Math.max(0,t-3),winner:done?S.winner:-1,ko,timeout:!ko,air:ticks?air/ticks:0,top,sane:sane&&S.sane(),fires,hits,faults:S.wrules.reduce((n,r)=>n+r.faults,0),off:S.wrules.filter(r=>r.off).map(r=>r.name),
-      perRule:S.wrules.map(r=>({name:r.name,fired:r.fired}))};
+    const W=S.world, done=S.phase==='end'||S.phase==='over', ko=done&&(S.f[0].hp<=0||S.f[1].hp<=0);
+    return {side,secs:Math.max(0,t-3),winner:done?S.winner:-1,ko,timeout:!ko,air:ticks?air/ticks:0,top,sane:sane&&S.sane(),fires,hits,faults:W?W.abx.reduce((n,x)=>n+x.faults,0):0,off:W?W.abilities.filter((a,i)=>W.abx[i].off||!W.abx[i].run).map(a=>a.name):[],
+      perRule:W?W.abilities.map((a,i)=>({name:a.name,fired:W.abx[i].fired})):[]};
   }
   function summarise(rs){
     const n=rs.length, avg=f=>rs.reduce((s,r)=>s+f(r),0)/Math.max(1,n), pct=f=>Math.round(100*avg(r=>f(r)?1:0));
@@ -123,29 +124,32 @@ module.exports=function({D,ForgeScript}){
       ...Object.keys(MODS).map(k=>'- '+k+': '+MODS[k][0]+' to '+MODS[k][1]+'. '+what[k]+'.'),'',
       '## rules: world rules','',
       'A world rule is a small program run for EACH fighter in turn, four times a second, while the fight is on. Inside it `me` is the fighter being looked at and `foe` is the other one. The same rule runs for both, so it must not favour a side.','',
-      'Shape: {"name":"Lava Floor","blurb":"The floor burns whoever stands on it.","cooldown":0.5,"code":"if (me.grounded) { hurt(me, 3); say(\'HOT!\'); }"}','',
-      '- cooldown: seconds before the rule can fire again for the same fighter, '+FL.cooldown[0]+' to '+FL.cooldown[1]+'.',
+      'Shape: {"name":"Lava Floor","blurb":"The floor burns whoever stands on it.","cooldown":0.5,"code":"if (!me.air) { hurt(me, 5); say(\'HOT!\'); }"}','',
+      '- name: at most '+FL.name+' characters. cooldown: seconds before the rule can fire again for the same fighter, '+FL.cooldown[0]+' to '+FL.cooldown[1]+'.',
       '- A rule only "fires" when it calls an effect. One that never fires in a play-test is a dead rule.','',
       '### The language','',
       'A strict subset of JavaScript. Statements: let x = e; const x = e; x = e; mem.name = e; (also += -= *= /=); if (e) ... else ...; return; a call; { } blocks; // comments.',
       'Expressions: numbers, true, false, \'text\' or "text", names, a.b, calls, - ! * / % + - < <= > >= == != && || ?: and ( ).',
-      'Nothing else exists: no loops, no functions, no arrays or [ ], no object literals, no new, null or undefined, no ++ or --, no template strings, no backslash anywhere. At most 800 characters.','',
+      'Nothing else exists: no loops, no functions, no arrays or [ ], no object literals, no new, null or undefined, no ++ or --, no template strings, no backslash anywhere. At most '+FL.code+' characters.','',
       '### What the code can read','',
-      '- me, foe: numbers '+fields(API.me)+' (x runs 0 to 960 left to right, y is height above the floor, hp is out of '+HP+', face is 1 or -1); the rest are true/false.',
+      '- me, foe: numbers x y vx vy speed face hp ink od; true/false air attacking blocking burning soaked stunned.',
+      '  x runs 0 to 960 left to right, y is height above the floor, face is 1 or -1, hp is a SHARE from 0 to 1 (0.5 is half health), air is true when off the ground.',
       '- dist (px between the fighters), time (seconds into the round), mem.name (the rule\'s own notes, 0 until set, emptied each round).',
       '- Math.abs sign floor round sqrt sin cos (one number), Math.min max hypot (two numbers). chance(p) is true with probability p.','',
       '### What the code can do (who is the bare name me or foe)','',
-      '- push(who, vx, vy): throw them at that speed in px/s, vy upward, at most '+FL.pushX+' each way.',
+      '- push(who, vx, vy): throw them at that speed in px/s, vy upward, at most '+FL.pushX+' each way. hop(vy): toss me upward, '+FL.hop[0]+' to '+FL.hop[1]+'. dash(vx): shove me sideways, up to '+FL.dash+'. A rule gets '+WT.moves+' of these a round for each fighter.',
       '- burn(who, seconds), soak(who, seconds): on fire, or slowed, for at most '+FL.burn+' s.',
-      '- stun(who, seconds): frozen, at most '+FL.stun+' s a call and '+FL.stunBudget+' s a round.',
-      '- hurt(who, hp), heal(who, hp): at most '+FL.hurt+' a call. All the world rules of an update share '+D.WORLD_BUDGET+' hp of hurting and healing a round, so a rule that hurts constantly runs dry: make it matter, not drain. A hurt or heal of 1 or 2 is too small for anyone to notice: use 3 to '+FL.hurt+'.',
-      '- say(text): a shout over the fighter, at most '+FL.say+' characters, in capitals. spark(x, y): a flash.','',
+      '- stun(who, seconds): frozen, at most '+FL.stun+' s a call and '+WT.stun+' s a round.',
+      '- hurt(who, hp), heal(who, hp): in health points out of '+HP+', at most '+FL.hurt+' a call, and '+WT.hp+' in all a round for each fighter. 1 or 2 is too small for anyone to notice: use 4 to '+FL.hurt+'.',
+      '- Things only seen: say(text) is a shout over the fighter (at most '+FL.say+' characters, capitals); spark(x, y), ring(x, y), burst(x, y, n) and text(x, y, words) draw at a spot; streak(x0, y0, x1, y1) draws a line.',
+      '- grant, status, leave, summon, arena and shoot belong to weapons: do not use them here.','',
       '### Examples','',
-      '- Lava floor: if (me.grounded) { hurt(me, 3); say(\'HOT!\'); }   (cooldown 0.5; pair it with mods.jump 1.3 so staying up is possible)',
-      '- Wind from the left: push(me, me.vx + 90, me.vy);   (cooldown 0.25)',
-      '- Comeback: if (me.hp < foe.hp - 50) { heal(me, 2); say(\'NOT YET\'); }   (cooldown 1)',
-      '- Edge of the world: if (me.x < 80 || me.x > 880) { push(me, me.x < 480 ? 420 : -420, 300); say(\'BOING\'); }   (cooldown 0.5)',
-      '- Sudden storm every ten seconds: if (time % 10 < 0.3) { stun(me, 0.4); spark(me.x, me.y + 60); say(\'ZAP\'); }   (cooldown 2)','',
+      '- Lava floor: if (!me.air) { hurt(me, 5); burst(me.x, 4, 6); say(\'HOT!\'); }   (cooldown 0.5; pair it with mods.jump 1.4 so staying up is possible)',
+      '- Wind from the left: push(me, me.vx + 120, me.vy);   (cooldown 0.5)',
+      '- Comeback: if (me.hp < foe.hp - 0.3) { heal(me, 4); ring(me.x, me.y + 50); say(\'NOT YET\'); }   (cooldown 1)',
+      '- Bouncy walls: if (me.x < 80 || me.x > 880) { push(me, me.x < 480 ? 480 : -480, 320); say(\'BOING\'); }   (cooldown 0.5)',
+      '- Storm every eight seconds: if (time % 8 < 0.4) { stun(me, 0.4); streak(me.x, 400, me.x, me.y + 60); say(\'ZAP\'); }   (cooldown 2)',
+      '- Geysers: if (!me.air && chance(0.25)) { hop(600); burst(me.x, 6, 8); say(\'WHOOSH\'); }   (cooldown 1.5)','',
       '## What an update cannot do','',
       'It cannot add new art, new weapons, new stages or new buttons, and it cannot treat Blue and Red differently. If a request needs one of those, build the closest thing these settings and rules can express and say so in the notes.'].join('\n');
   }

@@ -31,8 +31,8 @@ if(!process.env.OPENAI_API_KEY){ console.error('INK-OS needs OPENAI_API_KEY (in 
 
 // The game itself: its rules block, the rule language, and the update tools built on them.
 const page=fs.readFileSync(path.join(root,'duel.html'),'utf8').replace(/\r\n/g,'\n');
-const D=new Function(page.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,makeBot,botLoadout,stockItem,MODS,WORLD_BUDGET,FORGE_API,FORGE_LIMITS,HP};')();
-const OS=require(path.join(root,'osforge.js'))({D,ForgeScript:require(path.join(root,'forgescript.js'))});
+const D=new Function(page.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,makeBot,botLoadout,stockItem,MODS,WORLD_TIER,ABILITY_API,ABILITY_LIMITS,HP};')();
+const OS=require(path.join(root,'osforge.js'))({D,InkScript:require(path.join(root,'inkscript.js'))});
 const MANUAL=OS.manual();
 
 const KERNEL=`You are INK-OS, the operating system of the old computer that the fighting game Doodle Duel runs inside. Players fight on your desktop. One of them has typed a request into your terminal: they want the game changed. You ship that change as an update, fast.

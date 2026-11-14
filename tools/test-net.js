@@ -231,13 +231,13 @@ try{
   await atest('decoded state matches the event stream within one tick',()=>{ const wsState=player.state, sseState=watcher.state; return [wsState.phase==='fight'&&Math.abs(wsState.f[0].x-sseState.f[0].x)<12&&Math.abs(wsState.f[1].x-sseState.f[1].x)<12&&Math.abs(wsState.t-sseState.t)<0.05,[wsState.f[0].x,sseState.f[0].x,wsState.t,sseState.t]]; });
   await atest('every state the socket carried is, to the letter, one the event stream carried',()=>{ const seen=new Set(watcher.states), mine=player.states.slice(1,-8), missing=mine.filter(s=>!seen.has(s)).length;      // the first was the player's alone; the last few may still be on their way to the watcher
     return [player.error===null&&mine.length>150&&missing===0&&mine.some(s=>JSON.parse(s).ev.length>0),{states:mine.length,missing,error:player.error}]; });
-  await atest('item and forge events are the same on both links',()=>{ const pick=list=>list.filter(e=>e[0]==='item'||e[0]==='forge'), a=pick(player.events.slice(player.names.indexOf('players'))), b=pick(watcher.events.slice(mark));
-    return [a.length>=3&&JSON.stringify(a)===JSON.stringify(b)&&a[0][0]==='item'&&a[0][1].side===0&&a.some(e=>e[0]==='forge'&&e[1].state==='working')&&a.some(e=>e[0]==='forge'&&e[1].state==='done'&&e[1].rules.length>0),a.map(e=>e[0]+(e[1].state?':'+e[1].state:''))]; });
+  await atest('item events are the same on both links, and carry what the item earned',()=>{ const pick=list=>list.filter(e=>e[0]==='item'), a=pick(player.events.slice(player.names.indexOf('players'))), b=pick(watcher.events.slice(mark));
+    return [a.length>=3&&JSON.stringify(a)===JSON.stringify(b)&&a[0][0]==='item'&&a[0][1].side===0&&a.every(e=>e[1].creativity>=1&&Array.isArray(e[1].abilities)),a.map(e=>e[0]+':'+e[1].creativity)]; });
   // Devices that arrive late, one on each link: both are told the same things in the same order.
   const lateWs=await listenWs(A,'net-late-ws'), lateSse=listenSse(A,'net-late-sse'); await until(()=>lateWs.kinds.length>=1&&lateSse.states.length>=1,2000);
-  await atest('a late device is told the same on a socket as on the event stream: items, rules, state',()=>{ const upTo=c=>c.names.slice(0,c.names.indexOf('state')+1), first=c=>c.events.slice(0,upTo(c).length-1).filter(e=>e[0]!=='players'), a=upTo(lateWs), b=upTo(lateSse);
+  await atest('a late device is told the same on a socket as on the event stream: items, state',()=>{ const upTo=c=>c.names.slice(0,c.names.indexOf('state')+1), first=c=>c.events.slice(0,upTo(c).length-1).filter(e=>e[0]!=='players'), a=upTo(lateWs), b=upTo(lateSse);
     const sa=JSON.parse(lateWs.states[0]), sb=JSON.parse(lateSse.states[0]);
-    return [a.join()==='hello,item,item,item,players,forge,state'&&a.join()===b.join()&&JSON.stringify(first(lateWs))===JSON.stringify(first(lateSse))&&lateWs.evs.hello.side===-1&&lateWs.evs.forge.rules.length>0&&lateWs.kinds[0]===1&&sa.phase===sb.phase&&Math.abs(sa.t-sb.t)<0.2&&JSON.stringify(sa.items)===JSON.stringify(sb.items),a]; });
+    return [a.join()==='hello,item,item,item,players,state'&&a.join()===b.join()&&JSON.stringify(first(lateWs))===JSON.stringify(first(lateSse))&&lateWs.evs.hello.side===-1&&lateWs.kinds[0]===1&&sa.phase===sb.phase&&Math.abs(sa.t-sb.t)<0.2&&JSON.stringify(sa.items)===JSON.stringify(sb.items),a]; });
   const quiet=await listenWs(A,'net-noack',{ack:false}); await sleep(600);
   await atest('never acknowledging still works: full frames keep coming',()=>{ const kindsNoAck=quiet.kinds, seen=new Set(watcher.states), mine=quiet.states.slice(1,-8);
     return [kindsNoAck.filter(k=>k===1).length>=2&&kindsNoAck.every(k=>k===1)&&mine.length>15&&mine.every(s=>seen.has(s))&&quiet.error===null,{frames:kindsNoAck.length,whole:kindsNoAck.filter(k=>k===1).length}]; });
@@ -433,7 +433,7 @@ try{
       history:{replaceState(){},pushState(){}}, navigator:{userAgent:'node',maxTouchPoints:0}, performance:{now:()=>performance.now()},
       requestAnimationFrame:f=>{ frames.push(f); return frames.length; }, cancelAnimationFrame(){},
       fetch:(url,opts)=>{ if(opts&&opts.method==='POST'&&opts.body) try{ posts.push(JSON.parse(opts.body)); }catch(e){} return fetch(/^https?:/.test(url)?url:HTTP0+url,opts); },
-      WebSocket:typeof WebSocket==='function'?WebSocket:NodeWebSocket, EventSource:NodeEventSource, Wire, ForgeScript:require('../forgescript.js'),      // Node's own WebSocket where it has one: the nearest thing here to a browser's
+      WebSocket:typeof WebSocket==='function'?WebSocket:NodeWebSocket, EventSource:NodeEventSource, Wire, InkScript:require('../inkscript.js'),      // Node's own WebSocket where it has one: the nearest thing here to a browser's
       ResizeObserver:function(){ return {observe(){},disconnect(){}}; }, MutationObserver:function(){ return {observe(){},disconnect(){}}; },
       matchMedia:()=>({matches:false,addEventListener(){},addListener(){}}), innerWidth:1200, innerHeight:800, devicePixelRatio:1,
       sessionStorage:keep(), localStorage:keep(), addEventListener(){}, removeEventListener(){}, alert(){}, getComputedStyle:()=>el(), Image:function(){ return el(); }, Audio:function(){ return el(); }};
