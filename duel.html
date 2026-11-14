@@ -976,7 +976,7 @@ const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet s
 // A recording holds about LOG_ROOM characters of commands (some forty long matches' worth). When it is full it stops:
 // the match goes on, the log is marked full, and it replays up to the tick it stopped at.
 const LOG_ROOM=2e6;
-const LOG_V=1, COMMANDS=['setItem','tweak','setCustom','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold'];
+const LOG_V=1, COMMANDS=['setItem','tweak','costSet','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold'];
 const INPUT_KEYS=['l','r','d','j','a','b','m','q','h','u'], viaJSON=v=>JSON.parse(JSON.stringify(v)), round1=v=>Math.round(v*10)/10;
 const packInput=i=>{ const o={}; for(const k of INPUT_KEYS){ const v=i?i[k]:undefined; o[k]=k==='l'||k==='r'||k==='d'?(v?1:0):v===undefined?null:v; } return viaJSON(o); };   // held buttons as 0 or 1, press counts as given, a missing one as null
 const unpackInput=o=>{ const i={}; for(const k of INPUT_KEYS) if(o[k]!==null&&o[k]!==undefined) i[k]=o[k]; return i; };
@@ -1050,8 +1050,8 @@ const FORGE_LIMITS={reflect:[0.5,1.5],slow:[0.3,1],turn:[-180,180],shotPower:[0.
 const FORGE_MATH=Object.freeze({abs:v=>Math.abs(v),sign:v=>Math.sign(v),floor:v=>Math.floor(v),round:v=>Math.round(v),sqrt:v=>Math.sqrt(v),sin:v=>Math.sin(v),cos:v=>Math.cos(v),min:(a,b)=>Math.min(a,b),max:(a,b)=>Math.max(a,b),hypot:(a,b)=>Math.hypot(a,b)});
 /* ---------- costs: what a weapon's power spends (customizations, axis "costs") ----------
    An item may carry customizations: it.customs=[{id:'heavy',cost:{cost:'ammo',size:4,reload:1.2}}], set with
-   S.setCustom(side,slot,list). A cost is plain data ({cost:<a key of COSTS>, ...numbers}) that can be attached to any
-   customization; cleanCustoms / cleanCost make any input safe (unknown ids and costs are dropped, numbers are clamped to
+   S.costSet(side,slot,list). A cost is plain data ({cost:<a key of COSTS>, ...numbers}) that can be attached to any
+   customization; costCustoms / cleanCost make any input safe (unknown ids and costs are dropped, numbers are clamped to
    the ranges below, [min,max,default]). In a match, payFor(holder,item) answers "can it pay, and pay now" and
    costOk(holder,slot) only looks. A cost's state is kept per fighter per slot in f.cs[slot] (so it is hashed and reset
    with the fighter). pts is the cost's price in the customization budget: negative, because it is a drawback.
@@ -1059,7 +1059,7 @@ const FORGE_MATH=Object.freeze({abs:v=>Math.abs(v),sign:v=>Math.sign(v),floor:v=
    damage and knock-back. An attack that cannot pay comes out plain; from an overheated or broken weapon it is weak
    (COST_WEAK). Ultimates never pay and are never held back by a cost. */
 const COST_UP=1.35, COST_WEAK=0.6;
-const CUSTOMS={heavy:{label:'Heavy',pts:3,blurb:'Hits 35% harder and knocks back further while its cost is paid.'}};
+const COST_POWERS={heavy:{label:'Heavy',pts:3,blurb:'Hits 35% harder and knocks back further while its cost is paid.'}};
 const COSTS={
   ammo:   {label:'Magazine',   pts:-1,p:{size:[2,8,4],reload:[0.6,2,1.2],pause:[0.2,2,0.7]},blurb:'A few rounds, shown as pips. Empty: it cannot be used while it reloads. A pause tops it up.'},
   heat:   {label:'Overheats',  pts:-2,p:{per:[0.1,0.6,0.28],cool:[0.1,1,0.3],lock:[0.8,2,1.6]},blurb:'Each attack heats it and it glows redder. At the top it steams and cannot be used until it has cooled.'},
@@ -1076,17 +1076,17 @@ function cleanCost(c){
   return out;
 }
 // Any input at all -> a list of at most three known customizations, each id once; a bad cost is dropped, its customization kept.
-function cleanCustoms(list){
+function costCustoms(list){
   const out=[]; if(!Array.isArray(list)) return out;
   for(const c of list){
-    if(!c||typeof c!=='object'||typeof c.id!=='string'||!Object.prototype.hasOwnProperty.call(CUSTOMS,c.id)||out.some(o=>o.id===c.id)) continue;
+    if(!c||typeof c!=='object'||typeof c.id!=='string'||!Object.prototype.hasOwnProperty.call(COST_POWERS,c.id)||out.some(o=>o.id===c.id)) continue;
     const o={id:c.id}, cost=cleanCost(c.cost); if(cost) o.cost=cost; out.push(o); if(out.length>=3) break;
   }
   return out;
 }
 const costOf=it=>{ const cu=it&&it.customs; if(cu) for(const c of cu) if(c.cost) return c.cost; return null; };      // the cost an item carries, or null
 const heavyOf=it=>!!(it&&it.customs&&it.customs.some(c=>c.id==='heavy'));
-const costPoints=it=>(it&&it.customs?it.customs:[]).reduce((n,c)=>n+CUSTOMS[c.id].pts+(c.cost?COSTS[c.cost.cost].pts:0),0);      // the budget an item's customizations use
+const costPoints=it=>(it&&it.customs?it.customs:[]).reduce((n,c)=>n+COST_POWERS[c.id].pts+(c.cost?COSTS[c.cost.cost].pts:0),0);      // the budget an item's customizations use
 // For the bots: is a broken weapon waiting to be mended, and how much later does this weapon's first blow land.
 function costRest(S,side){ return [0,1].some(k=>{ const c=costOf(S.items[side][k]); return !!c&&c.cost==='fragile'&&S.canPay(side,k)<0; }); }
 function costLead(it){ const c=costOf(it); return c&&c.cost==='windup'&&heavyOf(it)?c.hold:0; }
@@ -1275,10 +1275,10 @@ function createDuel(opts){
   /* ---------- costs in a match (see COSTS) ---------- */
   // Set an item's customizations: while drawing (before "ready") or in practice mode, like S.tweak. Weapons only.
   // Returns the item, or null if it was refused. Never throws, whatever it is given.
-  S.setCustom=(side,k,list)=>{
+  S.costSet=(side,k,list)=>{
     if((side!==0&&side!==1)||(k!==0&&k!==1)) return null;
     const it=S.items[side][k]; if(!it||(!S.practice&&(S.phase!=='draw'||S.ready[side]))||(it.kind!=='melee'&&it.kind!=='ranged')) return null;
-    const cu=cleanCustoms(list); if(cu.length) it.customs=cu; else delete it.customs;
+    const cu=costCustoms(list); if(cu.length) it.customs=cu; else delete it.customs;
     S.f[side].cs[k]=null; return it;
   };
   { const tweak0=S.tweak;      // cost: a tweaked item is rebuilt; it keeps its customizations while it is still a weapon
@@ -4264,8 +4264,8 @@ const lab={style:'blade',el:'none',speed:1,loop:false,gap:220,last:null,idle:0};
 function labEquip(){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,st.spec,50); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0; labCost(); if(desk[0]) updateDesk(desk[0]); }
 // cost: the tester's Cost row gives the weapon under test 'heavy' with one cost ('free': heavy with nothing to pay)
 function labCost(){
-  if(!sim) return; const c=lab.cost||''; sim.setCustom(0,0,c?[c==='free'?{id:'heavy'}:{id:'heavy',cost:{cost:c}}]:[]);
-  const n=$('labCostNote'); if(n) n.textContent=!c?'No customization: the plain weapon.':CUSTOMS.heavy.label+' ('+(CUSTOMS.heavy.pts>0?'+':'')+CUSTOMS.heavy.pts+'): '+CUSTOMS.heavy.blurb+(COSTS[c]?' Cost: '+COSTS[c].label+' ('+COSTS[c].pts+'): '+COSTS[c].blurb:' No cost.');
+  if(!sim) return; const c=lab.cost||''; sim.costSet(0,0,c?[c==='free'?{id:'heavy'}:{id:'heavy',cost:{cost:c}}]:[]);
+  const n=$('labCostNote'); if(n) n.textContent=!c?'No customization: the plain weapon.':COST_POWERS.heavy.label+' ('+(COST_POWERS.heavy.pts>0?'+':'')+COST_POWERS.heavy.pts+'): '+COST_POWERS.heavy.blurb+(COSTS[c]?' Cost: '+COSTS[c].label+' ('+COSTS[c].pts+'): '+COSTS[c].blurb:' No cost.');
 }
 // cost: put the weapon under test straight into its spent state (empty, overheated, dry, bled, broken), to look at it
 function labSpend(){

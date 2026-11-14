@@ -161,10 +161,10 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
   ok('fire on a soaked fighter bursts into steam and dries them',Math.abs(steam.d/base-1.25)<0.03&&steam.tag==='steam'&&steam.b.slow===0,+steam.d.toFixed(1));
   const g=hit('plant','plant',b=>{ b.slow=2; }); ok('a plant hit on a soaked fighter is tagged overgrown',g.tag==='grow');
 }
-{ // costs: what a weapon's power spends (COSTS, S.setCustom, f.cs); 'heavy' is the power they are tried with
-  const C=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {COSTS,COST_UP,cleanCost,cleanCustoms,costPoints,replayDuel,makeBot};')();
+{ // costs: what a weapon's power spends (COSTS, S.costSet, f.cs); 'heavy' is the power they are tried with
+  const C=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {COSTS,COST_UP,cleanCost,costCustoms,costPoints,replayDuel,makeBot};')();
   const SW={kind:'melee',style:'blade',element:'none',name:'Sword',traits:['swift'],trait:'swift'};
-  const mk=cost=>{ const S=D.createDuel({practice:true,seed:5}); S.step(1/60); S.setItem(0,0,SW,50); if(cost!==undefined) S.setCustom(0,0,cost?[{id:'heavy',cost}]:[{id:'heavy'}]);
+  const mk=cost=>{ const S=D.createDuel({practice:true,seed:5}); S.step(1/60); S.setItem(0,0,SW,50); if(cost!==undefined) S.costSet(0,0,cost?[{id:'heavy',cost}]:[{id:'heavy'}]);
     S.f[0].x=300; S.f[1].x=370; S.f[0].face=1; S.kept=[]; return S; };
   const look=S=>{ const v=S.snapshot(); for(const e of v.ev) if(e.e==='cost') S.kept.push(e.k); return v.f[0].cs[0]; };
   const swing=(S,m)=>{ const b=S.f[1]; b.hp=HP0; b.x=S.f[0].x+70; b.vx=0; b.hurt=0; S.f[0].act=null; S.f[0].cd[0]=0; S.play(0,m||'blade1'); };
@@ -198,23 +198,23 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
     b.x=a.x+400; a.act=null; inp(S,0,{r:1}); run(S,1.3); const moved=look(S).n; inp(S,0,{r:0}); run(S,1.4); const w=look(S);
     ok('fragile: walking does not mend it, standing still does',moved===3&&w.n===0&&w.ok===1&&S.kept.includes('mend'),w); }
   { const S=mk({cost:'ammo'}); S.setItem(0,0,{kind:'ranged',style:'gun',element:'none',name:'Gun',traits:['bounce'],trait:'bounce'},50); S.f[1].x=S.f[0].x+400; S.play(0,'gun_shot'); run(S,0.25); const p0=S.pr[0]&&S.pr[0].dmg; S.pr.length=0;
-    S.setCustom(0,0,[{id:'heavy',cost:{cost:'ammo'}}]); S.f[0].act=null; S.play(0,'gun_shot'); run(S,0.25); const p=S.pr[0];
+    S.costSet(0,0,[{id:'heavy',cost:{cost:'ammo'}}]); S.f[0].act=null; S.play(0,'gun_shot'); run(S,0.25); const p=S.pr[0];
     ok('cost: a paid shot is marked and does 35% more',!!p&&p.pw===1&&Math.abs(p.dmg/p0-C.COST_UP)<1e-6&&S.snapshot().pr[0].pw===1,p&&[p0,p.dmg]); }
   { const S=mk(); let threw=0; const junk=[undefined,null,7,'x',{},[null],[7],[{id:'nope'}],[{id:'heavy',cost:'x'}],[{id:'heavy',cost:{cost:'nope'}}],[{id:'heavy',cost:{cost:'ammo',size:'abc',reload:-9}}],[{id:'heavy',cost:{cost:'heat',per:1e9,cool:NaN}}],[{id:'__proto__'}],[{id:'heavy',cost:{cost:'constructor'}}]];
-    for(const j of junk){ try{ S.setCustom(0,0,j); run(S,0.05); S.snapshot(); }catch(e){ threw++; } }
-    for(const a of [[9,0,[]],[0,5,[]],['a','b',[]],[0,1,[{id:'heavy'}]],[]]){ try{ S.setCustom(...a); }catch(e){ threw++; } }
+    for(const j of junk){ try{ S.costSet(0,0,j); run(S,0.05); S.snapshot(); }catch(e){ threw++; } }
+    for(const a of [[9,0,[]],[0,5,[]],['a','b',[]],[0,1,[{id:'heavy'}]],[]]){ try{ S.costSet(...a); }catch(e){ threw++; } }
     ok('cost: junk customizations, sides and slots never throw',threw===0,threw);
-    ok('cost: unknown ids are dropped; numbers are clamped or fall back',C.cleanCustoms([{id:'nope'},{id:'heavy',cost:{cost:'nope'}}]).length===1&&JSON.stringify(C.cleanCost({cost:'ammo',size:'abc',reload:-9}))==='{"cost":"ammo","size":4,"reload":0.6,"pause":0.7}',C.cleanCost({cost:'ammo',size:'abc',reload:-9}));
-    S.setItem(0,1,{kind:'shield',element:'none',name:'Shield'},30); ok('cost: only weapons take a customization',S.setCustom(0,1,[{id:'heavy'}])===null);
-    S.setCustom(0,0,[{id:'heavy',cost:{cost:'ammo'}}]); const it=S.tweak(0,0,{tune:1}); ok('cost: a tweaked item keeps it, and it uses +3 -1 points',!!it&&!!it.customs&&it.customs[0].cost.cost==='ammo'&&C.costPoints(it)===2&&S.snapshot().items[0][0].cu[0].id==='heavy');
-    const M=D.createDuel({seed:3}); M.setItem(0,0,SW,40); const yes=!!M.setCustom(0,0,[{id:'heavy',cost:{cost:'heat'}}]); M.setReady(0); ok('cost: in a match it can be set while drawing, not after "ready"',yes&&M.setCustom(0,0,[])===null); }
+    ok('cost: unknown ids are dropped; numbers are clamped or fall back',C.costCustoms([{id:'nope'},{id:'heavy',cost:{cost:'nope'}}]).length===1&&JSON.stringify(C.cleanCost({cost:'ammo',size:'abc',reload:-9}))==='{"cost":"ammo","size":4,"reload":0.6,"pause":0.7}',C.cleanCost({cost:'ammo',size:'abc',reload:-9}));
+    S.setItem(0,1,{kind:'shield',element:'none',name:'Shield'},30); ok('cost: only weapons take a customization',S.costSet(0,1,[{id:'heavy'}])===null);
+    S.costSet(0,0,[{id:'heavy',cost:{cost:'ammo'}}]); const it=S.tweak(0,0,{tune:1}); ok('cost: a tweaked item keeps it, and it uses +3 -1 points',!!it&&!!it.customs&&it.customs[0].cost.cost==='ammo'&&C.costPoints(it)===2&&S.snapshot().items[0][0].cu[0].id==='heavy');
+    const M=D.createDuel({seed:3}); M.setItem(0,0,SW,40); const yes=!!M.costSet(0,0,[{id:'heavy',cost:{cost:'heat'}}]); M.setReady(0); ok('cost: in a match it can be set while drawing, not after "ready"',yes&&M.costSet(0,0,[])===null); }
   { const S=mk({cost:'heat',per:0.6}); swing(S); S.ticks(2); swing(S); S.ticks(2); S.f[0].act=null; run(S,0.1); const held=S.f[0].cd[0]>1; S.f[0].od=100; S.f[1].x=S.f[0].x+200;
     ok('cost: an ultimate is not held back by an overheated weapon',held&&S.startUlt(0)===true&&S.f[0].act.pw===undefined);
     const B=mk({cost:'blood',per:5}); B.f[0].od=100; const hp=B.f[0].hp; B.startUlt(0); run(B,1); ok('cost: an ultimate pays nothing',B.f[0].hp===hp); }
   { // two bots, each with a cost on its weapon: the match ends and its recording replays to the same fingerprint
     const S=D.createDuel({seed:41,record:true}), sp=(style,kind)=>({kind:kind||'melee',style,element:'none',name:'W',traits:['swift'],trait:'swift'});
     S.setItem(0,0,sp('blade'),46); S.setItem(0,1,{kind:'shield',element:'none',name:'Shield'},30); S.setItem(1,0,sp('gun','ranged'),46); S.setItem(1,1,sp('hammer'),30);
-    S.setCustom(0,0,[{id:'heavy',cost:{cost:'heat'}}]); S.setCustom(1,0,[{id:'heavy',cost:{cost:'ammo',size:3}}]); S.setCustom(1,1,[{id:'heavy',cost:{cost:'fragile'}}]);
+    S.costSet(0,0,[{id:'heavy',cost:{cost:'heat'}}]); S.costSet(1,0,[{id:'heavy',cost:{cost:'ammo',size:3}}]); S.costSet(1,1,[{id:'heavy',cost:{cost:'fragile'}}]);
     const b0=C.makeBot(0,()=>0.6,51), b1=C.makeBot(1,()=>0.6,52), seen={}; let n=0, stuck=[0,0], worst=0;
     while(S.phase!=='over'&&n++<120*400){ b0(S,1/120); b1(S,1/120); if(S.phase==='draw'){ S.setReady(0); S.setReady(1); } S.ticks(1); for(const e of S.snapshot().ev) if(e.e==='cost') seen[e.k]=1;
       if(S.phase==='fight'&&S.ult<0&&S.stop<=0) for(const i of [0,1]){ const f=S.f[i]; stuck[i]=f.cd[0]<=0||f.cd[1]<=0||f.act?0:stuck[i]+1/120; worst=Math.max(worst,stuck[i]); } }
