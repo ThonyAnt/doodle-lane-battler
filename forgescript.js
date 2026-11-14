@@ -29,7 +29,7 @@ function tokenize(src){
   for(let j=0,l=1,c=1;j<n;j++){
     const ch=src[j], code=src.charCodeAt(j);
     if(ch==='\\') throw new Bad(l,c,'a backslash is not allowed anywhere');
-    if((code<32&&ch!=='\n'&&ch!=='\r'&&ch!=='\t')||code===127||code===0x2028||code===0x2029) throw new Bad(l,c,'a control character is not allowed');
+    if((code<32&&ch!=='\n'&&ch!=='\t'&&!(ch==='\r'&&src[j+1]==='\n'))||code===127||code===0x2028||code===0x2029) throw new Bad(l,c,'a control character is not allowed');      // a line ends with \n or \r\n
     if(ch==='\n'){ l++; c=1; } else c++;
   }
   while(i<n){
@@ -53,11 +53,11 @@ function tokenize(src){
       push(KEYWORDS.has(word)?'kw':'name',word,j-i); continue;
     }
     if(ch==="'"||ch==='"'){
-      let j=i+1; while(j<n&&src[j]!==ch&&src[j]!=='\n') j++;
+      let j=i+1; while(j<n&&src[j]!==ch&&src[j]!=='\n'&&src[j]!=='\r') j++;
       if(src[j]!==ch) throw new Bad(line,col,'the string is not closed');
       push('str',src.slice(i+1,j),j+1-i); continue;
     }
-    const two=src.substr(i,2);
+    const two=src.slice(i,i+2);
     if(NOT_HERE.includes(two)) throw new Bad(line,col,"'"+two+"' is not in the language");
     const op=OPS3.find(o=>src.startsWith(o,i))||OPS2.find(o=>o===two)||(OPS1.includes(ch)?ch:'');
     if(!op) throw new Bad(line,col,"'"+ch+"' is not in the language");

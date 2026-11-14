@@ -14,6 +14,16 @@ const FS=require('../forgescript.js');
   ok('says where the error is',(r=>!r.ok&&r.errors[0].line===2&&r.errors[0].col===5)(FS.parse("say('a');\nlet 9x = 1;")));
   ok('enforces the size limits',bad("say('"+'a'.repeat(800)+"');")&&bad('mem.v = '+'1+'.repeat(300)+'1;')&&bad('mem.v = '+'('.repeat(30)+'1'+')'.repeat(30)+';'));
   ok('counts nodes',FS.parse("say('hi');").nodes<=6);
+  // beyond the plan
+  ok('a line may end with a carriage return and a line feed, and a string may not run over one',good("say('a');\r\nsay('b');")&&bad("say('a\r\nb');")&&bad("say('a\rb');")&&bad("say('a'); // x\rsay('b');"));
+  for(const s of ["a--b;","x = 1e5;","x = 0x10;","x = 08;","x = .5;","x = 1.;","x = 1_000;","x = 5n;","let a;","return 1;","a = b = 1;","/* c */ a();","if (a) let b = 1;","f()();","f().x;","('a').length;","a.if;","a => 1;","a ** 2;","a << 1;","a & b;","a | b;","~a;","+a;","a ? b;","a.b.c = 1;","me.x += 1;","$a;","a\u00a0= 1;","{","}","if (a) { say('x'); ","label: a();","a, b;","say('x', );","void 0;","typeof a;","delete mem.n;","a instanceof b;","'a' in mem;","async(1);","await(1);","yield(1);","x = 1 +;","x = (1;","x = 1);","\u2028a();","a\u0000();"])
+    ok('rejects: '+JSON.stringify(s).slice(1,-1),bad(s));
+  for(const s of ["a - -b;","x = 0.5;","x = 10.25 * 3;","if (a) ; else ;",";;","{ { } }","a ? b : c ? d : e;","!-!a;","a.b.c(1, 2);","x = (a);","say(\"it's\");","say('\u00e9 \u2713'); // \u00fcn\u00efcode","if (a) b(); else if (c) d(); else { e(); }","a && b() || c();","x = a == b != c === d !== e;","x = a < b <= c > d >= e;"])
+    ok('parses: '+JSON.stringify(s).slice(1,-1),good(s));
+  ok('gives a tree of plain frozen nodes with a place each',(r=>r.ok&&r.ast.t==='prog'&&r.ast.body[0].t==='if'&&r.ast.body[0].then.body[1].e.t==='call'&&r.ast.body[0].then.body[1].line===2&&r.ast.body[0].then.body[1].col===3&&Object.isFrozen(r.ast)&&Object.isFrozen(r.ast.body)&&Object.isFrozen(r.ast.body[0].test))(FS.parse("if (shot.speed > 100) { shot.reflect(1.2);\n  say('RETURN!'); }")));
+  ok('800 characters are allowed, 801 are not',good('// '+'x'.repeat(797))&&bad('// '+'x'.repeat(798))&&FS.LIMITS.chars===800&&JSON.stringify(FS.LIMITS)==='{"chars":800,"nodes":250,"depth":24,"locals":12,"mem":8,"fuel":2000}');
+  ok('nesting 24 deep is allowed, 25 is not',good('mem.v = '+'('.repeat(24)+'1'+')'.repeat(24)+';')&&bad('mem.v = '+'('.repeat(25)+'1'+')'.repeat(25)+';')&&bad('{'.repeat(25)+'}'.repeat(25))&&bad('mem.v = '+'!'.repeat(25)+'1;'));
+  ok('code that is not text is refused, not thrown at',[undefined,null,5,{},['a']].every(v=>{ const r=FS.parse(v); return !r.ok&&r.errors.length===1; }));
 }
 
 { // 2. the checker, against a literal copy of the swat entry of FORGE_API
@@ -85,6 +95,7 @@ const D=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';r
 const HP0=D.createDuel({practice:true}).f[0].hp;
 const run=(S,sec)=>{ for(let i=0;i<Math.round(sec*60);i++) S.step(1/60); };
 const inp=(S,side,o)=>{ S._i=S._i||[{l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0},{l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0}]; Object.assign(S._i[side],o); S.setInput(side,S._i[side]); };
+const press=(S,side)=>inp(S,side,{a:(S._i?S._i[side].a:0)+1});        // one press of that side's first item
 const SWORD={kind:'melee',style:'blade',element:'none',name:'Sword'}, BALL={kind:'ranged',style:'hurl',element:'none',name:'Ball'}, SHIELD={kind:'shield',style:'',element:'none',name:'Shield'};
 // A practice sim with Blue holding aSpec in slot 0 and Red holding bSpec in slot 0, standing 60 px apart.
 // Two things are pinned so that the tests measure rules and nothing else: every item gets the Swift trait (left to its
@@ -97,7 +108,7 @@ function duo(aSpec,bSpec){ const S=D.createDuel({practice:true}); S.setItem(0,0,
 // stunned and Blue's item is ready again, so every call is the first move of a combo. Returns what the blow took.
 function blueHits(S){
   const a=S.f[0], b=S.f[1]; place(S,60); const hp=b.hp; let d=0;
-  inp(S,0,{a:(S._i?S._i[0].a:0)+1});
+  press(S,0);
   for(let i=0;i<240&&!d;i++){ S.step(1/120); d=hp-b.hp; }
   for(let i=0;i<360&&(a.act||b.hurt>0||b.stun>0||a.cd[0]>0||S.stop>0);i++) S.step(1/120);
   run(S,0.3); return d;
@@ -133,6 +144,10 @@ function blueHits(S){
     ok('a slam and an ultimate are not strikes',slam===0&&runs===0&&hits.some(e=>e.hap==='slam')&&hits.some(e=>e.ult===1),{slam,runs,hits:hits.length}); }
   { const S=duo(SWORD,SWORD); S.setItem(1,1,plain(BALL),30); let runs=0; S.addRule(rule({},()=>{ runs++; })); S.f[1].held=1; blueHits(S); const other=runs; S.f[1].held=0; blueHits(S);
     ok('a strike rule needs the foe to hold item b',other===0&&runs===1,{other,runs}); }
+  { // in the middle of the arena: a bomb thrown from near the wall flies out of it
+    const got={}; for(const [name,spec,gap] of [['gun',{kind:'ranged',style:'gun',element:'none',name:'Gun'},200],['ball',BALL,200],['bomb',{kind:'bomb',style:'',element:'none',name:'Bomb'},250],['dash',{kind:'dash',style:'',element:'none',name:'Rocket'},120],['shield',SHIELD,60],['heal',{kind:'heal',style:'',element:'none',name:'Apple'},60]]){
+      const S=duo(spec,SWORD); S.f[0].x=400; S.f[1].x=400+gap; let seen=''; S.addRule(rule({},h=>{ seen+=h.mine.kind+(h.hit.damage>0?'':'?'); h.hit.scale(1.4); })); press(S,0); run(S,2.5); got[name]=seen; }
+    ok('a strike is a swing, a shot, a bomb or a dash of item a: once each, and never a shield or a heal',got.gun==='ranged'&&got.ball==='ranged'&&got.bomb==='bomb'&&got.dash==='dash'&&got.shield===''&&got.heal==='',got); }
   { const S=duo(SWORD,SWORD); S.addRule(rule({a:[1,0],b:[0,0]},h=>{ h.hit.scale(0.1); })); const d=blueHits(S); S.clearRules(); S.addRule(rule({},h=>{ h.hit.scale(1.4); h.hit.scale(1.4); })); S.addRule(rule({},h=>{ h.hit.scale(1.4); })); const twice=blueHits(S);
     ok('a rule belongs to one side, and rules cannot stack a blow past 1.4x',Math.abs(d-base)<1e-9&&Math.abs(twice/base-1.4)<0.02,{d,twice}); }
   { const S=duo(SWORD,SWORD); let said=0; S.addRule(rule({},h=>{ h.hurt(h.me,3); h.hurt(h.foe,0/0); said=1; })); S.snapshot(); for(let i=0;i<4;i++) blueHits(S); const evs=S.snapshot().ev, own=evs.filter(e=>e.e==='hit'&&e.side===0);
@@ -161,7 +176,6 @@ function shotAt(S,side,slot,speed){
   const p={id:shotId++,k:'shot',st:it.style,big:0,side,slot,x:e.x+e.face*40,y:e.y+71,vx:-e.face*speed,vy:0,grav:0,dmg:it.st.dmg*0.55,el:it.el,kb:it.st.kb,stun:0.1,tr:it.trait,fin:0,life:1,ttl:1};
   S.pr.push(p); return p;
 }
-const press=(S,side)=>inp(S,side,{a:(S._i?S._i[side].a:0)+1});
 // Press that side's attack and step to the move's first hit mark.
 function swing(S,side){ const f=S.f[side]; press(S,side); for(let i=0;i<120;i++){ S.step(1/120); const M=f.act&&D.MOVES[f.act.m]; if(M&&M.hits&&f.act.t>=M.hits[0]) return true; } return false; }
 const calm=S=>{ for(let i=0;i<60&&S.stop>0;i++) S.step(1/120); };      // let a hit-stop pass: nothing moves while it lasts
