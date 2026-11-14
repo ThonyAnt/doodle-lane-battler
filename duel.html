@@ -915,7 +915,7 @@ function validItem(o,strokes){
   spec.traits=traitChoices(kind,Array.isArray(o.traits)?o.traits:[o.trait],name||said); spec.trait=spec.traits[0];
   // What flies out of something that shoots: the reader says, and if it does not, the name is a hint. It only changes the look.
   if(kind==='ranged'){ const am=txt('ammo'); spec.ammo=AMMO.includes(am)?am:(AMMO_HINTS.find(h=>h[1].test(said))||['bullet'])[0]; }
-  if(Array.isArray(o.customs)) spec.customs=fitCustoms(o.customs,kind,style);       // customizations, if the answer names any (see CUSTOMS)
+  if(Array.isArray(o.customs)) spec.customs=fitAll(o.customs,kind,style);       // customizations, if the answer names any (see CUSTOMS)
   return spec;
 }
 function nameFor(spec){
@@ -1149,7 +1149,7 @@ const styleOf=(kind,style)=>kind==='melee'?(MELEE_STYLES.includes(style)?style:'
                 its holder takes cuts it back sharply. */
 const TRANSFORMS={
   twoform:  {label:'Two forms', cost:3,text:'Double-tap down to change it into its other form.'},
-  split:    {label:'Splitter',  cost:3,text:'A finisher that lands splits it in two for a while.'},
+  twin:     {label:'Splitter',  cost:3,text:'A finisher that lands splits it in two for a while.'},
   giant:    {label:'Giant',     cost:3,text:'Every few seconds the next move is made twice the size.'},
   evolve:   {label:'Evolving',  cost:2,text:'Grows a stage every few hits landed. Starts small.'},
   thrown:   {label:'Far and near',cost:3,text:'Throws itself at a far foe, swings at a near one.'},
@@ -1168,7 +1168,7 @@ function transformValid(kind,style,list){
   const all=MELEE_STYLES.concat(RANGED_STYLES), other=kind==='melee'?RANGED_STYLES:MELEE_STYLES;
   switch(c.id){
     case 'twoform': return [{id:c.id,alt:all.includes(c.alt)&&c.alt!==style?c.alt:TF_ALT[style]}];
-    case 'split':   return [{id:c.id,secs:tfNum(c.secs,3,8,5)}];
+    case 'twin':    return [{id:c.id,secs:tfNum(c.secs,3,8,5)}];
     case 'giant':   return [{id:c.id,every:tfNum(c.every,3,12,6)}];
     case 'evolve':  return [{id:c.id,hits:Math.round(tfNum(c.hits,2,6,3))}];
     case 'thrown':  return [{id:c.id,alt:other.includes(c.alt)?c.alt:kind==='melee'?'hurl':TF_NEAR[style],far:tfNum(c.far,160,400,240)}];
@@ -1410,7 +1410,7 @@ const FORGE_MATH=Object.freeze({abs:v=>Math.abs(v),sign:v=>Math.sign(v),floor:v=
 const TARGET_FX={
   shrink:{name:'Shrink',cost:3,secs:[3.5,2,5],rest:2.5,p:{size:[0.6,0.45,0.75]},say:'SHRUNK!'},
   float:{name:'Float',cost:2,secs:[2.5,1.5,4],rest:2.5,p:{grav:[0.3,0.2,0.5]},say:'FLOATING!'},
-  slick:{name:'Slippery',cost:2,secs:[3,2,5],rest:2.5,p:{grip:[0.12,0.05,0.3]},say:'SLIPPERY!'},
+  skid:{name:'Slippery',cost:2,secs:[3,2,5],rest:2.5,p:{grip:[0.12,0.05,0.3]},say:'SLIPPERY!'},
   mirror:{name:'Mirror',cost:3,secs:[2,1,3],rest:3,p:{},say:'MIRRORED!'},
   tether:{name:'Tether',cost:3,secs:[3,2,5],rest:2.5,p:{len:[200,140,300]},say:'TETHERED!'},
   mark:{name:'Mark',cost:3,secs:[5,3,8],rest:1,p:{boost:[1.5,1.25,1.75]},say:'MARKED!'},
@@ -1588,7 +1588,7 @@ function costCustoms(list){
 }
 const costOf=it=>{ const cu=it&&it.customs; if(cu) for(const c of cu) if(c.cost) return c.cost; return null; };      // the cost an item carries, or null
 const heavyOf=it=>!!(it&&it.customs&&it.customs.some(c=>c.id==='heavy'));
-const costPoints=it=>(it&&it.customs?it.customs:[]).reduce((n,c)=>n+COST_POWERS[c.id].pts+(c.cost?COSTS[c.cost.cost].pts:0),0);      // the budget an item's customizations use
+const costPoints=it=>(it&&it.customs?it.customs:[]).reduce((n,c)=>n+(COST_POWERS[c.id]?COST_POWERS[c.id].pts+(c.cost&&COSTS[c.cost.cost]?COSTS[c.cost.cost].pts:0):0),0);      // the budget an item's customizations use
 // For the bots: is a broken weapon waiting to be mended, and how much later does this weapon's first blow land.
 function costRest(S,side){ return [0,1].some(k=>{ const c=costOf(S.items[side][k]); return !!c&&c.cost==='fragile'&&S.canPay(side,k)<0; }); }
 function costLead(it){ const c=costOf(it); return c&&c.cost==='windup'&&heavyOf(it)?c.hold:0; }
@@ -1625,6 +1625,59 @@ function summonCustoms(list){
 }
 // What a summon customization costs in budget points (0 for one that is not a summon block).
 function summonCost(c){ const B=summonBlock(c&&c.id); if(!B) return 0; let n=B.cost; for(const k of Object.keys(B.per||{})){ const p=B.params[k], v=Number.isFinite(+c[k])?Math.max(p[0],Math.min(p[1],Math.round(+c[k]))):p[2]; n+=B.per[k]*(v-p[0]); } return n; }
+/* ---------- customizations, all axes together ----------
+   Nine axes were written side by side, each with its own table and its own cleaner:
+     wielder CUSTOMS / fitCustoms      shape SHAPES / shapeFit        leaves LEAVES / leaveCustoms
+     target TARGET_FX / targetCustom   trigger TRIGGERS / trigCustoms  cost COSTS + COST_POWERS / costCustoms
+     summon SUMMONS / summonCustoms    arena ARENAS / arenaCustoms     transform TRANSFORMS / transformValid
+   An item's it.customs is ONE list holding blocks of any axis. fitAll is the only thing that makes that list: it hands
+   each axis its own entries to clean, then keeps at most CUSTOM_ALL_MAX blocks worth at most CUSTOM_ALL_BUDGET points
+   between them (a cost has negative points, so it buys room). In practice mode, and so on the move tester, the budget is
+   not applied, so any mix can be tried. Every reader of it.customs must skip blocks that are not its own. */
+const CUSTOM_ALL_MAX=3, CUSTOM_ALL_BUDGET=10, cuHas=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
+const AXIS_NAME={wielder:'Wielder',shape:'Attack shape',leaves:'Leaves behind',target:'On the foe',trigger:'Trigger',cost:'Cost',summon:'Summon',arena:'Arena',transform:'Transformation'};
+const customAxis=id=>typeof id!=='string'?'':cuHas(CUSTOMS,id)?'wielder':cuHas(SHAPES,id)?'shape':cuHas(LEAVES,id)?'leaves':cuHas(TARGET_FX,id)?'target':id==='empower'?'trigger':cuHas(COST_POWERS,id)?'cost':cuHas(SUMMONS,id)?'summon':cuHas(ARENAS,id)?'arena':cuHas(TRANSFORMS,id)?'transform':'';
+const customKey=c=>c.id+(c.when&&c.when.when?':'+c.when.when:'')+(c.cost&&c.cost.cost?':'+c.cost.cost:'');      // tells two triggers, or two costs, apart
+function customPointsOf(c){
+  try{ switch(customAxis(c&&c.id)){
+    case 'wielder': return customPoints(c);
+    case 'shape': return SHAPES[c.id].cost;
+    case 'leaves': return typeof c.cost==='number'?c.cost:LEAVES[c.id].cost;
+    case 'target': return TARGET_FX[c.id].cost;
+    case 'trigger': return (TRIGGERS[c.when&&c.when.when]||{cost:3}).cost;
+    case 'cost': return COST_POWERS[c.id].pts+(c.cost&&COSTS[c.cost.cost]?COSTS[c.cost.cost].pts:0);
+    case 'summon': return summonCost(c);
+    case 'arena': return arenaCost(c);
+    case 'transform': return TRANSFORMS[c.id].cost;
+  } }catch(e){} return 0;
+}
+function fitAll(list,kind,style,free){
+  const src=(Array.isArray(list)?list.slice(0,64):[]).map(c=>typeof c==='string'?{id:c}:c).filter(c=>c&&typeof c==='object'&&customAxis(c.id));
+  const by=ax=>src.filter(c=>customAxis(c.id)===ax), safe=fn=>{ try{ const r=fn(); return Array.isArray(r)?r.filter(Boolean):[]; }catch(e){ return []; } }, weapon=kind==='melee'||kind==='ranged';
+  const all=[].concat(safe(()=>fitCustoms(by('wielder'),kind,style)),safe(()=>shapeFit(kind,by('shape'))),safe(()=>leaveCustoms(by('leaves'),kind)),safe(()=>by('target').map(c=>targetCustom(c,kind))),
+    safe(()=>trigCustoms(by('trigger'),kind)),safe(()=>weapon?costCustoms(by('cost')):[]),safe(()=>summonCustoms(by('summon'))),safe(()=>arenaCustoms(by('arena'))),safe(()=>transformValid(kind,style,by('transform'))));
+  const rank=c=>{ const i=src.findIndex(q=>q.id===c.id); return i<0?99:i; }, seen=new Set(), out=[]; let pts=0;
+  for(const c of all.map((c,i)=>[c,i]).sort((a,b)=>rank(a[0])-rank(b[0])||a[1]-b[1]).map(x=>x[0])){
+    if(seen.has(c.id)) continue; const p=customPointsOf(c);
+    if(!free&&(out.length>=CUSTOM_ALL_MAX||pts+p>CUSTOM_ALL_BUDGET+1e-9)) continue;
+    seen.add(c.id); out.push(c); pts+=p; }
+  return out;
+}
+// Every block an item of this kind may carry, for a picker: [{axis, key, label, text, pts, entry}].
+function customCatalog(kind,style){
+  const out=[], T=(axis,label,text,entry)=>{ const fit=fitAll([entry],kind,style,true); if(fit.length) out.push({axis,key:customKey(fit[0]),label:label||entry.id,text:text||'',pts:Math.round(customPointsOf(fit[0])*10)/10,entry:fit[0]}); };
+  for(const id in CUSTOMS) T('wielder',CUSTOMS[id].label,CUSTOMS[id].text,{id});
+  for(const id in SHAPES) T('shape',SHAPES[id].label,SHAPES[id].text,{id});
+  for(const id in LEAVES) T('leaves',LEAVES[id].name,LEAVES[id].blurb,{id});
+  for(const id in TARGET_FX) T('target',TARGET_FX[id].name,'',{id});
+  for(const w in TRIGGERS) T('trigger',TRIGGERS[w].name,TRIGGERS[w].tip,{id:'empower',when:{when:w}});
+  for(const c in COSTS) T('cost','Heavy, '+String(COSTS[c].label).toLowerCase(),COSTS[c].blurb,{id:'heavy',cost:{cost:c}});
+  for(const id in SUMMONS) T('summon',SUMMONS[id].name,'',{id});
+  for(const id in ARENAS) T('arena',ARENAS[id].name,'',{id});
+  for(const id in TRANSFORMS) T('transform',TRANSFORMS[id].label,TRANSFORMS[id].text,{id});
+  return out;
+}
+const tfC=it=>(it&&Array.isArray(it.customs)&&it.customs.find(c=>cuHas(TRANSFORMS,c.id)))||null;      // an item's transformation block, if it has one
 function createDuel(opts){
   if(opts&&opts.record) opts=viaJSON(opts);       // a recorded match keeps its own copy of what it was made with (see S.log)
   let acc=0, nextId=1; const STEP=1/120, r1=round1;
@@ -1838,21 +1891,34 @@ function createDuel(opts){
     const style=styleOf(spec.kind,spec.style), tune=Math.max(-2,Math.min(2,Math.round(+spec.tune||0)));
     const raw={power:clampStat(spec.power),range:clampStat(spec.range),speed:clampStat(spec.speed)}, stats=balanceStats(raw,tune);
     const traits=traitChoices(spec.kind,spec.traits,spec.name), trait=traits.includes(spec.trait)?spec.trait:traits[0];
-    return tfBuild({name:spec.name||nameFor(spec),kind:spec.kind,style,el:spec.element,cost,raw,tune,stats,trait,traits,ammo:AMMO.includes(spec.ammo)?spec.ammo:undefined,st:itemStats(spec.kind,spec.element,cost,stats),ver:++S.ver,customs:fitCustoms(spec.customs,spec.kind,style),customs:leaveCustoms(spec.customs,spec.kind)},spec);
+    return tfBuild({name:spec.name||nameFor(spec),kind:spec.kind,style,el:spec.element,cost,raw,tune,stats,trait,traits,ammo:AMMO.includes(spec.ammo)?spec.ammo:undefined,st:itemStats(spec.kind,spec.element,cost,stats),ver:++S.ver,customs:fitAll(spec.customs,spec.kind,style,S.practice)},spec);
   }
   // Change an item that is already made, while still drawing: what it is, which of its two traits it uses, or its tuning.
   S.tweak=(side,k,ch)=>{
     const it=S.items[side][k]; if(!it||!ch||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
     const spec={name:it.name,kind:it.kind,style:it.style,element:it.el,power:it.raw.power,range:it.raw.range,speed:it.raw.speed,traits:it.traits,trait:it.trait,tune:it.tune,customs:ch.customs!==undefined?ch.customs:it.customs};
+    tfSpec(it,spec,ch);      // transform: the spec is of what the item was made as, not of the form it is in now
     if(ch.kind!==undefined){ if(!KINDS.includes(ch.kind)) return null; spec.kind=ch.kind; spec.style=String(ch.style||''); }
     if(typeof ch.name==='string'){ const nm=ch.name.replace(/[<>&"']/g,'').trim().slice(0,22); if(nm) spec.name=nm; }
     if(ch.trait!==undefined) spec.trait=String(ch.trait);
     if(ch.tune!==undefined) spec.tune=ch.tune;
-    return targetKeep(it,S.setItem(side,k,spec,it.cost));      // target: the remade item keeps its customizations
+    const made=S.setItem(side,k,spec,it.cost);
+    if(made&&ch.customs!==undefined){ const f=S.f[side]; if(f.trg) f.trg[k]=trigState(); if(f.cs) f.cs[k]=null; }      // a changed set of customizations starts from scratch (trigger and cost state)
+    return made;
   };
   // wielder customizations: give a made item its blocks (see CUSTOMS): a list of ids or {id, params}; fitCustoms cleans it
   // and keeps it within the points budget. Allowed when tweak is (the draw phase, or any time in practice). [] clears.
   S.setCustoms=(side,k,list)=>S.tweak(side,k,{customs:Array.isArray(list)?list:[]});
+  // One axis at a time: replace the item's blocks of that axis and keep the rest. Gives that axis's blocks as kept, or null.
+  function setAxis(side,k,ax,list){
+    const it=(side===0||side===1)&&(k===0||k===1)?S.items[side][k]:null; if(!it||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
+    const add=(Array.isArray(list)?list.slice(0,16):[]).map(c=>typeof c==='string'?{id:c}:c).filter(c=>c&&typeof c==='object'&&customAxis(c.id)===ax);
+    const made=S.tweak(side,k,{customs:(it.customs||[]).filter(c=>customAxis(c.id)!==ax).concat(add)}); return made?(made.customs||[]).filter(c=>customAxis(c.id)===ax):null;
+  }
+  S.targetSet=(side,k,list)=>setAxis(side,k,'target',list); S.trigSet=(side,k,list)=>setAxis(side,k,'trigger',list); S.shapeSet=(side,k,list)=>setAxis(side,k,'shape',list);
+  S.leaveSet=(side,k,list)=>setAxis(side,k,'leaves',list); S.summonSet=(side,k,list)=>setAxis(side,k,'summon',list);
+  S.arenaSet=(side,k,list)=>{ const r=setAxis(side,k,'arena',list); return r&&r.map(c=>Object.assign({cost:arenaCost(c)},c)); };
+  S.costSet=(side,k,list)=>setAxis(side,k,'cost',list)?S.items[side][k]:null;
   /* ---------- triggers in the match (see TRIGGERS above createDuel) ----------
      trigTick runs once a tick per fighter (from control); trigStrike is asked in hurt() whether a blow is empowered;
      trigShot marks a shot or a bomb as it leaves the hand; trigAfter tells both fighters' triggers what a blow did.
@@ -1862,12 +1928,6 @@ function createDuel(opts){
   const trigOf=it=>(it&&it.customs&&it.customs.find(c=>c.when))||null;
   // Set an item's customizations (trigger and all). Like S.tweak: while drawing, or any time in practice. Whatever is
   // given is cleaned by trigCustoms; the answer is the list the item now carries (empty if nothing valid), or null.
-  S.trigSet=(side,k,list)=>{
-    if((side!==0&&side!==1)||(k!==0&&k!==1)) return null;
-    const it=S.items[side][k]; if(!it||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
-    const cu=trigCustoms(list,it.kind); if(cu.length) it.customs=cu; else delete it.customs;
-    S.f[side].trg[k]=trigState(); return cu;
-  };
   // The payoff every trigger lets off here: an empowered hit. c = {hit:{dmg,kx,ky}, target, slot, boost, when}. Change
   // c.hit and say so with an event; a later block can stand in for this function.
   function empower(by,it,c){
@@ -1910,14 +1970,6 @@ function createDuel(opts){
   /* ---------- costs in a match (see COSTS) ---------- */
   // Set an item's customizations: while drawing (before "ready") or in practice mode, like S.tweak. Weapons only.
   // Returns the item, or null if it was refused. Never throws, whatever it is given.
-  S.costSet=(side,k,list)=>{
-    if((side!==0&&side!==1)||(k!==0&&k!==1)) return null;
-    const it=S.items[side][k]; if(!it||(!S.practice&&(S.phase!=='draw'||S.ready[side]))||(it.kind!=='melee'&&it.kind!=='ranged')) return null;
-    const cu=costCustoms(list); if(cu.length) it.customs=cu; else delete it.customs;
-    S.f[side].cs[k]=null; return it;
-  };
-  { const tweak0=S.tweak;      // cost: a tweaked item is rebuilt; it keeps its customizations while it is still a weapon
-    S.tweak=(side,k,ch)=>{ const was=S.items[side]&&S.items[side][k], cu=was&&was.customs, it=tweak0(side,k,ch); if(it&&cu&&(it.kind==='melee'||it.kind==='ranged')) it.customs=cu; return it; }; }
   // f.cs[k] = {c: which cost, ver: the item it belongs to, n: rounds left (ammo) or cracks (fragile), v: heat 0..1,
   // idle: seconds since its last attack, lock: seconds until it can be used again (reloading, cooling), r: progress of a
   // top-up or a mend in seconds}. Made when first needed; a new item in the slot starts afresh.
@@ -2021,13 +2073,13 @@ function createDuel(opts){
      the move in progress is finished first, with the form it began in. A giant move is decided as the move begins and
      ends when that move does. Stages and growth only change numbers, so they apply at once. Nothing whatever changes
      while an ultimate is playing, the caster's weapon included, and an ultimate's own blows count for nothing here. */
-  const tfNew=it=>({ver:it?it.ver:0,form:0,g:it&&it.customs[0]&&it.customs[0].id==='overgrown'?0.8:1,t:0,n:0,s:0,on:0,q:0,m:9});
-  const tfOf=it=>it&&it.customs&&it.customs[0];
+  const tfNew=it=>({ver:it?it.ver:0,form:0,g:tfC(it)&&tfC(it).id==='overgrown'?0.8:1,t:0,n:0,s:0,on:0,q:0,m:9});
+  const tfOf=tfC;
   // Give the item the shape its state calls for. The ink (cost) and the stats are the item's own, whatever the form.
   function tfShape(it,s){
-    const c=it.customs[0]; let kind=it.k0, style=it.s0, g=1, dm=1, rm=1;
+    const c=tfC(it); let kind=it.k0, style=it.s0, g=1, dm=1, rm=1;
     if(c.id==='twoform'||c.id==='thrown'){ if(s.form){ style=c.alt; kind=MELEE_STYLES.includes(style)?'melee':'ranged'; if(c.id==='thrown') dm=0.85; } }
-    else if(c.id==='split'){ if(s.form){ if(TF_ONE[it.s0]){ style=TF_ONE[it.s0]; g=1.3; dm=1.1; rm=0.88; } else{ style=TF_PAIR[it.k0]; rm=1.15; } } }
+    else if(c.id==='twin'){ if(s.form){ if(TF_ONE[it.s0]){ style=TF_ONE[it.s0]; g=1.3; dm=1.1; rm=0.88; } else{ style=TF_PAIR[it.k0]; rm=1.15; } } }
     else if(c.id==='giant'){ if(s.on){ g=2; dm=kind==='melee'?1.3:1.5; rm=0.75; } }
     else if(c.id==='evolve'){ g=TF_STAGE[s.s].g; dm=TF_STAGE[s.s].dm; }
     else{ g=s.g; rm=1/Math.sqrt(g); if(kind==='ranged') dm=Math.sqrt(g); }
@@ -2037,7 +2089,7 @@ function createDuel(opts){
     it.kind=kind; it.style=style; it.st=st;
   }
   // Every item passes through here as it is made (buildItem).
-  function tfBuild(it,spec){ it.k0=it.kind; it.s0=it.style; it.customs=transformValid(it.kind,it.style,spec&&spec.customs); if(it.customs.length) tfShape(it,tfNew(it)); return it; }
+  function tfBuild(it,spec){ it.k0=it.kind; it.s0=it.style; if(tfOf(it)) tfShape(it,tfNew(it)); return it; }
   // S.tweak rebuilds an item from a spec: the spec is of what the item was made as, and keeps its customization unless a new one is given.
   function tfSpec(it,spec,ch){ spec.kind=it.k0||it.kind; spec.style=it.s0===undefined?it.style:it.s0; spec.customs=ch.customs!==undefined?ch.customs:it.customs; }
   // A new round (resetWorld): every transforming item is back in the shape it starts a round in. (The fighters' f.tf are new with the fighters.)
@@ -2045,7 +2097,7 @@ function createDuel(opts){
   const tfState=(f,k)=>{ const tf=f.tf||(f.tf=[tfNew(),tfNew()]), it=S.items[f.side][k], s=tf[k]; if(tfOf(it)&&s.ver!==it.ver){ Object.assign(s,tfNew(it)); tfShape(it,s); } return s; };
   // The moment of change: the picture morphs for a moment (s.m), and if the weapon is in hand there is a ring and a word.
   function tfChange(f,k,s,it,text){
-    s.m=0; tfShape(it,s); fx('tf',{side:f.side,slot:k,id:it.customs[0].id,form:s.form});
+    s.m=0; tfShape(it,s); fx('tf',{side:f.side,slot:k,id:tfC(it).id,form:s.form});
     if(f.held===k||s.on){ ring(f.x,-(f.y+58),PCOLS[f.side]); if(text) floatT(f.x,-(f.y+118),text,f.side); }
   }
   const TF_WORD={blade:'BLADE',spear:'SPEAR',hammer:'HAMMER',fist:'FIST',dual:'TWIN',bow:'BOW',gun:'GUN',staff:'STAFF',hurl:'THROWN',akimbo:'TWIN GUN'};
@@ -2055,7 +2107,7 @@ function createDuel(opts){
     if(S.ult>=0||f.hp<=0){ f.tfd=d; return; }
     // the double tap of down: two presses within 0.3 s ask the held weapon to change form
     f.tft=Math.min(9,(f.tft===undefined?9:f.tft)+dt);
-    if(d&&!f.tfd){ if(f.tft<0.3){ f.tft=9; const it=S.items[f.side][f.held]; if(tfOf(it)&&it.customs[0].id==='twoform') tfState(f,f.held).q=1; } else f.tft=0; }
+    if(d&&!f.tfd){ if(f.tft<0.3){ f.tft=9; const it=S.items[f.side][f.held]; if(tfOf(it)&&tfC(it).id==='twoform') tfState(f,f.held).q=1; } else f.tft=0; }
     f.tfd=d;
     const e=S.f[1-f.side];
     for(const k of [0,1]){
@@ -2065,7 +2117,7 @@ function createDuel(opts){
       if(c.id==='twoform'){
         s.t=Math.max(0,s.t-dt);
         if(s.q&&free&&s.t<=0){ s.q=0; s.form=1-s.form; s.t=0.5; if(f.cd[k]<0.2) f.cd[k]=f.cdMax[k]=0.2; tfChange(f,k,s,it,TF_WORD[s.form?c.alt:it.s0]+' FORM'); }
-      }else if(c.id==='split'){
+      }else if(c.id==='twin'){
         if(s.form){ s.t-=dt; if(s.t<=0&&free){ s.form=0; s.t=0; tfChange(f,k,s,it,TF_ONE[it.s0]?'APART AGAIN':'REJOINED'); } }
         else if(s.q&&free){ s.q=0; s.form=1; s.t=c.secs; if(f.cd[k]<0.2) f.cd[k]=f.cdMax[k]=0.2; tfChange(f,k,s,it,TF_ONE[it.s0]?'JOINED!':'SPLIT!'); }
       }else if(c.id==='giant'){
@@ -2096,7 +2148,7 @@ function createDuel(opts){
     if(blocked||tr==='fleet'||S.ult>=0) return;
     const it=by&&by!==t&&slot>=0?S.items[by.side][slot]:null, c=tfOf(it);
     if(c&&c.id==='evolve'){ const s=tfState(by,slot); if(s.s<2&&++s.n>=c.hits){ s.n=0; s.s++; tfChange(by,slot,s,it,s.s>1?'FINAL STAGE':'STAGE 2'); } }
-    if(c&&c.id==='split'&&fin){ const s=tfState(by,slot); if(!s.form) s.q=1; }
+    if(c&&c.id==='twin'&&fin){ const s=tfState(by,slot); if(!s.form) s.q=1; }
     for(const k of [0,1]){ const o=S.items[t.side][k], oc=tfOf(o); if(!oc||oc.id!=='overgrown') continue;
       const s=tfState(t,k), was=s.g; s.t=Math.max(0,s.t-oc.secs*0.4); s.g=Math.round((0.8+0.9*s.t/oc.secs)*20)/20; if(s.g<was) tfChange(t,k,s,o,'CUT BACK'); }
   }
@@ -2107,7 +2159,7 @@ function createDuel(opts){
     const c=tfOf(it); if(!c) return undefined;
     let s=null; for(const f of S.f) for(const k of [0,1]) if(S.items[f.side][k]===it&&f.tf&&f.tf[k].ver===it.ver) s=f.tf[k];
     if(!s) s=tfNew(it);
-    const cl=c.id==='giant'?s.t/c.every:c.id==='split'?(s.form?s.t/c.secs:0):c.id==='evolve'?(s.s>1?1:s.n/c.hits):c.id==='overgrown'?s.t/c.secs:0;
+    const cl=c.id==='giant'?s.t/c.every:c.id==='twin'?(s.form?s.t/c.secs:0):c.id==='evolve'?(s.s>1?1:s.n/c.hits):c.id==='overgrown'?s.t/c.secs:0;
     return {id:c.id,f:s.form,s:s.s,g:s.on?2:c.id==='evolve'?TF_STAGE[s.s].g:s.g,on:s.on,c:Math.round(Math.max(0,Math.min(1,cl))*10)/10,m:Math.round(Math.min(0.5,s.m)*50)/50,k0:it.k0,s0:it.s0};
   }
   // For the move tester (/moves): make the transformation happen now. Practice only. back: undo it instead (shrink, first stage).
@@ -2115,7 +2167,7 @@ function createDuel(opts){
     k=k===1?1:0; const f=S.f[side===1?1:0], it=S.items[f.side][k], c=tfOf(it); if(!S.practice||!c||S.ult>=0) return false;
     const s=tfState(f,k);
     if(c.id==='twoform') s.q=1;
-    else if(c.id==='split'){ if(s.form) s.t=0; else if(!back) s.q=1; }
+    else if(c.id==='twin'){ if(s.form) s.t=0; else if(!back) s.q=1; }
     else if(c.id==='giant') s.t=back?0:c.every;
     else if(c.id==='evolve'){ s.n=0; s.s=back?0:(s.s+1)%3; tfChange(f,k,s,it,'STAGE '+(s.s+1)); }
     else if(c.id==='thrown'){ if(f.act) return false; s.form=1-s.form; s.t=1.5; tfChange(f,k,s,it,(it.k0==='melee')===!!s.form?'THROWN':'IN HAND'); }
@@ -2329,7 +2381,7 @@ function createDuel(opts){
         const sw={reach:st.reach*(M.reach||1)*sty.reach,dmg:st.dmg*M.dmg*sty.dmg,kb:M.kb*sty.kb*(0.7+0.3*st.p)*(st.push||1),m:a.m}; if(!M.mine) cfire('swing',f,k,sw);      // wielder customizations may change the swing
         const dx=(e.x-f.x)*f.face, reach=sw.reach;
         if(M.quake&&!a.quaked){ a.quaked=true; S.events.push({e:'quake',x:Math.round(f.x+f.face*reach*0.7),y:Math.round(f.y),n:Math.round(reach)}); }
-        if(dx>-14&&dx<reach+14&&Math.abs(e.y-f.y)<(M.tall||72)){ a.done++; hurt(e,sw.dmg*cw,it.el,f.face*sw.kb*(0.7+0.3*st.p)*(st.push||1)*ck,M.lift,f,f.x,undefined,it.trait,undefined,M.end&&!M.mine&&a.done>=marks.length?1:0,M.mine?undefined:k); leaveSwing(f,it,M,e,reach,1,a.done>=marks.length); continue; }
+        if(dx>-14&&dx<reach+14&&Math.abs(e.y-f.y)<(M.tall||72)){ a.done++; hurt(e,sw.dmg*cw,it.el,f.face*sw.kb*ck,M.lift,f,f.x,undefined,it.trait,undefined,M.end&&!M.mine&&a.done>=marks.length?1:0,M.mine?undefined:k); leaveSwing(f,it,M,e,reach,1,a.done>=marks.length); continue; }
         if(a.t<marks[a.done]+0.07) break;      // the blade stays dangerous for a moment
         a.done++; leaveSwing(f,it,M,e,reach,0,a.done>=marks.length);
       }else{
@@ -2416,13 +2468,7 @@ function createDuel(opts){
      own shots, and they carry no p.sh. No dice are rolled here. */
   // Give an item its customizations: the draw phase before you are ready, or any time in practice (as S.tweak). The list is
   // cut down to what suits the item (shapeFit); returns what it now carries, or null if nothing could be changed.
-  S.shapeSet=(side,k,list)=>{
-    const it=(side===0||side===1)&&(k===0||k===1)?S.items[side][k]:null; if(!it||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
-    const fit=shapeFit(it.kind,list); if(fit.length) it.customs=fit; else delete it.customs;
-    return fit;
-  };
   // S.tweak rebuilds the item, so carry the customizations over (those that still suit it, if its kind changed).
-  { const tweak0=S.tweak; S.tweak=(side,k,ch)=>{ const was=S.items[side]&&S.items[side][k], cs=was&&was.customs, it=tweak0(side,k,ch); if(it&&cs){ const fit=shapeFit(it.kind,cs); if(fit.length) it.customs=fit; } return it; }; }
   // A shot has just left an item that carries customizations: note on it the ones that shape a shot's flight.
   function shapeFire(p,it){
     const h={t:0}; let any=0;
@@ -2578,10 +2624,6 @@ function createDuel(opts){
   function summonReset(){ S.sm=[]; S.smT=[{},{}]; }
   // Set an item's customizations: in the draw phase before "ready", or any time in practice (as S.tweak). Returns the list
   // as kept (unknown ids and bad parameters are dropped), or null if it may not be changed now.
-  S.summonSet=(side,k,list)=>{
-    const it=(side===0||side===1)&&(k===0||k===1)?S.items[side][k]:null; if(!it||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
-    return it.customs=summonCustoms(list);
-  };
   const smItem=s=>S.items[s.side][s.slot], smLive=(side,k,kind)=>S.sm.filter(s=>s.hp>0&&s.side===side&&s.slot===k&&s.kind===kind);
   const smTouch=(s,e,dy)=>e.hp>0&&Math.abs(s.x-e.x)<26&&s.y+(dy||0)>e.y-10&&s.y+(dy||0)<e.y+98*e.scale;
   function smAdd(kind,f,k,o){
@@ -2905,18 +2947,13 @@ function createDuel(opts){
   const TF_NAME=(HACKS.find(h=>h.id==='transform')||{}).name;
   const targetOn=(f,id)=>{ const e=f.tfx[id]; return e&&e.t>0&&!casting(f)?e:null; };
   const targetDir=f=>targetOn(f,'mirror')?-1:1;                                   // mirror: left is right
-  const targetGrip=f=>{ const e=f.ground&&targetOn(f,'slick'); return e?e.v:1; };   // slick: feet barely grip the ground
+  const targetGrip=f=>{ const e=f.ground&&targetOn(f,'skid'); return e?e.v:1; };   // slick: feet barely grip the ground
   const targetGrav=f=>{ const e=targetOn(f,'float'); return e?e.v:1; };           // float: a fraction of the gravity
   const targetEv=(k,id,f,by,more)=>fx('tg',Object.assign({k,id,side:f.side,by,x:rr(f.x),y:rr(f.y)},more));
   function targetKeep(old,it){ if(it&&old&&Array.isArray(old.customs)) it.customs=old.customs.map(c=>targetCustom(c,it.kind)).filter(Boolean); return it; }
   // Set an item's customizations (in the manner of S.tweak: while drawing, or any time in practice). Unknown ids, ones the
   // item's kind cannot carry, repeats and anything past TARGET_MAX are dropped; bad numbers become the defaults. Returns
   // what the item now carries, or null if there is no such item or it is too late.
-  S.targetSet=(side,k,list)=>{
-    const it=(side===0||side===1)&&(k===0||k===1)?S.items[side][k]:null; if(!it||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
-    const out=[]; if(Array.isArray(list)) for(const c of list.slice(0,16)){ const o=targetCustom(c,it.kind); if(o&&out.length<TARGET_MAX&&!out.some(q=>q.id===o.id)) out.push(o); }
-    return it.customs=out;
-  };
   function targetEnd(f,id,k){
     const e=f.tfx[id]; e.t=0; e.cd=TARGET_FX[id].rest;
     if(id==='shrink') f.scaleGoal=S.effects.some(q=>q.target===f.side&&q.name===TF_NAME)?0.55:1;      // TRANSFORM.exe may still be holding them small
@@ -2937,7 +2974,7 @@ function createDuel(opts){
         t.vx=-t.vx; by.vx=0; if(by.ground) by.vy=0; if(by.x!==t.x) by.face=Math.sign(t.x-by.x);
         t.tfx.swap={t:0,d:0,cd:D.rest,by:by.side,v:0}; targetEv('swap','swap',t,by.side,{x2:rr(by.x),y2:rr(by.y)}); continue;
       }
-      const v=c.id==='shrink'?c.size:c.id==='float'?c.grav:c.id==='slick'?c.grip:c.id==='tether'?c.len:c.id==='mark'?c.boost:0;
+      const v=c.id==='shrink'?c.size:c.id==='float'?c.grav:c.id==='skid'?c.grip:c.id==='tether'?c.len:c.id==='mark'?c.boost:0;
       t.tfx[c.id]={t:c.secs,d:c.secs,cd:0,by:by.side,v};
       if(c.id==='shrink') t.scaleGoal=Math.min(t.scaleGoal,v);
       if(c.id==='float'){ t.vy=Math.max(t.vy,320); t.ground=false; }      // lifted off their feet, then they drift
@@ -2980,10 +3017,6 @@ function createDuel(opts){
   S.lv=[]; let lvSeq=1;
   // Set an item's customizations (see LEAVES): a list of ids or of {id,size,secs}. While drawing, or in practice.
   // Returns the list as kept (unknown ids, ones the item's kind cannot carry, repeats and extras are dropped) or null.
-  S.leaveSet=(side,k,list)=>{
-    const it=(side===0||side===1)&&(k===0||k===1)?S.items[side][k]:null; if(!it||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
-    return it.customs=leaveCustoms(list,it.kind);
-  };
   // The highest thing to stand on at x that is not above height y: the floor, a solid's top or a ledge.
   function surfaceUnder(x,y){
     let best=0; for(const o of SOL) if(x>=o.x0&&x<=o.x1&&o.y1<=y+6&&o.y1>best) best=o.y1;
@@ -3151,11 +3184,6 @@ function createDuel(opts){
   const arenaOf=it=>(it&&Array.isArray(it.customs)&&it.customs.find(c=>arenaDef(c.id)))||null;
   // Give an item its arena block (or none: an empty list). Like S.tweak: while drawing, or any time in practice. Returns
   // the list as kept, each entry with its point cost, or null if it cannot be changed now. Never throws.
-  S.arenaSet=(side,k,list)=>{
-    if((side!==0&&side!==1)||(k!==0&&k!==1)) return null;
-    const it=S.items[side][k]; if(!it||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
-    it.customs=arenaCustoms(list); return it.customs.map(c=>Object.assign({cost:arenaCost(c)},c));
-  };
   // For the move tester page (/moves): set an effect off outright, as if by the held weapon. Practice only.
   S.startArena=(side,id,secs)=>{
     if(!S.practice||(side!==0&&side!==1)) return false; const c=arenaCustoms([{id,secs}])[0]; return c?arenaStart(S.f[side],S.f[side].held,c,true):false;
@@ -3291,7 +3319,7 @@ function createDuel(opts){
     hack:S.hack&&{by:S.hack.by,target:S.hack.target,name:S.hack.def.name,desc:S.hack.def.desc,t:+S.hack.t.toFixed(2),max:S.hack.max,counter:S.hack.counter},
     fxs:S.effects.map(e=>({by:e.by,target:e.target,counter:e.counter,name:e.name})),
     items:S.items.map(a=>a.map(it=>it&&{name:it.name,kind:it.kind,style:it.style,el:it.el,cost:Math.round(it.cost),ver:it.ver,sz:Math.round(it.st.size),
-      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune,am:it.ammo,cu:it.customs&&it.customs.length?it.customs:undefined,cu:it.customs,cu:it.customs,cu:it.customs,cu:it.customs&&it.customs.length?it.customs:undefined,cu:it.customs,cu:it.customs,tf:tfView(it)})),
+      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune,am:it.ammo,cu:it.customs&&it.customs.length?it.customs:undefined,tf:tfView(it)})),
     f:S.f.map(f=>({x:r1(f.x),y:r1(f.y),vx:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vx),vy:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vy),face:f.face,hp:Math.max(0,r1(f.hp)),g:f.ground?1:0,
       act:f.act?{k:f.act.k,m:f.act.m+(f.act.v?'_b':''),t:+f.act.t.toFixed(3),r:+f.act.rate.toFixed(2)}:null,
       sh:f.shield>0?1:0,hurt:f.hurt>0?1:0,burn:f.burn>0?1:0,slow:f.slow>0?1:0,dash:f.dash>0?1:0,held:f.held,
@@ -4066,7 +4094,7 @@ function tfDraw(T,sp,x,y,sc,over){
   if(over){ const u=tf.m/TF_MORPH; glow('#ffd84a',Math.min(1,1.25*(1-u)),26); return; }
   if(tf.id==='evolve'){ if(tf.s>1){ glow(GOLD,0.9,18); ring(GOLD,o*2.3,1); } if(tf.s>0) ring(own,o*1.15,1); }
   else if(tf.id==='giant'){ if(tf.on){ glow(own,0.9,22); ring(own,o*0.8,1); } else if(tf.c>=1){ const q=0.5+0.5*Math.sin(T.now/90); glow(GOLD,0.45+0.5*q,10+14*q); ring(GOLD,o*(1+0.6*q),0.9); } }
-  else if(tf.id==='split'){ if(tf.f&&(tf.c>0.3||Math.sin(T.now/55)>0)) ring(own,o*1.4,0.85); }
+  else if(tf.id==='twin'){ if(tf.f&&(tf.c>0.3||Math.sin(T.now/55)>0)) ring(own,o*1.4,0.85); }
   else if(tf.id==='twoform'){ if(tf.f) ring(own,o*1.1,0.8); }
   else if(tf.id==='overgrown'){ if(tf.c>0.05) ring('#2f9e56',o*(0.5+1.6*tf.c),0.9); }
 }
@@ -4101,7 +4129,7 @@ function buildDesks(){
       else if(b.dataset.trait) tweak(d,{trait:b.dataset.trait});
       else if(b.dataset.tune) tweak(d,{tune:it.tn+ +b.dataset.tune});
       else if(b.dataset.kind) tweak(d,{kind:b.dataset.kind,style:b.dataset.style});
-      else if(b.dataset.cu){ const on=(it.cu||[]).map(e=>e.id), id=b.dataset.cu; tweak(d,{customs:on.includes(id)?on.filter(x=>x!==id):[id,...on]}); }      // wielder customizations: the newest first, so it is the one kept if both do not fit
+      else if(b.dataset.cu){ const key=b.dataset.cu, cur=it.cu||[], pick=customCatalog(it.kind,it.style).find(x=>x.key===key); tweak(d,{customs:cur.some(c=>customKey(c)===key)?cur.filter(c=>customKey(c)!==key):pick?[pick.entry,...cur.filter(c=>c.id!==pick.entry.id)]:cur}); }      // wielder customizations: the newest first, so it is the one kept if both do not fit
     };
     el.querySelector('.ready').onclick=()=>{ if(sim) sim.setReady(side); else post({type:'ready'}); };
     const pos=e=>{ const r=d.pad.getBoundingClientRect(); return [Math.round((e.clientX-r.left)*PAD_W/r.width),Math.round((e.clientY-r.top)*PAD_H/r.height)]; };
@@ -4163,10 +4191,12 @@ const STAT_NAMES={melee:['Power','Range','Speed'],ranged:['Power','Range','Speed
 const statBars=it=>['pw','rg','sp'].map((k,n)=>[k,(STAT_NAMES[it.kind]||STAT_NAMES.melee)[n]]).map(([k,l])=>`<div class="stat ${k}"><span>${l}</span><div class="sbar"><i style="width:${Math.round(it[k]*100/9)}%"></i></div><b>${it[k].toFixed(1)}</b></div>`).join('');
 const FIXES=[['melee','blade','Sword'],['melee','spear','Spear or whip'],['melee','hammer','Hammer'],['melee','fist','Fists'],['melee','dual','Twin blades'],['ranged','bow','Bow'],['ranged','gun','Gun'],['ranged','akimbo','Twin guns'],['ranged','staff','Magic'],['ranged','hurl','Thrown'],['bomb','','Bomb'],['shield','','Shield'],['dash','','Speed'],['heal','','Healing']];
 // wielder customizations: the blocks that suit this item, to switch on and off (at most CUSTOM_MAX, within CUSTOM_BUDGET points)
-const customNames=it=>(it.cu||[]).map(e=>CUSTOMS[e.id]?CUSTOMS[e.id].label:e.id);
+const customNames=it=>{ const cat=customCatalog(it.kind,it.style); return (it.cu||[]).map(c=>(cat.find(x=>x.key===customKey(c))||{label:c.id}).label); };
 function cardCustoms(it,off){
-  const ids=Object.keys(CUSTOMS).filter(id=>fitCustoms([id],it.kind,it.style).length), on=(it.cu||[]).map(e=>e.id); if(!ids.length) return '';
-  return `<details class="fix"${on.length?' open':''}><summary>Special${on.length?': '+esc(customNames(it).join(' + ')):''} (${customsTotal(it.cu)}/${CUSTOM_BUDGET} points)</summary><div>${ids.map(id=>`<button data-cu="${id}" title="${esc(CUSTOMS[id].text)}" aria-pressed="${on.includes(id)}" ${off}>${esc(CUSTOMS[id].label)}</button>`).join('')}</div></details>`;
+  const cat=customCatalog(it.kind,it.style), on=(it.cu||[]).map(customKey); if(!cat.length) return '';
+  const total=Math.round((it.cu||[]).reduce((n,c)=>n+customPointsOf(c),0)*10)/10;
+  return `<details class="fix"${on.length?' open':''}><summary>Special${on.length?': '+esc(customNames(it).join(' + ')):''} (${total}/${CUSTOM_ALL_BUDGET} points, ${CUSTOM_ALL_MAX} at most)</summary><div>${Object.keys(AXIS_NAME).map(ax=>{ const row=cat.filter(x=>x.axis===ax);
+    return row.length?`<div class="cuax"><small>${AXIS_NAME[ax]}</small> ${row.map(x=>`<button data-cu="${esc(x.key)}" title="${esc(x.text)} (${x.pts} points)" aria-pressed="${on.includes(x.key)}" ${off}>${esc(x.label)}</button>`).join('')}</div>`:''; }).join('')}</div></details>`;
 }
 function cardHTML(it,locked,showStock){
   const off=locked?'disabled':'', weapon=it.kind==='melee'||it.kind==='ranged';
@@ -5026,7 +5056,7 @@ function targetTell(v,i,x,base,now,age){
       L.beginPath(); L.ellipse(bx,by2,17,21,0,0,T2); L.fill(); tri(bx,by2+24,0,-1,5);
       L.fillStyle='#fff'; L.globalAlpha*=0.75; L.beginPath(); L.ellipse(bx-6,by2-8,4,7,0.5,0,T2); L.fill(); L.globalAlpha/=0.75;
       L.lineWidth=2; for(let n=0;n<4;n++){ const u=((tm*0.9+n*0.27)%1); L.globalAlpha*=1-u; L.beginPath(); L.arc(x-26+n*17+Math.sin(tm*3+n)*3,base-u*96*sc,3+n%2*2,0,T2); L.stroke(); L.globalAlpha/=1-u||1; }
-    }else if(id==='slick'){
+    }else if(id==='skid'){
       // a puddle under their feet that goes where they go, and skid lines behind them when they slide
       const gy=base+3; L.globalAlpha*=0.4; L.beginPath(); L.ellipse(x,gy,40,7,0,0,T2); L.fill(); L.globalAlpha/=0.4; L.lineWidth=2.5; L.beginPath(); L.ellipse(x,gy,40,7,0,0,T2); L.stroke();
       L.strokeStyle='#fff'; L.lineWidth=2; L.beginPath(); L.moveTo(x-22,gy-1); L.lineTo(x-8,gy-2); L.moveTo(x+10,gy+1); L.lineTo(x+20,gy); L.stroke(); L.strokeStyle=col;
@@ -6190,13 +6220,15 @@ function labShapeBuild(el){
 // works, so runs, jumps and combos can be tried by hand too.
 const LAB_STOCK={blade:'sword',spear:'spear',hammer:'hammer',fist:'gloves',dual:'twins',bow:'bow',gun:'gun',akimbo:'pistols',staff:'staff',hurl:'star'};
 const LAB_NAME={blade:'Sword',spear:'Spear',hammer:'Hammer',fist:'Fists',dual:'Twin blades',bow:'Bow',gun:'Gun',akimbo:'Twin pistols',staff:'Staff',hurl:'Thrown'};
-const lab={style:'blade',el:'none',speed:1,loop:false,gap:220,last:null,idle:0,customs:[],low:false,todo:[],cu:[],trig:'',wound:false,leaves:[]};
-const LAB_TF={twoform:{id:'twoform'},split:{id:'split',secs:4},giant:{id:'giant',every:3},evolve:{id:'evolve',hits:2},thrown:{id:'thrown'},overgrown:{id:'overgrown',secs:12}};      // transform: quick settings for trying each one
-function labEquip(){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,Object.assign({},st.spec,{customs:(lab.customs||[]).concat(lab.tf?[Object.assign({},LAB_TF[lab.tf],lab.tf==='twoform'&&lab.alt?{alt:lab.alt}:null)]:[])}),50); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0; labLeaves(); labCost(); if(desk[0]) updateDesk(desk[0]); labCustoms(); labTarget(); labTrig(); }
+const lab={style:'blade',el:'none',speed:1,loop:false,gap:220,last:null,idle:0,customs:[],low:false,todo:[],tcu:[],cu:'',trig:'',wound:false,leaves:[]};
+const LAB_TF={twoform:{id:'twoform'},twin:{id:'twin',secs:4},giant:{id:'giant',every:3},evolve:{id:'evolve',hits:2},thrown:{id:'thrown'},overgrown:{id:'overgrown',secs:12}};      // transform: quick settings for trying each one
+function labEquip(){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,Object.assign({},st.spec,{customs:(lab.customs||[]).concat(lab.tf?[Object.assign({},LAB_TF[lab.tf],lab.tf==='twoform'&&lab.alt?{alt:lab.alt}:null)]:[])}),50); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0;
+  for(const row of [labLeaves,labCost,labTarget,labTrig,labShape,labSummon,labArenaApply]) row();      // each row puts its own axis's blocks back on the rebuilt item and leaves the others' alone
+  if(desk[0]) updateDesk(desk[0]); labCustoms(); }
 // wielder customizations in the move tester: a button for every block in CUSTOMS, by axis, and a slider for every
 // parameter of the ones switched on. All of it is read from the table; a new block needs no line here.
 function labCustoms(){
-  const box=$('labCus'); if(!box) return; const it=sim.items[0][0], on=it?it.customs:[], axes=[...new Set(Object.values(CUSTOMS).map(d=>d.axis))];
+  const box=$('labCus'); if(!box) return; const it=sim.items[0][0], on=it?(it.customs||[]).filter(e=>cuHas(CUSTOMS,e.id)):[], axes=[...new Set(Object.values(CUSTOMS).map(d=>d.axis))];
   lab.customs=on.map(e=>Object.assign({},e));
   box.innerHTML=axes.map(ax=>`<div class="row"><b>${esc(ax)}</b>${Object.keys(CUSTOMS).filter(id=>CUSTOMS[id].axis===ax).map(id=>{ const d=CUSTOMS[id], fits=it&&fitCustoms([id],it.kind,it.style).length;
       return `<button data-cu="${id}" class="${on.some(e=>e.id===id)?'on':''}" title="${esc(d.text+' Tell: '+d.tell)}" ${fits?'':'disabled'}>${esc(d.label)} <small>${customPoints(fitCustoms([id],d.kinds?d.kinds[0]:'melee',d.styles?d.styles[0]:'blade')[0])}</small></button>`; }).join('')}</div>`).join('')
@@ -6225,7 +6257,7 @@ function labSummon(){
   const cu=lab.cu?[{id:lab.cu}]:[]; sim.summonSet(0,0,cu);
   if(lab.both){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(1,0,st.spec,50); setArt(1,0,st.strokes,it.ver,it.kind,it.style); sim.summonSet(1,0,cu); }
   else if(sim.items[1][0]){ sim.items[1][0]=null; setArt(1,0,null); }
-  const tip=$('labSummonTip'); if(tip) tip.textContent=LAB_SUMMON_TIP[lab.cu||'']+(lab.cu?' Cost: '+summonCost(sim.items[0][0].customs[0])+' points.':'');
+  const tip=$('labSummonTip'); if(tip) tip.textContent=LAB_SUMMON_TIP[lab.cu||'']+(lab.cu?' Cost: '+summonCost(sim.items[0][0].customs.find(c=>c.id===lab.cu)||{id:lab.cu})+' points.':'');
   document.querySelectorAll('#labSummons button[data-cu]').forEach(b=>b.classList.toggle('on',b.dataset.cu===(lab.cu||'')));
 labArenaApply(); }
 function labPlace(gap){ const a=sim.f[0], b=sim.f[1], g=gap||lab.gap, x0=Math.max(60,Math.min(ARENA_W-60-g,ARENA_W/2-g/2-60));
@@ -6254,17 +6286,17 @@ function labLeavesClear(){ sim.lv.length=0; for(const o of sim.objs) if(o.leaf!=
 // target: the "On hit" row. The chosen blocks go on the weapon under test through the rules' own call, and the buttons
 // show what the rules kept. The dummy gets gloves carrying the same blocks, so "Take a hit" puts them on the blue fighter.
 function labTarget(){
-  const got=sim.targetSet(0,0,lab.cu.map(id=>({id})))||[]; lab.cu=got.map(c=>c.id);
-  if(lab.cu.length){ const st=stockItem('gloves','none'), it=sim.setItem(1,0,st.spec,50); if(it){ setArt(1,0,st.strokes,it.ver,it.kind,it.style); sim.targetSet(1,0,got); } }
+  const got=sim.targetSet(0,0,lab.tcu.map(id=>({id})))||[]; lab.tcu=got.map(c=>c.id);
+  if(lab.tcu.length){ const st=stockItem('gloves','none'), it=sim.setItem(1,0,st.spec,50); if(it){ setArt(1,0,st.strokes,it.ver,it.kind,it.style); sim.targetSet(1,0,got); } }
   else sim.items[1][0]=null;
   sim.f[1].held=0;
-  document.querySelectorAll('#labTarget button').forEach(b=>b.classList.toggle('on',lab.cu.includes(b.dataset.c)));
-  const n=$('labTargetN'); if(n) n.textContent=lab.cu.length?targetCost(got)+' points':'';
+  document.querySelectorAll('#labTarget button').forEach(b=>b.classList.toggle('on',lab.tcu.includes(b.dataset.c)));
+  const n=$('labTargetN'); if(n) n.textContent=lab.tcu.length?targetCost(got)+' points':'';
 }
 function labForm(){
   const it=sim.items[0][0], v=view&&view.items[0][0], tf=v&&v.tf, cur=it?it.style:lab.style; if(cur!==lab.cur){ lab.cur=cur; labMoves(); }
   const note=!tf?'':tf.id==='twoform'?'in its '+(tf.f?'second':'first')+' form ('+LAB_NAME[cur]+'). Double-tap S or press Transform now.'
-    :tf.id==='split'?(tf.f?'changed for another '+Math.round(tf.c*100)+'% of its time':'whole. Land a finisher (the last hit of a combo, or a charged shot), or press Transform now.')
+    :tf.id==='twin'?(tf.f?'changed for another '+Math.round(tf.c*100)+'% of its time':'whole. Land a finisher (the last hit of a combo, or a charged shot), or press Transform now.')
     :tf.id==='giant'?(tf.on?'GIANT':tf.c>=1?'charged: the next move is giant':'charging '+Math.round(tf.c*100)+'%')
     :tf.id==='evolve'?'stage '+(tf.s+1)+' of 3'+(tf.s<2?', '+Math.round(tf.c*100)+'% to the next. Land hits, or press Transform now.':'')
     :tf.id==='thrown'?'as '+LAB_NAME[cur]+'. It follows the Distance slider (changes at 240).':'grown '+Math.round(tf.c*100)+'%. Take a hit to cut it back.';
@@ -6278,7 +6310,7 @@ function labTrig(){ if(!sim||!sim.items[0][0]) return; sim.trigSet(0,0,lab.trig?
   const tip=$('labTrigTip'); if(tip) tip.textContent=lab.trig?TRIGGERS[lab.trig].tip+' ('+TRIGGERS[lab.trig].cost+' points)':'No trigger: the weapon hits as usual.'; }
 function labTrigTick(f){
   if(lab.wound){ f.hp=Math.min(f.hp,HP*0.25); f.rest=0; }      // practice heals a rested fighter; this keeps blue hurt for Last stand
-  const out=$('labTrigV'), it=sim.items[0][0], cu=it&&it.customs&&it.customs[0]; if(!out) return;
+  const out=$('labTrigV'), it=sim.items[0][0], cu=it&&it.customs&&it.customs.find(c=>c.when); if(!out) return;
   out.textContent=cu?(trigFires(cu.when,f.trg[0],f)?'ARMED':'building '+Math.round(trigLevel(cu.when,f.trg[0],f)*100)+'%'):'';
 }
 function labMoves(){
@@ -6346,7 +6378,7 @@ function labBuild(){
   $('labLow').onchange=e=>{ lab.low=e.target.checked; };
   // target: one button per block; two at most stay on (TARGET_MAX), the oldest gives way
   $('labTarget').innerHTML=Object.keys(TARGET_FX).map(c=>`<button data-c="${c}" title="${TARGET_FX[c].cost} points">${TARGET_FX[c].name}</button>`).join('');
-  $('labTarget').querySelectorAll('button').forEach(b=>b.onclick=()=>{ b.blur(); const c=b.dataset.c; lab.cu=lab.cu.includes(c)?lab.cu.filter(q=>q!==c):lab.cu.concat(c).slice(-TARGET_MAX); labTarget(); labPlace(); if(lab.last) labPlay(lab.last[0],lab.last[1]); });
+  $('labTarget').querySelectorAll('button').forEach(b=>b.onclick=()=>{ b.blur(); const c=b.dataset.c; lab.tcu=lab.tcu.includes(c)?lab.tcu.filter(q=>q!==c):lab.tcu.concat(c).slice(-TARGET_MAX); labTarget(); labPlace(); if(lab.last) labPlay(lab.last[0],lab.last[1]); });
   // trigger controls
   const trigs=$('labTrigs'); trigs.innerHTML='<button data-t="">None</button>'+Object.keys(TRIGGERS).map(t=>'<button data-t="'+t+'">'+TRIGGERS[t].name+'</button>').join('');
   const pickTrig=t=>{ lab.trig=t; trigs.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.t===t)); labTrig(); };
