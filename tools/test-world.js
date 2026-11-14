@@ -4,6 +4,7 @@ const fs=require('fs'), path=require('path');
 const src=fs.readFileSync(path.join(__dirname,'..','duel.html'),'utf8').replace(/\r\n/g,'\n');
 const D=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,INK,boardCells,MOVES};')();
 const T=D.INK.T, toPts=D.INK.toPts;
+const HP0=D.createDuel({practice:true}).f[0].hp;   // full health, whatever the rules set it to
 let bad=0; const ok=(name,cond,info)=>{ if(!cond) bad++; console.log((cond?'ok   ':'FAIL ')+name+(info!==undefined?'  '+JSON.stringify(info):'')); };
 const BOARD={x0:200,x1:1000,floor:60,top:560};
 function fresh(){ const S=D.createDuel({practice:true,width:1400,plats:[]}); S.setLayout({w:1400,board:BOARD,plats:[]}); S.step(1/60); S.snapshot(); return S; }
@@ -87,7 +88,7 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
   ok('then fly at the foe; the whole volley is worth its fixed damage',Math.abs((hp-b.hp)-30)<0.5&&!S.pr.length&&!a.act,{lost:+(hp-b.hp).toFixed(1)});
   const S2=fresh(), c=S2.f[0], d=S2.f[1]; S2.setItem(0,0,{kind:'melee',style:'blade',element:'none',name:'Sword'},20); S2.setItem(1,0,{kind:'melee',style:'fist',element:'none',name:'Gloves'},30);
   c.od=100; d.x=c.x+40; d.face=-1; inp(S2,0,{u:1}); run(S2,0.5); inp(S2,1,{a:1}); run(S2,0.5);
-  ok('a hit during the wind-up hurts the caster but does not stop the ultimate',!!c.act&&c.act.m==='fleet'&&c.hp<100&&c.hurt===0&&S2.pr.some(p=>p.st==='fleet'),{hp:Math.round(c.hp),pr:S2.pr.length});
+  ok('a hit during the wind-up hurts the caster but does not stop the ultimate',!!c.act&&c.act.m==='fleet'&&c.hp<HP0&&c.hurt===0&&S2.pr.some(p=>p.st==='fleet'),{hp:Math.round(c.hp),pr:S2.pr.length});
 }
 { // 8. every weapon style has its own ultimate, and each is worth the same
   const cast=(kind,style,gap,prep)=>{ const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,{kind,style,element:'none',name:style||kind},60);
@@ -109,7 +110,7 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
     run(S,0.66); inp(S,1,{r:1}); run(S,2.5); ok('walking away from the mark gets clear of most of the meteor',hp-b.hp<30,{lost:+(hp-b.hp).toFixed(1)}); }
   { const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,{kind:'melee',style:'dual',element:'none',name:'Twins'},60); S.setItem(1,0,{kind:'melee',style:'fist',element:'none',name:'Gloves'},30);
     b.x=a.x+40; b.face=-1; a.od=100; S.startUlt(0); run(S,0.12); inp(S,1,{a:1}); run(S,0.4);
-    ok('a hit before the cast does not break an ultimate',!!a.act&&a.act.m==='ult_dash'&&a.hp<100,{hp:Math.round(a.hp)}); }
+    ok('a hit before the cast does not break an ultimate',!!a.act&&a.act.m==='ult_dash'&&a.hp<HP0,{hp:Math.round(a.hp)}); }
   // 9. an ultimate always plays out
   const styles=[['melee','blade',300],['melee','spear',300],['ranged','hurl',300],['ranged','staff',300],['melee','hammer',150],['melee','fist',180],['melee','dual',260],['ranged','bow',320],['ranged','gun',300],['ranged','akimbo',260]];
   { const lasted=[]; for(const [kind,style,gap] of styles){ const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,{kind,style,element:'none',name:style},60); S.setItem(0,1,{kind:'dash',element:'none',name:'Wings'},20);
@@ -132,6 +133,6 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
     ok('the RECYCLE hack misses a fighter who is casting',!!S.items[0][0]&&!!a.act&&a.act.m==='fleet',{item:!!S.items[0][0],act:a.act&&a.act.m}); }
   { const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,{kind:'melee',style:'hammer',element:'none',name:'Hammer'},60); S.setItem(1,0,{kind:'melee',style:'hammer',element:'none',name:'Hammer'},60);
     b.x=a.x+70; b.face=-1; a.od=100; S.startUlt(0); const x=a.x; let hits=0; for(let i=0;i<60;i++){ inp(S,1,{a:i}); S.step(1/60); }
-    ok('a caster under attack keeps their footing and finishes',a.hp<100&&!!a.act&&a.act.m==='ult_slam'&&Math.abs(a.x-x)<30,{hp:Math.round(a.hp),dx:Math.round(a.x-x)}); }
+    ok('a caster under attack keeps their footing and finishes',a.hp<HP0&&!!a.act&&a.act.m==='ult_slam'&&Math.abs(a.x-x)<30,{hp:Math.round(a.hp),dx:Math.round(a.x-x)}); }
 }
 console.log(bad?bad+' failed':'all world rules pass'); process.exit(bad?1:0);
