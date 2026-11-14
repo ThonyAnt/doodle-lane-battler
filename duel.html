@@ -373,6 +373,7 @@ body.handheld.playing #hackMenu button[aria-pressed="true"]{background:#0a246a;c
   body.handheld .desk{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr) auto auto auto auto auto;grid-template-areas:"title" "slots" "pad" "ink" "actions" "read" "card" "stock"}
 }
 [hidden]{display:none!important}
+.tc button.costout small{color:#c0121f;font-weight:700}      /* cost: the weapon on this button cannot pay right now */
 @media (max-width:700px){ h1{font-size:26px} .controls{margin-left:0} .tc .keys{display:none} }
 @media (pointer:coarse){ .tc .keys{display:none} }
 @media (prefers-reduced-motion:reduce){ .inkbar.full{animation:none} }
@@ -975,7 +976,7 @@ const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet s
 // A recording holds about LOG_ROOM characters of commands (some forty long matches' worth). When it is full it stops:
 // the match goes on, the log is marked full, and it replays up to the tick it stopped at.
 const LOG_ROOM=2e6;
-const LOG_V=1, COMMANDS=['setItem','tweak','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold'];
+const LOG_V=1, COMMANDS=['setItem','tweak','setCustom','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold'];
 const INPUT_KEYS=['l','r','d','j','a','b','m','q','h','u'], viaJSON=v=>JSON.parse(JSON.stringify(v)), round1=v=>Math.round(v*10)/10;
 const packInput=i=>{ const o={}; for(const k of INPUT_KEYS){ const v=i?i[k]:undefined; o[k]=k==='l'||k==='r'||k==='d'?(v?1:0):v===undefined?null:v; } return viaJSON(o); };   // held buttons as 0 or 1, press counts as given, a missing one as null
 const unpackInput=o=>{ const i={}; for(const k of INPUT_KEYS) if(o[k]!==null&&o[k]!==undefined) i[k]=o[k]; return i; };
@@ -1047,6 +1048,48 @@ const FORGE_LIMITS={reflect:[0.5,1.5],slow:[0.3,1],turn:[-180,180],shotPower:[0.
   burn:2,soak:2,stun:0.6,heal:8,hurt:8,hpBudget:24,stunBudget:1.5,cooldown:[0.25,5],nearEvery:0.25,nearDist:260,say:18,sayEvery:1.5,faults:3,hold:4};
 // The Math a rule gets: these ten and nothing else of the real one. The two-argument ones take exactly two.
 const FORGE_MATH=Object.freeze({abs:v=>Math.abs(v),sign:v=>Math.sign(v),floor:v=>Math.floor(v),round:v=>Math.round(v),sqrt:v=>Math.sqrt(v),sin:v=>Math.sin(v),cos:v=>Math.cos(v),min:(a,b)=>Math.min(a,b),max:(a,b)=>Math.max(a,b),hypot:(a,b)=>Math.hypot(a,b)});
+/* ---------- costs: what a weapon's power spends (customizations, axis "costs") ----------
+   An item may carry customizations: it.customs=[{id:'heavy',cost:{cost:'ammo',size:4,reload:1.2}}], set with
+   S.setCustom(side,slot,list). A cost is plain data ({cost:<a key of COSTS>, ...numbers}) that can be attached to any
+   customization; cleanCustoms / cleanCost make any input safe (unknown ids and costs are dropped, numbers are clamped to
+   the ranges below, [min,max,default]). In a match, payFor(holder,item) answers "can it pay, and pay now" and
+   costOk(holder,slot) only looks. A cost's state is kept per fighter per slot in f.cs[slot] (so it is hashed and reset
+   with the fighter). pts is the cost's price in the customization budget: negative, because it is a drawback.
+   'heavy' is the stand-in power the costs are tried with: while its cost is paid an attack does COST_UP times the
+   damage and knock-back. An attack that cannot pay comes out plain; from an overheated or broken weapon it is weak
+   (COST_WEAK). Ultimates never pay and are never held back by a cost. */
+const COST_UP=1.35, COST_WEAK=0.6;
+const CUSTOMS={heavy:{label:'Heavy',pts:3,blurb:'Hits 35% harder and knocks back further while its cost is paid.'}};
+const COSTS={
+  ammo:   {label:'Magazine',   pts:-1,p:{size:[2,8,4],reload:[0.6,2,1.2],pause:[0.2,2,0.7]},blurb:'A few rounds, shown as pips. Empty: it cannot be used while it reloads. A pause tops it up.'},
+  heat:   {label:'Overheats',  pts:-2,p:{per:[0.1,0.6,0.28],cool:[0.1,1,0.3],lock:[0.8,2,1.6]},blurb:'Each attack heats it and it glows redder. At the top it steams and cannot be used until it has cooled.'},
+  ink:    {label:'Drinks ink', pts:-2,p:{per:[4,30,12]},blurb:'Each attack drinks mid-fight ink. With too little the weapon is pale and hits plainly.'},
+  blood:  {label:'Blood price',pts:-2,p:{per:[1,8,3]},blurb:'Each attack costs its holder a little health. Too weak to pay: it hits plainly.'},
+  windup: {label:'Wind-up',    pts:-2,p:{hold:[0.15,0.6,0.35]},blurb:'It is held ready for a moment before each attack, while a ring fills.'},
+  fragile:{label:'Fragile',    pts:-2,p:{hits:[2,8,4],mend:[0.8,3,1.6]},blurb:'Cracks with each hit its holder takes. Broken, it is weak until mended by standing still.'}
+};
+const COST_WHOLE=['size','hits'];      // the numbers that are counts
+function cleanCost(c){
+  if(!c||typeof c!=='object'||typeof c.cost!=='string'||!Object.prototype.hasOwnProperty.call(COSTS,c.cost)) return null;
+  const out={cost:c.cost}, P=COSTS[c.cost].p;
+  for(const k in P){ const v=typeof c[k]==='number'||(typeof c[k]==='string'&&c[k].trim()!=='')?+c[k]:NaN, lo=P[k][0], hi=P[k][1]; out[k]=Number.isFinite(v)?Math.max(lo,Math.min(hi,COST_WHOLE.includes(k)?Math.round(v):Math.round(v*100)/100)):P[k][2]; }
+  return out;
+}
+// Any input at all -> a list of at most three known customizations, each id once; a bad cost is dropped, its customization kept.
+function cleanCustoms(list){
+  const out=[]; if(!Array.isArray(list)) return out;
+  for(const c of list){
+    if(!c||typeof c!=='object'||typeof c.id!=='string'||!Object.prototype.hasOwnProperty.call(CUSTOMS,c.id)||out.some(o=>o.id===c.id)) continue;
+    const o={id:c.id}, cost=cleanCost(c.cost); if(cost) o.cost=cost; out.push(o); if(out.length>=3) break;
+  }
+  return out;
+}
+const costOf=it=>{ const cu=it&&it.customs; if(cu) for(const c of cu) if(c.cost) return c.cost; return null; };      // the cost an item carries, or null
+const heavyOf=it=>!!(it&&it.customs&&it.customs.some(c=>c.id==='heavy'));
+const costPoints=it=>(it&&it.customs?it.customs:[]).reduce((n,c)=>n+CUSTOMS[c.id].pts+(c.cost?COSTS[c.cost.cost].pts:0),0);      // the budget an item's customizations use
+// For the bots: is a broken weapon waiting to be mended, and how much later does this weapon's first blow land.
+function costRest(S,side){ return [0,1].some(k=>{ const c=costOf(S.items[side][k]); return !!c&&c.cost==='fragile'&&S.canPay(side,k)<0; }); }
+function costLead(it){ const c=costOf(it); return c&&c.cost==='windup'&&heavyOf(it)?c.hold:0; }
 function createDuel(opts){
   if(opts&&opts.record) opts=viaJSON(opts);       // a recorded match keeps its own copy of what it was made with (see S.log)
   let acc=0, nextId=1; const STEP=1/120, r1=round1;
@@ -1055,7 +1098,7 @@ function createDuel(opts){
   // In a layout with an art board the fighters start inside it; otherwise in the middle of the arena.
   const fresh=side=>({side,x:BOARD?BOARD.x0+(BOARD.x1-BOARD.x0)*(side?0.8:0.2):W/2+(side?260:-260),y:BOARD?BOARD.floor:0,vx:0,vy:0,face:side?-1:1,hp:HP,ground:true,jumps:0,jq:0,buf:[0,0],cd:[0,0],cdMax:[1,1],
     act:null,shield:0,hurt:0,burn:0,burnDps:0,slow:0,dash:0,dashHit:false,dashItem:null,drop:0,uses:[3,3],held:0,
-    ink2:100,od:0,stun:0,trap:0,flung:0,flungBy:-1,overclock:0,scale:1,scaleGoal:1,bubble:null,mcd:0,mbuf:0});
+    ink2:100,od:0,stun:0,trap:0,flung:0,flungBy:-1,overclock:0,scale:1,scaleGoal:1,bubble:null,mcd:0,mbuf:0,cs:[null,null]});
   const S={phase:'draw',t:45,round:1,wins:[0,0],ready:[false,false],items:[[null,null],[null,null]],f:[fresh(0),fresh(1)],pr:[],events:[],
     winner:-1,champ:-1,ver:0,practice:!!(opts&&opts.practice),inp:[{l:0,r:0,d:0},{l:0,r:0,d:0}],cnt:[{j:0,a:0,b:0,m:0,q:0,u:0},{j:0,a:0,b:0,m:0,q:0,u:0}],
     objs:[],fields:[],groups:[null,null],hack:null,effects:[],broken:null,breached:false,cells:[],time:0,stop:0};
@@ -1229,6 +1272,109 @@ function createDuel(opts){
     if(ch.tune!==undefined) spec.tune=ch.tune;
     return S.setItem(side,k,spec,it.cost);
   };
+  /* ---------- costs in a match (see COSTS) ---------- */
+  // Set an item's customizations: while drawing (before "ready") or in practice mode, like S.tweak. Weapons only.
+  // Returns the item, or null if it was refused. Never throws, whatever it is given.
+  S.setCustom=(side,k,list)=>{
+    if((side!==0&&side!==1)||(k!==0&&k!==1)) return null;
+    const it=S.items[side][k]; if(!it||(!S.practice&&(S.phase!=='draw'||S.ready[side]))||(it.kind!=='melee'&&it.kind!=='ranged')) return null;
+    const cu=cleanCustoms(list); if(cu.length) it.customs=cu; else delete it.customs;
+    S.f[side].cs[k]=null; return it;
+  };
+  { const tweak0=S.tweak;      // cost: a tweaked item is rebuilt; it keeps its customizations while it is still a weapon
+    S.tweak=(side,k,ch)=>{ const was=S.items[side]&&S.items[side][k], cu=was&&was.customs, it=tweak0(side,k,ch); if(it&&cu&&(it.kind==='melee'||it.kind==='ranged')) it.customs=cu; return it; }; }
+  // f.cs[k] = {c: which cost, ver: the item it belongs to, n: rounds left (ammo) or cracks (fragile), v: heat 0..1,
+  // idle: seconds since its last attack, lock: seconds until it can be used again (reloading, cooling), r: progress of a
+  // top-up or a mend in seconds}. Made when first needed; a new item in the slot starts afresh.
+  function costState(f,k){
+    const it=S.items[f.side][k], c=costOf(it); if(!c||!heavyOf(it)){ f.cs[k]=null; return null; }
+    let s=f.cs[k]; if(!s||s.c!==c.cost||s.ver!==it.ver) s=f.cs[k]={c:c.cost,ver:it.ver,n:c.cost==='ammo'?c.size:0,v:0,idle:0,lock:0,r:0};
+    return s;
+  }
+  const costEv=(f,kind,n)=>S.events.push({e:'cost',side:f.side,k:kind,n,x:Math.round(f.x),y:Math.round(f.y+96*f.scale)});
+  // Would an attack with slot k be paid for right now? 1: yes. 0: no, it comes out plain. -1: no, and it comes out weak.
+  function costOk(f,k){
+    const it=S.items[f.side][k]; if(!heavyOf(it)) return 0; const c=costOf(it); if(!c) return 1;
+    const s=f.cs[k]&&f.cs[k].c===c.cost&&f.cs[k].ver===it.ver?f.cs[k]:null;
+    switch(c.cost){
+      case 'ammo': return !s||s.n>0?1:0;
+      case 'heat': return s&&(s.v>=1-1e-9||s.lock>0)?-1:1;
+      case 'ink': return f.ink2>=c.per?1:0;
+      case 'blood': return f.hp>c.per+1?1:0;
+      case 'fragile': return s&&s.n>=c.hits?-1:1;
+      default: return 1;      // a wind-up is paid in time
+    }
+  }
+  S.canPay=(side,k)=>(side===0||side===1)&&(k===0||k===1)?costOk(S.f[side],k):0;      // looks only; changes nothing
+  // Pay for one attack with slot k, now. Same answers as costOk; what it took is gone and its tell is on its way.
+  function costPay(f,k,it){
+    const ok=costOk(f,k), c=costOf(it); if(!c||!heavyOf(it)) return ok;
+    const s=costState(f,k); s.idle=0;
+    if(c.cost==='ammo'){ if(ok>0){ s.n--; s.r=0; if(!s.n) costEv(f,'empty'); } else costEv(f,'click'); }
+    else if(c.cost==='heat'){ if(ok>0){ s.v=Math.min(1,s.v+c.per); if(s.v>=1-1e-9){ s.v=1; costEv(f,'overheat'); } } }
+    else if(c.cost==='ink'){ if(ok>0){ f.ink2-=c.per; costEv(f,'ink',c.per); } else costEv(f,'dry'); }
+    else if(c.cost==='blood'){ if(ok>0){ f.hp-=c.per; costEv(f,'blood',c.per); } else costEv(f,'faint'); }
+    return ok;
+  }
+  // The one question other customizations ask: can this fighter pay for an attack with this item, and if so it is paid.
+  function payFor(f,it){ const k=S.items[f.side].indexOf(it); return k>=0&&costPay(f,k,it)>0; }
+  const costMul=a=>a.pw>0?COST_UP:a.pw<0?COST_WEAK:1;
+  // A move begins (startMove; never an ultimate): pay, and note on the move whether it is paid (pw: 1, 0 or -1).
+  // A wind-up holds the move at its first frame for a moment (act.wind); a chained move needs less.
+  function costStart(f,k,it,chain){
+    const a=f.act, c=costOf(it); a.pw=costPay(f,k,it);
+    if(c&&c.cost==='windup'&&a.pw>0){ a.wind=a.wind0=c.hold*(chain?0.4:1); }
+  }
+  // The holder of a fragile weapon took a blow: one more crack, and at the last one it breaks.
+  function costHit(t,dmg,blocked){
+    const it=S.items[t.side][t.held], c=costOf(it); if(!c||c.cost!=='fragile'||!heavyOf(it)||blocked||dmg<1||t.hp<=0) return;
+    const s=costState(t,t.held); if(s.n>=c.hits) return; s.n++; s.r=0; costEv(t,s.n>=c.hits?'break':'crack',c.hits-s.n);
+  }
+  // Every tick, per slot: reloading, cooling and mending. A weapon that cannot be used is held back through its own
+  // cooldown (f.cd), so the buttons, the bots and the trained opponent all see it the way they see any cooldown.
+  function costStep(f,dt){
+    const inp=S.inp[f.side];
+    for(const k of [0,1]){
+      const s=costState(f,k); if(!s) continue;
+      const c=costOf(S.items[f.side][k]), busy=!!(f.act&&f.act.k===k&&!MOVES[f.act.m].mine);
+      if(busy){ s.idle=0; s.r=0; continue; }
+      s.idle+=dt;
+      if(s.lock>0){
+        s.lock-=dt;
+        if(s.lock<=0){ s.lock=0; if(c.cost==='ammo'){ s.n=c.size; costEv(f,'loaded'); } else{ s.v=0; costEv(f,'cool'); } }
+        else if(f.cd[k]<s.lock){ f.cd[k]=s.lock; f.cdMax[k]=Math.max(s.lock,c.cost==='ammo'?c.reload:c.lock); }
+        continue;
+      }
+      if(c.cost==='ammo'){
+        if(s.n<=0){ s.lock=f.cd[k]=f.cdMax[k]=c.reload; s.r=0; costEv(f,'reload'); }
+        else if(s.n<c.size&&s.idle>=c.pause){ s.r+=dt; if(s.r>=c.reload/c.size){ s.r=0; s.n++; } }
+      }else if(c.cost==='heat'){
+        if(s.v>=1-1e-9){ s.lock=f.cd[k]=f.cdMax[k]=c.lock; }
+        else if(s.idle>=0.45) s.v=Math.max(0,s.v-c.cool*dt);
+      }else if(c.cost==='fragile'&&s.n>=c.hits){
+        const still=f.ground&&Math.abs(f.vx)<40&&!f.act&&f.hurt<=0&&f.stun<=0&&f.hp>0&&!inp.l&&!inp.r;
+        s.r=still?s.r+dt:0; if(s.r>=c.mend){ s.n=0; s.r=0; costEv(f,'mend'); }
+      }
+    }
+  }
+  // What the page needs to draw a fighter's costs: per slot null, or {c: the cost ('' for none), ok: what the next
+  // attack would be (1, 0, -1), pw: what the attack under way is, and the cost's own numbers: n of m (rounds, or
+  // cracks), v (heat, or ink) 0..1, r (reload, cooling, mend or wind-up progress) 0..1, lk: 1 while it cannot be used}.
+  function costView(f){
+    const r2=v=>Math.round(Math.max(0,Math.min(1,v))*100)/100;
+    return [0,1].map(k=>{
+      const it=S.items[f.side][k]; if(!heavyOf(it)) return null;
+      const c=costOf(it), a=f.act&&f.act.k===k&&f.act.pw!==undefined?f.act:null, o={c:c?c.cost:'',ok:costOk(f,k),pw:a?a.pw:0}; if(!c) return o;
+      const s=f.cs[k]&&f.cs[k].c===c.cost?f.cs[k]:{n:c.cost==='ammo'?c.size:0,v:0,idle:0,lock:0,r:0};
+      if(c.cost==='ammo'){ o.n=s.n; o.m=c.size; o.lk=s.lock>0?1:0; o.r=s.lock>0?r2(1-s.lock/c.reload):0; }
+      else if(c.cost==='heat'){ o.v=r2(s.v); o.lk=s.lock>0?1:0; o.r=s.lock>0?r2(1-s.lock/c.lock):0; }
+      else if(c.cost==='ink'){ o.v=r2(f.ink2/100); o.m=c.per; }
+      else if(c.cost==='blood') o.m=c.per;
+      else if(c.cost==='windup') o.r=a&&a.wind>0?r2(1-a.wind/a.wind0):0;
+      else if(c.cost==='fragile'){ o.n=s.n; o.m=c.hits; o.r=s.n>=c.hits?r2(s.r/c.mend):0; }
+      return o;
+    });
+  }
   const usesFor=side=>[0,1].map(k=>{ const it=S.items[side][k]; return it&&it.kind==='heal'?it.st.uses+(it.trait==='feast'?1:0):3; });
   const carries=(side,tr)=>S.items[side].some(it=>it&&it.trait===tr);
   // Replace the platforms mid-match (the desktop overlay does this as real windows move). Platforms may carry an id and
@@ -1312,6 +1458,7 @@ function createDuel(opts){
     // A hit with no stun only nudges: it adds to the target's speed instead of replacing it, and does not lift them.
     const firm=casting(t);   // a fighter casting an ultimate takes the damage and stands their ground
     t.hp-=dmg; if(tr==='fleet') S.ultDmg+=dmg; if(!firm){ if(stun>0) t.vx=kx; else{ t.vx+=kx*0.25; ky=0; } if(ky>0){ t.vy=ky; t.ground=false; } else if(ky<0&&!t.ground) t.vy=ky; }
+    costHit(t,dmg,blocked);      // cost: a fragile weapon in the hand of whoever was hit cracks
     // Hit-stop: a hit that staggers freezes the whole fight (both fighters, shots, the clock) for a few frames, longer the
     // harder it lands. Nothing moves, so it changes how a hit feels and not who wins. w is the hit's weight, 0 to 1.
     const w=blocked?0:Math.min(1,dmg/20+(fin?0.3:0));
@@ -1331,8 +1478,10 @@ function createDuel(opts){
   // Begin a move: the fighter is committed until it ends or chains.
   function startMove(f,k,m){
     const it=m==='mine'?PICK:itemOf(f.side,k), M=MOVES[m], p=it.st.p;
+    const chained=!!f.act;      // cost: a move that follows another in a combo
     f.act={k,m,v:ALT.includes(m)&&S.rand()<0.5?1:0,t:0,dur:M.dur,rate:(f.overclock>0?1/0.7:1)*(it.st.rate||1)/(it.kind==='ranged'?0.75+0.25*p:0.85+0.15*p),done:0,lunged:false};
     f.buf[k]=0; f.held=k;
+    costStart(f,k,it,chained);      // cost: pay for this attack (sets act.pw, and act.wind for a wind-up)
     if(M.carry) f.vx=f.face*Math.max(Math.abs(f.vx),M.carry);
     if(M.dive&&!f.ground){ f.vy=-M.dive; f.vx=f.face*Math.max(Math.abs(f.vx),M.dive*0.5); }
     if(M.hop&&f.ground){ f.vy=M.hop; f.ground=false; f.jumps=1; } else if(M.hop) f.vy=Math.max(f.vy,M.hop);
@@ -1405,6 +1554,8 @@ function createDuel(opts){
   }
   function act(f,dt){
     const a=f.act, M=MOVES[a.m], it=a.m==='mine'?PICK:itemOf(f.side,a.k), st=it.st, e=S.f[1-f.side], k=a.k, sty=STYLE[it.style]||STYLE.blade;
+    if(a.wind>0){ a.wind-=dt; if(a.wind>0) return; }      // cost: a wind-up holds the move at its start
+    const cw=costMul(a), ck=a.pw>0?COST_UP:1;             // cost: a paid attack hits harder; a weak one softer
     a.t+=dt*a.rate;
     if(M.ult){ ultStep(f,a,M,it,e,k); return; }
     if(M.lunge&&!a.lunged&&a.t>=(M.lungeAt||0.04)){ a.lunged=true; if(f.ground) f.vx=f.face*Math.max(Math.abs(f.vx)*0.5,M.lunge); }
@@ -1414,7 +1565,7 @@ function createDuel(opts){
         if(M.mine&&!a.mined){ a.mined=true; mineHit(f); }
         const dx=(e.x-f.x)*f.face, reach=st.reach*(M.reach||1)*sty.reach;
         if(M.quake&&!a.quaked){ a.quaked=true; S.events.push({e:'quake',x:Math.round(f.x+f.face*reach*0.7),y:Math.round(f.y),n:Math.round(reach)}); }
-        if(dx>-14&&dx<reach+14&&Math.abs(e.y-f.y)<(M.tall||72)){ a.done++; hurt(e,st.dmg*M.dmg*sty.dmg,it.el,f.face*M.kb*sty.kb*(0.7+0.3*st.p)*(st.push||1),M.lift,f,f.x,undefined,it.trait,undefined,M.end&&!M.mine&&a.done>=marks.length?1:0,M.mine?undefined:k); continue; }
+        if(dx>-14&&dx<reach+14&&Math.abs(e.y-f.y)<(M.tall||72)){ a.done++; hurt(e,st.dmg*M.dmg*sty.dmg*cw,it.el,f.face*M.kb*sty.kb*(0.7+0.3*st.p)*(st.push||1)*ck,M.lift,f,f.x,undefined,it.trait,undefined,M.end&&!M.mine&&a.done>=marks.length?1:0,M.mine?undefined:k); continue; }
         if(a.t<marks[a.done]+0.07) break;      // the blade stays dangerous for a moment
         a.done++;
       }else{
@@ -1423,6 +1574,7 @@ function createDuel(opts){
         const sp=M.speed*(st.fly||1), life=Math.min(1.6,(st.dist||900)*(M.kbMul?1.35:1)/sp);
         S.pr.push({id:nextId++,k:'shot',st:it.style,big:M.big||0,side:f.side,slot:k,x:f.x+f.face*mz[0],y:f.y+mz[1],
           vx:f.face*sp*Math.cos(aim),vy:-sp*Math.sin(aim),grav:M.grav||0,dmg:st.dmg*M.dmg*sty.dmg,el:it.el,kb:st.kb*(M.kbMul||1),stun:M.stun,tr:it.trait,fin:M.kbMul?1:0,life,ttl:life});
+        if(a.pw){ const p=S.pr[S.pr.length-1]; p.dmg*=cw; p.kb*=ck; p.pw=a.pw; }      // cost: the shot carries what its attack paid for
         if(M.recoil) f.vx-=f.face*M.recoil;
         S.events.push({e:'shot',x:Math.round(f.x+f.face*(mz[0]+(it.style==='gun'||it.style==='akimbo'?14:4))),y:Math.round(f.y+mz[1]),st:it.style,side:f.side,f:f.face,el:it.el});
       }
@@ -1439,6 +1591,7 @@ function createDuel(opts){
     for(const k of ['stun','trap','flung','overclock','mcd','mbuf']) if(f[k]>0) f[k]=Math.max(0,f[k]-dt);
     if(f.bubble){ f.bubble.t-=dt; if(f.bubble.t<=0) f.bubble=null; }
     f.scale+=(f.scaleGoal-f.scale)*Math.min(1,dt*8); f.ink2=Math.min(100,f.ink2+7*dt);
+    costStep(f,dt);      // cost: reloading, cooling, mending
     if(f.act) act(f,dt);
     if(f.dash>0){
       f.dash-=dt; f.vy=0;
@@ -1844,13 +1997,13 @@ function createDuel(opts){
     hack:S.hack&&{by:S.hack.by,target:S.hack.target,name:S.hack.def.name,desc:S.hack.def.desc,t:+S.hack.t.toFixed(2),max:S.hack.max,counter:S.hack.counter},
     fxs:S.effects.map(e=>({by:e.by,target:e.target,counter:e.counter,name:e.name})),
     items:S.items.map(a=>a.map(it=>it&&{name:it.name,kind:it.kind,style:it.style,el:it.el,cost:Math.round(it.cost),ver:it.ver,sz:Math.round(it.st.size),
-      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune,am:it.ammo})),
+      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune,am:it.ammo,cu:it.customs})),
     f:S.f.map(f=>({x:r1(f.x),y:r1(f.y),vx:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vx),vy:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vy),face:f.face,hp:Math.max(0,r1(f.hp)),g:f.ground?1:0,
       act:f.act?{k:f.act.k,m:f.act.m+(f.act.v?'_b':''),t:+f.act.t.toFixed(3),r:+f.act.rate.toFixed(2)}:null,
       sh:f.shield>0?1:0,hurt:f.hurt>0?1:0,burn:f.burn>0?1:0,slow:f.slow>0?1:0,dash:f.dash>0?1:0,held:f.held,
-      cd:[+(f.cd[0]/f.cdMax[0]).toFixed(2),+(f.cd[1]/f.cdMax[1]).toFixed(2)],uses:f.uses,
+      cd:[+(f.cd[0]/f.cdMax[0]).toFixed(2),+(f.cd[1]/f.cdMax[1]).toFixed(2)],uses:f.uses,cs:costView(f),
       ink2:Math.round(f.ink2),od:Math.round(f.od),stun:f.stun>0?1:0,trap:f.trap>0?1:0,bub:f.bubble?Math.round(f.bubble.r):0,oc:f.overclock>0?1:0,sc:+f.scale.toFixed(2),fl:f.flung>0?1:0})),
-    pr:S.pr.map(p=>({id:p.id,k:p.k,st:p.st,big:p.big,side:p.side,slot:p.slot,x:r1(p.x),y:r1(p.y),vx:Math.round(p.vx),vy:Math.round(p.vy),el:p.el,o:p.os,h:p.hover?1:undefined,a:p.st==='fleet'?+p.ang.toFixed(2):undefined,z:S.ult>=0&&!(p.tr==='fleet'&&p.side===S.ult)?1:undefined})),
+    pr:S.pr.map(p=>({id:p.id,k:p.k,st:p.st,big:p.big,side:p.side,slot:p.slot,x:r1(p.x),y:r1(p.y),vx:Math.round(p.vx),vy:Math.round(p.vy),el:p.el,o:p.os,pw:p.pw,h:p.hover?1:undefined,a:p.st==='fleet'?+p.ang.toFixed(2):undefined,z:S.ult>=0&&!(p.tr==='fleet'&&p.side===S.ult)?1:undefined})),
     ev:S.events.splice(0)});
   // A fingerprint of where the match stands: the phase, clock, round and wins, and everything about every fighter and
   // every shot (numbers to the nearest 0.01). Two matches that agree tick for tick have the same one, so comparing a
@@ -1945,6 +2098,7 @@ function makeBot(side,skillOf,seed){
     items.forEach((it,k)=>{ if(!it) return; if(it.kind==='melee'){ if(km<0||reachOf(it)>reachOf(items[km])) km=k; } else if(it.kind==='ranged') kr=k; else if(it.kind==='bomb') kb=k; else if(it.kind==='shield') ks=k; else if(it.kind==='dash') kd=k; else kh=k; });
     if(km<0){ const empty=items.findIndex(it=>!it); if(empty>=0) km=empty; }      // an empty hand is a punch
     if(R()<dt*(1-d)*0.9) idle=now+0.15+R()*0.35;             // a moment of doing nothing
+    const mending=costRest(S,side)&&dist>280&&!(S.items[1-side][e.held]&&S.items[1-side][e.held].kind==='ranged'); if(mending) idle=Math.max(idle,now+0.05);      // cost: a broken weapon and room to breathe: stand and mend it
     // what it has noticed: the foe's current move (a reaction time after it began) and shots heading its way
     if(e.act!==seenAct){ seenAct=e.act; seenAt=now; rolled=false; }
     const saw=e.act&&now-seenAt>=lag?e.act:null;
@@ -1956,7 +2110,7 @@ function makeBot(side,skillOf,seed){
     if(seenShot.size>80) seenShot.clear();
     let mv=0, down=0, pressed=false;           // mv: 1 toward the foe, -1 away
     const closing=(f.vx-e.vx)*dir, foeMelee=!S.items[1-side][e.held]||S.items[1-side][e.held].kind==='melee';   // closing: how fast the gap is shrinking
-    const myMelee=km>=0?items[km]:null, myReach=reachOf(myMelee), M1=MOVES[(myMelee?myMelee.style:'fist')+'1'], myHit=M1.hits[0]/((myMelee&&myMelee.st.rate)||1);
+    const myMelee=km>=0?items[km]:null, myReach=reachOf(myMelee), M1=MOVES[(myMelee?myMelee.style:'fist')+'1'], myHit=M1.hits[0]/((myMelee&&myMelee.st.rate)||1)+costLead(myMelee);
     if(can){
       // ---- defence ----
       if(shotIn<0.3){
@@ -2007,6 +2161,7 @@ function makeBot(side,skillOf,seed){
         if(kb>=0&&ready(kb)&&facing&&!pressed&&dist>125&&dist<430&&Math.abs(dy)<140) pressed=tap(KEYS[kb]);
       }else if(!pressed&&!threat){ if(km>=0&&!shooter&&dist>myReach*0.78) mv=1; }
       if(dy<-60&&f.ground&&f.y>0&&!pressed&&!f.act) down=1;                                                 // drop through the platform
+      if(mending&&!threat&&shotIn>1) mv=0;                                                                  // cost: stand still to mend
     }
     stuck=mv===-1&&Math.abs(f.vx)<30?stuck+dt:0;
     if(mv<0&&f.act&&MOVES[f.act.m]&&MOVES[f.act.m].shots) mv=0;     // backing off mid-volley would turn it around and fire the wrong way
@@ -2567,6 +2722,7 @@ function setArt(side,k,strokes,ver,kind,style){
 // hand: 1 or 2 picks the sprite for the front or back hand of a paired style; otherwise the whole drawing.
 function sprite(side,k,size,grip,hand){
   const a=art[side][k]; if(!a) return false; const sp=hand&&a.hands?a.hands[hand-1]:a.sprite, sc=size/Math.max(sp.w,sp.h);
+  if(costWash&&costSprite(sp,side,k,grip?-14*sc:-sp.w*sc/2,-sp.h*sc/2,sp.w*sc,sp.h*sc)) return true;      // cost: glowing, pale, cracked or broken
   L.drawImage(sp.cv,grip?-14*sc:-sp.w*sc/2,-sp.h*sc/2,sp.w*sc,sp.h*sc); return true;
 }
 
@@ -3025,6 +3181,7 @@ function accept(v){
     worldEvent(e);
     e.t0=performance.now(); fx.push(e);
     if(e.e==='block') shake=Math.max(shake,3);
+    if(e.e==='cost') costSeen(e);      // cost: a weapon's cost just showed itself (overheated, broke, drew blood)
     if(e.e==='rule') e.txt=forgeCallout(e,forge,forgeSaid,e.t0,FORGE_LIMITS.sayEvery*1000);      // a match rule fired: its shout, or its name
     if(e.e==='rulefault'&&forge){ forgeOff[e.id]=1; drawForge(); }
     if(e.e==='quake') shake=Math.max(shake,9);
@@ -3303,7 +3460,7 @@ function syncUI(){
       const u=el.querySelector('[data-k="u"]'); if(u){ const un=ultOf(v.items[s][v.f[s].held]||v.items[s][1-v.f[s].held]).name.toLowerCase(), us=u.querySelector('small'); if(us.textContent!==un) us.textContent=un; u.style.setProperty('--cd',1-od/100); u.classList.toggle('full',od>=100&&v.phase==='fight'&&!!(v.items[s][0]||v.items[s][1])); } }
     for(const k of [0,1]){ const b=el.querySelector(`[data-k="${'ab'[k]}"]`), it=v.items[s][k], f=v.f[s];
       b.style.setProperty('--cd',f.cd[k]||0); const label=it?it.name+(it.kind==='heal'?' ×'+f.uses[k]:''):'Punch';
-      const sm=b.querySelector('small'); if(sm.textContent!==label) sm.textContent=label; } });
+      const sm=b.querySelector('small'), lb=label+costLabel(f,k); if(sm.textContent!==lb) sm.textContent=lb; b.classList.toggle('costout',costOut(f,k)); } });
   // overlay
   const o=$('overlay'); let key='';
   if(mode==='replay') key='';
@@ -3445,6 +3602,8 @@ function drawFighter(v,i,now,age,dt){
   // weapon smear: everything the weapon swept in the last moments of an attack
   if(wlen&&it.style!=='fist'&&f.act){ ANIM.smear(L,clip,st.t,it.style==='spear'?wlen*0.96:wlen,it.el==='none'?col:PEN[it.el],0.2);
     if(two) ANIM.smear(L,clip,st.t,wlen,it.el==='none'?col:PEN[it.el],0.2,true); }
+  const cst=!hideItems&&it&&f.cs?f.cs[k]:null;      // cost: what the rules say about the held weapon's cost
+  if(cst){ costTrail(clip,st.t,wlen,it,two,cst,f); costWash={side:i,k,cs:cst,now}; }
   ANIM.draw(L,s,{col,halo:DESK,noodle:true,
     back(c){ if(hideItems) return; for(const n of [0,1]){ const o=items[n]; if(!o||n===k||(o.kind==='shield'&&f.sh)) continue;
       c.save(); c.translate(p[2]-14,p[3]+22); c.rotate(-1.15); c.globalAlpha=.55; sprite(i,n,U(o.sz*0.6),o.kind==='melee'); c.restore(); } },
@@ -3466,6 +3625,7 @@ function drawFighter(v,i,now,age,dt){
       else if(kind==='ranged'){ c.translate(gsz*0.3,0); sprite(i,k,gsz,false,two?1:0); }
       else if(!(kind==='bomb'&&f.cd[k]>0.75)){ c.rotate(-ss.p[22]); sprite(i,k,U(it.sz*(kind==='bomb'?1:0.8))); }
     }});
+  costWash=null;
   if(it&&kind==='shield'&&f.sh){ L.save(); L.translate(p[2]+50,p[3]+22); sprite(i,k,U(it.sz*1.25));
     L.strokeStyle=PEN[it.el]; L.globalAlpha=.5; L.lineWidth=5; L.beginPath(); L.arc(-20,0,U(it.sz*0.85),-1.1,1.1); L.stroke(); L.restore(); }
   if(RG&&RG.P.show) RG.debug(L,s);
@@ -3480,6 +3640,8 @@ function drawFighter(v,i,now,age,dt){
   L.lineCap='round';
   if(f.burn){ L.strokeStyle=PEN.fire; L.lineWidth=2.5; for(let n=0;n<3;n++){ const fx0=x-12+n*12, fy=base-104-((now/6+n*23)%22); L.beginPath(); L.moveTo(fx0,fy+8); L.lineTo(fx0+3,fy+2); L.lineTo(fx0,fy-4); L.stroke(); } }
   if(f.slow){ L.fillStyle=PEN.water; for(let n=0;n<3;n++){ const fy=base-74+((now/9+n*31)%62); L.beginPath(); L.arc(x-14+n*14,fy,2.5,0,7); L.fill(); } }
+  if(cst&&(f.hp>0||v.phase==='draw')) costGauge(cst,f,i,x,base,s,p,d,now);      // cost: its state, over the head and at the hand
+  L.lineCap='round';
   if(f.hp>0||v.phase==='draw'){ const h=ANIM.xf(s,p[0],p[1]); L.font='18px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=col;
     const tag=local[i]&&!(local[0]&&local[1])?'you':NAME[i], tx=x+h[0]*K*d, ty=base+h[1]*K-20;
     if(RETRO||DESK){ f.gh=hpGhost[i]; retroStatus(L,f,tag,col,Math.round(tx),Math.round(ty),v.phase!=='draw',DESK?v.wins[i]:-1); return; }
@@ -3540,6 +3702,118 @@ function retroStatus(c,f,tag,col,tx,ty,meters,wins){
   c.lineJoin='round'; c.lineWidth=3; c.strokeStyle='#fff'; c.strokeText(tag,tx,y0-4); c.fillStyle=col; c.fillText(tag,tx,y0-4);
   c.restore();
 }
+/* ---------- cost tells: what a weapon's cost looks like (COSTS in the rules; the numbers come in the snapshot as f.cs) ----------
+   Every cost shows its state all the time: a gauge over the holder's head (costGauge), the weapon itself (costSprite:
+   glowing gold while a paid attack is under way, redder with heat, pale when dry, cracked, in two pieces when broken),
+   a gold crescent behind a paid swing (costTrail) and a gold wake behind a paid shot (costShot), a word and a burst
+   when something happens (costFx, costSeen), and a note on the player's own A/B button (costLabel, costOut). */
+let costWash=null;      // set while a fighter's own held weapon is being drawn: {side,k,cs,now}; sprite() then hands it to costSprite
+const COST_GOLD='#f5a800', COST_HOT=['#ff9d1c','#e8200c'], COST_BLOOD='#c40016', COST_GREY='#7b8294';
+// The drawing as a flat silhouette in one colour (kept with the sprite), to lay over it.
+function costTint(sp,col){
+  const all=sp.tints||(sp.tints={}); let t=all[col];
+  if(!t){ t=all[col]=document.createElement('canvas'); t.width=sp.w; t.height=sp.h; const g=t.getContext('2d'); g.drawImage(sp.cv,0,0); g.globalCompositeOperation='source-in'; g.fillStyle=col; g.fillRect(0,0,sp.w,sp.h); }
+  return t;
+}
+function costSprite(sp,side,k,dx,dy,w,h){
+  const q=costWash; if(!q||q.side!==side||q.k!==k) return false;
+  const cs=q.cs, now=q.now, A=L.globalAlpha, base=a=>{ L.globalAlpha=A*a; L.drawImage(sp.cv,dx,dy,w,h); }, tint=(col,a)=>{ if(a>0.02){ L.shadowBlur=0; L.globalAlpha=A*Math.min(1,a); L.drawImage(costTint(sp,col),dx,dy,w,h); } };
+  L.save();
+  if(cs.pw>0){ L.shadowColor=COST_GOLD; L.shadowBlur=18; }      // a paid attack is under way: the weapon glows
+  if(cs.c==='heat'){ const v=cs.v||0;
+    if(!(cs.pw>0)&&v>0.05){ L.shadowColor=COST_HOT[v>0.6?1:0]; L.shadowBlur=4+22*v; }
+    base(1); tint(COST_HOT[0],Math.min(1,v*1.6)*0.9); tint(COST_HOT[1],Math.max(0,v-0.4)*1.6*(cs.lk?0.7+0.3*Math.sin(now/70):1)); }
+  else if(cs.c==='ink') base(cs.ok>0||cs.pw>0?1:0.28);                      // dry: pale
+  else if(cs.c==='blood'){ base(cs.ok>0||cs.pw>0?1:0.4); if(cs.ok>0) tint(COST_BLOOD,0.32+0.14*Math.sin(now/170)); }
+  else if(cs.c==='fragile'&&cs.ok<0&&!(cs.pw>0)){                            // broken: two pieces, the far one hanging
+    const cut=dx+w*0.5, piece=(x0,ww,rot)=>{ L.save(); L.translate(cut,0); L.rotate(rot); L.translate(-cut,0); L.beginPath(); L.rect(x0,dy-6,ww,h+12); L.clip(); L.drawImage(sp.cv,dx,dy,w,h); L.restore(); };
+    L.globalAlpha=A*0.6; piece(dx-6,w*0.5+4,0); L.translate(w*0.05,h*0.06); piece(cut+2,w*0.5+6,0.5); }
+  else if(cs.c==='fragile'){ base(1); L.shadowBlur=0; L.globalAlpha=A; L.lineCap='round'; L.lineJoin='round';
+    for(let j=0;j<(cs.n||0);j++){ const px=dx+w*(0.32+0.5*(j+0.5)/Math.max(1,cs.m)), zig=lw=>{ L.lineWidth=lw; L.beginPath(); for(let q2=0;q2<=4;q2++){ const yy=-h*0.2+h*0.4*q2/4, xx=px+(q2%2?1:-1)*w*0.025*(j%2?1:-1); q2?L.lineTo(xx,yy):L.moveTo(xx,yy); } L.stroke(); };
+      L.strokeStyle='#fff'; zig(Math.max(2.4,w*0.05)); L.strokeStyle='#111'; zig(Math.max(0.8,w*0.012)); } }
+  else base(cs.pw<0?0.5:1);
+  L.restore(); return true;
+}
+// A paid swing leaves a gold crescent and a heavier smear (drawn in the fighter's own space, before the body).
+function costTrail(clip,t,wlen,it,two,cs,f){
+  if(!(cs.pw>0)||!f.act||!wlen||it.style==='fist') return;
+  const cols=[COST_GOLD,'#ffd870','#ffffff'], len=(it.style==='spear'?wlen*0.96:wlen)*1.08;
+  ANIM.smear(L,clip,t,len,COST_GOLD,0.32); ANIM.trail(L,clip,t,len,cols);
+  if(two){ ANIM.smear(L,clip,t,len,COST_GOLD,0.32,true); ANIM.trail(L,clip,t,len,cols,true); }
+}
+function costShot(p,x,y,now){
+  const u=1+0.18*Math.sin(now/40+p.id);
+  L.save(); L.translate(x,y); L.rotate(Math.atan2(-p.vy,p.vx)); L.fillStyle=COST_GOLD; L.strokeStyle=COST_GOLD;
+  L.globalAlpha=.32; L.beginPath(); L.moveTo(10,0); L.lineTo(-8,-14*u); L.lineTo(-92,0); L.lineTo(-8,14*u); L.closePath(); L.fill();
+  L.globalAlpha=.95; L.lineWidth=3.5; L.lineCap='round'; L.beginPath(); L.arc(-2,0,15*u,-1.15,1.15); L.stroke(); L.restore();
+}
+// The gauge over the head, and what happens at the weapon hand (steam, the wind-up ring, the mending ring).
+function costGauge(cs,f,i,x,base,s,p,d,now){
+  if(!cs.c) return;
+  const KS=K*(f.sc||1), hd=ANIM.xf(s,p[0],p[1]), hn=ANIM.xf(s,p[12],p[13]), gx=Math.round(x+hd[0]*KS*d), gy=Math.round(base+hd[1]*KS-(RETRO||DESK?86:52)), hx=x+hn[0]*KS*d, hy=base+hn[1]*KS, col=PCOL[i], blink=Math.floor(now/160)%2;
+  const say=(t,c2,yy)=>{ L.font='900 12px "Arial Black",Arial,sans-serif'; L.textAlign='center'; L.textBaseline='alphabetic'; L.lineJoin='round'; L.lineWidth=3.5; L.strokeStyle='#fff'; L.strokeText(t,gx,yy); L.fillStyle=c2; L.fillText(t,gx,yy); };
+  const ring=(cx,cy,r,frac,c2,lw)=>{ L.lineCap='butt'; L.lineWidth=lw+3; L.strokeStyle='rgba(255,255,255,.85)'; L.beginPath(); L.arc(cx,cy,r,0,7); L.stroke(); L.lineWidth=lw; L.strokeStyle='rgba(0,0,0,.2)'; L.beginPath(); L.arc(cx,cy,r,0,7); L.stroke();
+    L.strokeStyle=c2; L.beginPath(); L.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+Math.PI*2*Math.max(0,Math.min(1,frac))); L.stroke(); };
+  const bar=(w,h,frac,fill)=>{ L.fillStyle='#fff'; L.fillRect(gx-w/2,gy-h/2,w,h); if(frac>0){ L.fillStyle=fill; L.fillRect(gx-w/2,gy-h/2,w*Math.min(1,frac),h); } L.lineWidth=1.5; L.strokeStyle='#111'; L.strokeRect(gx-w/2,gy-h/2,w,h); };
+  const drop=(cx,cy,r,fill,line)=>{ L.beginPath(); L.moveTo(cx,cy-r*1.7); L.quadraticCurveTo(cx+r*1.5,cy+r*0.2,cx,cy+r); L.quadraticCurveTo(cx-r*1.5,cy+r*0.2,cx,cy-r*1.7); L.closePath(); L.fillStyle=fill; L.fill(); L.lineWidth=1.6; L.strokeStyle=line; L.stroke(); };
+  L.save(); L.lineJoin='round';
+  if(cs.c==='ammo'){
+    const m=cs.m||1, pw=8, gap=4, w=m*pw+(m-1)*gap, have=cs.lk?Math.floor((cs.r||0)*m+1e-6):cs.n;
+    for(let j=0;j<m;j++){ const px=gx-w/2+j*(pw+gap); L.beginPath(); L.moveTo(px,gy+7); L.lineTo(px,gy-3); L.quadraticCurveTo(px+pw/2,gy-11,px+pw,gy-3); L.lineTo(px+pw,gy+7); L.closePath();
+      L.fillStyle=j<have?(cs.lk?COST_GREY:col):'#fff'; L.fill(); L.lineWidth=1.6; L.strokeStyle=cs.lk?COST_GREY:col; L.stroke(); }
+    if(cs.lk){ L.fillStyle='#111'; L.fillRect(gx-w/2,gy+11,w*(cs.r||0),3); L.strokeStyle='#111'; L.lineWidth=1; L.strokeRect(gx-w/2,gy+11,w,3); if(blink) say('RELOAD','#111',gy-14); }
+  }else if(cs.c==='heat'){
+    const v=cs.v||0, g=L.createLinearGradient(gx-30,0,gx+30,0); g.addColorStop(0,'#ffd21c'); g.addColorStop(0.6,COST_HOT[0]); g.addColorStop(1,COST_HOT[1]);
+    bar(60,9,cs.lk?1-(cs.r||0):v,cs.lk?(blink?COST_HOT[1]:'#7a0d05'):g);
+    if(cs.lk) say('OVERHEAT',COST_HOT[1],gy-9);
+    if(cs.lk||v>0.7){ L.lineCap='round'; L.lineWidth=2.5; L.strokeStyle=cs.lk?'#8d939f':'#c9ccd3';      // steam off the weapon
+      for(let n2=0;n2<(cs.lk?4:2);n2++){ const ph=((now/700+n2*0.27)%1), sx=hx+(n2-1.5)*9+d*14, sy=hy-8-ph*46; L.globalAlpha=(1-ph)*0.9; L.beginPath(); L.moveTo(sx,sy); L.quadraticCurveTo(sx+6,sy-7,sx,sy-14); L.quadraticCurveTo(sx-6,sy-21,sx,sy-28); L.stroke(); } L.globalAlpha=1; }
+  }else if(cs.c==='ink'){
+    const okk=cs.ok>0, c2=okk?PEN.none:COST_GREY; drop(gx-25,gy+2,5.5,okk?c2:'#fff',c2);
+    L.fillStyle='#fff'; L.fillRect(gx-14,gy-3,44,7); L.fillStyle=c2; L.fillRect(gx-14,gy-3,44*(cs.v||0),7); L.lineWidth=1.5; L.strokeStyle='#111'; L.strokeRect(gx-14,gy-3,44,7);
+    L.fillStyle=COST_HOT[1]; L.fillRect(gx-14+44*(cs.m||0)/100-1,gy-6,2,13);      // the mark: one attack's worth
+    if(!okk) say('DRY',COST_GREY,gy-10);
+  }else if(cs.c==='blood'){
+    const okk=cs.ok>0; drop(gx-14,gy+2,6,okk?COST_BLOOD:'#fff',okk?COST_BLOOD:COST_GREY);
+    L.font='900 13px "Arial Black",Arial,sans-serif'; L.textAlign='left'; L.lineWidth=3.5; L.strokeStyle='#fff'; const t=okk?'\u2212'+cs.m:'weak'; L.strokeText(t,gx-4,gy+7); L.fillStyle=okk?COST_BLOOD:COST_GREY; L.fillText(t,gx-4,gy+7);
+  }else if(cs.c==='windup'){
+    ring(gx,gy,7,cs.r||0,COST_GOLD,3.5);
+    if(cs.r>0){ ring(hx,hy,24,cs.r,COST_GOLD,6); L.globalAlpha=.25*cs.r; L.fillStyle=COST_GOLD; L.beginPath(); L.arc(hx,hy,21,0,7); L.fill(); L.globalAlpha=1; }
+  }else if(cs.c==='fragile'){
+    const m=cs.m||1, pw=10, gap=3, w=m*pw+(m-1)*gap, broke=cs.ok<0;
+    for(let j=0;j<m;j++){ const px=gx-w/2+j*(pw+gap), whole=j<m-cs.n; L.fillStyle=whole?col:'#fff'; L.fillRect(px,gy-4,pw,9); L.lineWidth=1.5; L.strokeStyle=broke?COST_HOT[1]:col; L.strokeRect(px,gy-4,pw,9);
+      if(!whole){ L.strokeStyle=broke?COST_HOT[1]:'#111'; L.lineWidth=1.3; L.beginPath(); L.moveTo(px+2,gy-4); L.lineTo(px+6,gy); L.lineTo(px+3,gy+2); L.lineTo(px+7,gy+5); L.stroke(); } }
+    if(broke){ if(cs.r>0){ say('MENDING','#2f9e56',gy-9); ring(hx,hy,22,cs.r,'#2f9e56',6); } else if(blink) say('BROKEN',COST_HOT[1],gy-9); }
+  }
+  L.restore();
+}
+// A cost event: the word over the fighter and what flies off them. a is its age 0..1, y the top of the head.
+const COST_SAY={click:['click',COST_GREY,16],empty:['EMPTY',COST_GREY,20],loaded:['LOADED','',20],overheat:['OVERHEAT!',COST_HOT[1],28],cool:['cooled','#2a7fd4',18],dry:['dry',COST_GREY,18],faint:['too weak',COST_GREY,16],crack:['CRACK!','#111',20],break:['BROKEN!',COST_HOT[1],28],mend:['MENDED','#2f9e56',22]};
+function costFx(e,a,y){
+  const w=COST_SAY[e.k], ty=y-(RETRO||DESK?104:70)-a*24;
+  if(e.k==='blood'||e.k==='ink'){      // drops leave the fighter; blood shows the health it took
+    const c2=e.k==='blood'?COST_BLOOD:PEN.none; L.fillStyle=c2;
+    for(let n2=0;n2<5;n2++){ const dxn=(n2-2)*13*(0.3+a*1.2), dyn=-26*a+90*a*a+(n2%2)*8; L.beginPath(); L.arc(e.x+dxn,y+34+dyn,(e.k==='blood'?4.2:3)*(1-a*0.5),0,7); L.fill(); }
+    if(e.k==='blood'){ L.font='24px "Gochi Hand",cursive'; L.textAlign='center'; L.fillText('\u2212'+e.n,e.x+34,y+4-a*26); }
+  }
+  if(e.k==='overheat'||e.k==='break'){ L.strokeStyle=w[1]; L.lineCap='round'; L.lineWidth=3; for(let n2=0;n2<8;n2++){ const t=n2*Math.PI/4+0.3, r0=20+a*30, r1=r0+12; L.beginPath(); L.moveTo(e.x+Math.cos(t)*r0,y+40+Math.sin(t)*r0); L.lineTo(e.x+Math.cos(t)*r1,y+40+Math.sin(t)*r1); L.stroke(); } }
+  if(w){ L.save(); L.font='900 '+w[2]+'px "Arial Black",Impact,Arial,sans-serif'; L.textAlign='center'; L.lineJoin='round'; L.lineWidth=5; L.strokeStyle='#fff'; L.strokeText(w[0],e.x,ty); L.fillStyle=w[1]||PCOL[e.side]||'#111'; L.fillText(w[0],e.x,ty); L.restore(); }
+}
+function costSeen(e){
+  if(e.k==='overheat'||e.k==='break'){ shake=Math.max(shake,CALM?1.5:5); FXI.burst(e.x,-(e.y-40),e.k==='break'?'#111':'#b9bdc6',12); }
+  else if(e.k==='blood') FXI.burst(e.x,-(e.y-40),COST_BLOOD,5);
+}
+// On the player's own A/B button: a few characters after the item's name, in red when it cannot pay.
+function costLabel(f,k){
+  const cs=f.cs&&f.cs[k]; if(!cs||!cs.c) return '';
+  if(cs.c==='ammo') return cs.lk?' reload':' '+'\u25cf'.repeat(cs.n)+'\u25cb'.repeat(Math.max(0,cs.m-cs.n));
+  if(cs.c==='heat') return cs.lk?' HOT!':' '+Math.round((cs.v||0)*100)+'\u00b0';
+  if(cs.c==='ink') return cs.ok>0?' \u2212'+cs.m+' ink':' dry';
+  if(cs.c==='blood') return cs.ok>0?' \u2212'+cs.m+' hp':' too weak';
+  if(cs.c==='windup') return ' wind-up';
+  return cs.ok<0?' broken':' '+'\u25ae'.repeat(Math.max(0,cs.m-cs.n))+'\u25af'.repeat(cs.n);
+}
+function costOut(f,k){ const cs=f.cs&&f.cs[k]; return !!(cs&&cs.c&&cs.ok<=0); }
 // World layers. His drawing code works in his coordinates (y down from the floor), so the canvas is shifted to match.
 // The draw strip: the whole arena scaled to the strip's width, floor near the bottom. A stroke drawn on it is sent to the
 // room in arena coordinates, where the rules read it (platform, wall, shield, dash, counters, even a new weapon).
@@ -3900,6 +4174,7 @@ function render(now){
       if(axis){ L.translate(-size/2,0); if(!sprite(ps,p.slot,size,true)){ L.fillStyle=PCOL[ps]; L.fillRect(0,-3,size,6); } }
       else if(!sprite(ps,p.slot,size)){ L.fillStyle=PCOL[ps]; L.beginPath(); L.arc(0,0,10,0,7); L.fill(); }
       L.restore(); continue; }
+    if(p.k==='shot'&&p.pw>0) costShot(p,x,y,now);      // cost: a paid shot flies in a gold wake
     if(p.k==='shot'){ const col=p.el==='none'?'#111':PEN[p.el]; L.save(); L.translate(x,y); L.rotate(Math.atan2(-p.vy,p.vx)); L.strokeStyle=col; L.fillStyle=col; L.lineCap='round'; L.lineJoin='round';
       if(p.st==='bow'){ if(p.big>1){ L.scale(1+0.5*p.big,1+0.5*p.big); L.globalAlpha=.35; L.lineWidth=9; L.beginPath(); L.moveTo(-120,0); L.lineTo(-44,0); L.stroke(); L.globalAlpha=1; } L.lineWidth=3.5; L.beginPath(); L.moveTo(-44,0); L.lineTo(0,0); L.moveTo(-9,-5); L.lineTo(0,0); L.lineTo(-9,5); L.moveTo(-44,0); L.lineTo(-50,-5); L.moveTo(-44,0); L.lineTo(-50,5); L.stroke(); }
       else if(p.st==='staff'){ const r=8+5*(p.big||0); L.globalAlpha=.3; L.beginPath(); L.moveTo(0,-r); L.lineTo(-r*4.5,0); L.lineTo(0,r); L.closePath(); L.fill(); L.globalAlpha=1; L.beginPath(); L.arc(0,0,r,0,7); L.fill(); L.fillStyle='#fff'; L.beginPath(); L.arc(r*0.2,-r*0.2,r*0.45,0,7); L.fill();
@@ -3938,6 +4213,7 @@ function render(now){
       L.lineWidth=3; for(let n=0;n<7;n++){ const dx=(n-3)*e.n*0.26*(0.5+a), h=(n%2?26:44)*Math.sin(Math.min(1,a*1.6)*Math.PI); L.beginPath(); L.moveTo(e.x+dx,y-4); L.lineTo(e.x+dx*1.15,y-4-h); L.stroke(); } }
     else if(e.e==='heal'){ L.font='26px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=PEN.plant; L.fillText('+'+e.n,e.x,y-a*30); }
     else if(e.e==='rule'){ if(e.txt){ L.save(); L.globalAlpha=Math.min(1,(1-a)*2.5); L.font='bold 25px "Gochi Hand",cursive'; L.textAlign='center'; L.lineJoin='round'; L.lineWidth=5; L.strokeStyle='#fffdf6'; L.strokeText(e.txt,e.x,y-44-a*34); L.fillStyle=PCOL[e.side]||'#111'; L.fillText(e.txt,e.x,y-44-a*34); L.restore(); } }      // a match rule's shout over its owner, in their colour
+    else if(e.e==='cost') costFx(e,a,y);
     else if(e.e==='boom'){ L.strokeStyle=e.el==='none'?'#e2a52d':PEN[e.el]; L.lineWidth=6*(1-a)+1; L.beginPath(); L.arc(e.x,y,e.n*(0.3+0.7*Math.min(1,a*2.2)),0,7); L.stroke();
       L.font='30px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=L.strokeStyle; L.fillText('BOOM',e.x,y-e.n*0.6-a*20); }
   }
@@ -3985,7 +4261,17 @@ if(RETRO) retroBuild();
 const LAB_STOCK={blade:'sword',spear:'spear',hammer:'hammer',fist:'gloves',dual:'twins',bow:'bow',gun:'gun',akimbo:'pistols',staff:'staff',hurl:'star'};
 const LAB_NAME={blade:'Sword',spear:'Spear',hammer:'Hammer',fist:'Fists',dual:'Twin blades',bow:'Bow',gun:'Gun',akimbo:'Twin pistols',staff:'Staff',hurl:'Thrown'};
 const lab={style:'blade',el:'none',speed:1,loop:false,gap:220,last:null,idle:0};
-function labEquip(){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,st.spec,50); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0; if(desk[0]) updateDesk(desk[0]); }
+function labEquip(){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,st.spec,50); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0; labCost(); if(desk[0]) updateDesk(desk[0]); }
+// cost: the tester's Cost row gives the weapon under test 'heavy' with one cost ('free': heavy with nothing to pay)
+function labCost(){
+  if(!sim) return; const c=lab.cost||''; sim.setCustom(0,0,c?[c==='free'?{id:'heavy'}:{id:'heavy',cost:{cost:c}}]:[]);
+  const n=$('labCostNote'); if(n) n.textContent=!c?'No customization: the plain weapon.':CUSTOMS.heavy.label+' ('+(CUSTOMS.heavy.pts>0?'+':'')+CUSTOMS.heavy.pts+'): '+CUSTOMS.heavy.blurb+(COSTS[c]?' Cost: '+COSTS[c].label+' ('+COSTS[c].pts+'): '+COSTS[c].blurb:' No cost.');
+}
+// cost: put the weapon under test straight into its spent state (empty, overheated, dry, bled, broken), to look at it
+function labSpend(){
+  const f=sim&&sim.f[0], it=sim&&sim.items[0][0], c=costOf(it), s=f&&f.cs[0]; if(!c) return;
+  if(c.cost==='ink') f.ink2=0; else if(c.cost==='blood') f.hp=c.per; else if(!s) return; else if(c.cost==='ammo') s.n=0; else if(c.cost==='heat') s.v=1; else if(c.cost==='fragile') s.n=c.hits;
+}
 function labPlace(gap){ const a=sim.f[0], b=sim.f[1], g=gap||lab.gap, x0=Math.max(60,Math.min(ARENA_W-60-g,ARENA_W/2-g/2-60));
   for(const f of [a,b]){ f.y=0; f.vx=f.vy=0; f.ground=true; f.act=null; f.hurt=0; f.stun=0; f.dash=0; f.burn=0; f.slow=0; f.shield=0; f.hp=HP; }
   a.x=x0; b.x=x0+g; a.face=1; b.face=-1; sim.pr.length=0; }
@@ -4021,7 +4307,9 @@ function labBuild(){
     <div class="row"><b>Ink</b><span id="labEls" class="row" style="margin:0 14px 0 0"></span>
       <label>Speed <input type="range" id="labSpeed" min="0.1" max="1" step="0.05" value="1"><span id="labSpeedV">1.00×</span></label>
       <label>Distance <input type="range" id="labGap" min="40" max="520" step="10" value="220"></label>
-      <label><input type="checkbox" id="labLoop"> Loop</label></div>`;
+      <label><input type="checkbox" id="labLoop"> Loop</label></div>
+    <div class="row"><b>Cost</b><span id="labCosts" class="row" style="margin:0"></span><button id="labSpend" title="Empty, overheat, dry out or break the weapon now">Run it out</button></div>
+    <p id="labCostNote" style="margin:0"></p>`;
   document.querySelector('.arenawrap').after(el);
   const styles=$('labStyles'), els=$('labEls');
   styles.innerHTML=Object.keys(LAB_STOCK).map(s=>`<button data-s="${s}">${LAB_NAME[s]}</button>`).join('');
@@ -4033,6 +4321,13 @@ function labBuild(){
   $('labSpeed').oninput=e=>{ lab.speed=+e.target.value; $('labSpeedV').textContent=lab.speed.toFixed(2)+'×'; };
   $('labGap').oninput=e=>{ lab.gap=+e.target.value; labPlace(); };
   $('labLoop').onchange=e=>{ lab.loop=e.target.checked; };
+  // cost: one button per cost; each puts 'heavy' with that cost on the weapon
+  const costs=$('labCosts'); costs.innerHTML=[['','None'],['free','Heavy, no cost']].concat(Object.keys(COSTS).map(c=>[c,COSTS[c].label+' ('+COSTS[c].pts+')'])).map(c=>`<button data-c="${c[0]}">${c[1]}</button>`).join('');
+  const pickCost=c=>{ lab.cost=c; costs.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.c===c)); labCost(); };
+  costs.querySelectorAll('button').forEach(b=>b.onclick=()=>{ b.blur(); pickCost(b.dataset.c); if(lab.last) labPlay(lab.last[0],lab.last[1]); });
+  $('labSpend').onclick=e=>{ e.target.blur(); labSpend(); };
+  lab.cost=String(new URLSearchParams(location.search).get('cost')||''); if(lab.cost!=='free'&&!COSTS[lab.cost]) lab.cost='';
+  costs.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.c===lab.cost));
   sim.step(0.05); pickEl('none'); pickStyle('blade');
 }
 if(REPLAY) setReplay(REPLAY);      // duel?replay=CODE: watch that room's match again
