@@ -122,7 +122,7 @@ function readBody(req,limit){
 }
 const duel=require('./duel-server.js')({readBody,KEY,MODEL,BASE});
 const FILES={'/':['index.html','text/html; charset=utf-8'],'/index.html':['index.html','text/html; charset=utf-8'],'/qrcode.js':['qrcode.js','text/javascript; charset=utf-8']};
-http.createServer(async (req,res)=>{
+const server=http.createServer(async (req,res)=>{
   const send=(code,obj)=>{ res.writeHead(code,{'Content-Type':'application/json','Cache-Control':'no-store'}); res.end(JSON.stringify(obj)); };
   const url=new URL(req.url,'http://x');
   try{
@@ -179,7 +179,10 @@ http.createServer(async (req,res)=>{
     }
     send(404,{error:'not found'});
   }catch(e){ console.error(req.method,url.pathname,'failed:',e.message); if(!res.headersSent) send(500,{error:'Server error.'}); else res.end(); }
-}).listen(PORT,()=>{
+});
+// Duel rooms can also be reached by WebSocket (/duel/ws). NOWS=1 leaves that off, to try a network that drops upgrades.
+if(process.env.NOWS!=='1') duel.sockets(server);
+server.listen(PORT,()=>{
   console.log('Doodle Lane Battler on http://localhost:'+PORT);
   const lan=lanUrl(); if(lan) console.log('Other devices on the same Wi-Fi: '+lan);
   console.log('Drawings read by: '+(KEY?'OpenAI '+MODEL:'local guess (no OPENAI_API_KEY in .env)'));

@@ -537,6 +537,7 @@ Window titlebars = platforms
 <script src="/sfx.js"></script>
 <script src="/inkshop.js"></script>
 <script src="/forgescript.js"></script>
+<script src="/wire.js"></script>
 <script src="/anim/core.js"></script>
 <script src="/anim/rig.js"></script>
 <script src="/anim/locomotion.js"></script>
@@ -2199,6 +2200,112 @@ function koNote(k,snap,ms,winsToEnd){
   return k;
 }
 /*PAGE-PURE-END*/
+/*NET-PURE-START*/
+// The page's link to its room. tools/test-net.js loads what is between these two marks and runs it with stand-ins for
+// the browser's WebSocket and EventSource, so keep it free of the DOM and of everything defined outside the marks.
+// A room is reached over the event stream (GET /duel/events, with a request for every button) unless the page's
+// address says ?net=ws: then a WebSocket to /duel/ws carries the events, the state (as binary frames: wire.js) and the
+// buttons, and the event stream is the fallback. ?net=ws-only never falls back (for tests).
+const LINK_WAIT_MS=1500, LINK_RETRY_MS=1000, LINK_SILENT_MS=3000, ACK_EVERY=3, PING_MS=2000;
+// Which link to use now. param: the ?net= value; opened: the socket has opened; elapsedMs: since it was asked for;
+// closed: it has closed or failed. 'wait' means neither yet.
+function chooseLink(o){
+  if(o.param!=='ws'&&o.param!=='ws-only') return 'sse';
+  if(o.opened&&!o.closed) return 'ws';
+  if(o.param==='ws-only') return 'wait';
+  return o.closed||o.elapsedMs>=LINK_WAIT_MS?'sse':'wait';
+}
+// How the link is doing, for the status bar: kB/s arriving, how unevenly the states arrive (jitter, smoothed the way
+// RTP does it) and the round trip. got(bytes, nowMs, isState, serverMs): serverMs is the sender's clock from a state
+// frame, or 0 where there is none (the event stream), when arrivals are held against their own average spacing.
+function linkMeter(){
+  let bytes=0, since=-1, kbps=0, rtt=-1, jitter=0, lastAt=-1, lastSrv=0, spacing=0;
+  return {
+    got(n,nowMs,isState,serverMs){
+      if(since<0) since=nowMs; bytes+=n;
+      if(nowMs-since>=1000){ kbps=bytes/(nowMs-since); bytes=0; since=nowMs; }      // bytes per millisecond is kB per second
+      if(!isState) return;
+      if(lastAt>=0){
+        const gap=nowMs-lastAt; let d=null;
+        if(serverMs>0&&lastSrv>0) d=gap-(serverMs-lastSrv);
+        else if(gap<100){ spacing=spacing?spacing+(gap-spacing)/16:gap; d=gap-spacing; }      // (the slow states between rounds say nothing about jitter)
+        if(d!==null) jitter+=(Math.abs(d)-jitter)/16;
+      }
+      lastAt=nowMs; lastSrv=serverMs||0;
+    },
+    rtt(ms){ if(ms>=0&&ms<60000) rtt=rtt<0?ms:rtt+(ms-rtt)/4; },
+    read:()=>({rttMs:rtt,jitterMs:jitter,kbps})
+  };
+}
+const linkText=st=>!st.link?'connecting':st.link+' · '+(st.rttMs<0?'--':Math.round(st.rttMs))+' ms · ±'+Math.round(st.jitterMs)+' ms · '+st.kbps.toFixed(1)+' kB/s';
+// Opens the link. o: param (the ?net= value), wsUrl, sseUrl, names (the events the page listens for), emit(name, data)
+// (called for every event, the state included, whichever way it came), WebSocket, EventSource and Wire (the browser's
+// and wire.js's), now() in milliseconds, setTimeout, clearTimeout, and onLink(link) if the page wants to hear of changes.
+// Returns the link: .link is 'ws', 'sse' or '' (not connected yet); .send(message) sends over the socket and says
+// whether it could; .rtt(ms) notes a round trip the page timed itself; .stats() is for the status bar; .close() ends it.
+function openLink(o){
+  const meter=linkMeter(), L={link:''};
+  let ws=null, es=null, rx=null, t0=0, opened=false, closed=false, timer=null, shut=false, seq=0, acked=0, pingAt=-Infinity, heardAt=0, deaf=0, watch=null;
+  const setLink=l=>{ if(L.link!==l){ L.link=l; if(o.onLink) o.onLink(l); } };
+  const dropSocket=()=>{ o.clearTimeout(watch); if(!ws) return; const s=ws; ws=null; s.onopen=s.onmessage=s.onclose=s.onerror=null; try{ s.close(); }catch(e){} };
+  // The event stream, as the page has always used it: one listener for each name.
+  function startEvents(){
+    const e=es=new o.EventSource(o.sseUrl); setLink('sse');
+    for(const name of o.names) e.addEventListener(name,ev=>{ if(es!==e||shut) return; const isState=name==='state'; meter.got(ev.data.length+name.length+16,o.now(),isState,0); o.emit(name,JSON.parse(ev.data)); });
+  }
+  function decide(){
+    if(shut) return;
+    const want=chooseLink({param:o.param,opened,elapsedMs:o.now()-t0,closed});
+    if(want==='ws') setLink('ws');
+    else if(want==='sse'){ o.clearTimeout(timer); dropSocket(); if(!es) startEvents(); }
+    else if(closed){ dropSocket(); setLink(''); o.clearTimeout(timer); timer=o.setTimeout(startSocket,LINK_RETRY_MS); }      // ?net=ws-only: the socket again, a little later
+  }
+  // The socket could not be followed any further (it closed, failed, went silent, or sent something that makes no sense).
+  const lost=()=>{ closed=true; decide(); };
+  // A room sends its state at least four times a second, so a socket that has said nothing for LINK_SILENT_MS is dead
+  // though nobody has told the browser (a tablet that slept, a network that went away). Looked at once a second; it
+  // has to be found silent twice running, so that messages held up behind a busy page get their turn first.
+  const listen=()=>{ o.clearTimeout(watch); watch=o.setTimeout(()=>{ if(shut||!ws||!opened||closed) return; if(o.now()-heardAt<LINK_SILENT_MS) deaf=0; else if(++deaf>=2) return lost(); listen(); },1000); };
+  function startSocket(){
+    if(shut) return;
+    opened=false; closed=false; t0=o.now(); seq=0; acked=0; pingAt=-Infinity; rx=o.Wire.createReceiver();
+    let s; try{ s=new o.WebSocket(o.wsUrl); }catch(e){ return lost(); }
+    ws=s; s.binaryType='arraybuffer';
+    s.onopen=()=>{ if(ws===s){ opened=true; heardAt=o.now(); deaf=0; listen(); decide(); } };
+    s.onclose=s.onerror=()=>{ if(ws===s) lost(); };
+    s.onmessage=e=>{
+      if(ws!==s||shut) return;
+      const now=heardAt=o.now();
+      if(typeof e.data==='string'){
+        meter.got(e.data.length+2,now,false,0);
+        let m=null; try{ m=JSON.parse(e.data); }catch(err){}
+        if(!m||typeof m.ev!=='string') return;
+        if(m.ev==='pong'){ if(m.data) meter.rtt(now-m.data.ms); return; }      // the answer to our own ping, not news of the room
+        return o.emit(m.ev,m.data);
+      }
+      let r; try{ r=rx.read(new Uint8Array(e.data)); }catch(err){ return lost(); }
+      meter.got(e.data.byteLength+2,now,true,r.serverMs); seq=r.seq;
+      // Tell the server which state is held here, so it can send the next ones as what changed since: the first at
+      // once, then every third (an input says it too). And time the round trip now and then.
+      if(!acked||seq-acked>=ACK_EVERY){ acked=seq; s.send(JSON.stringify({t:'ack',ack:seq})); }
+      if(now-pingAt>=PING_MS){ pingAt=now; s.send(JSON.stringify({t:'ping',ms:now})); }
+      o.emit('state',r.snap);
+    };
+    o.clearTimeout(timer); timer=o.setTimeout(decide,LINK_WAIT_MS);
+  }
+  L.send=msg=>{
+    if(shut||!ws||!opened||closed||ws.readyState!==1) return false;
+    if(msg.t==='input'&&seq){ msg.ack=seq; acked=seq; }
+    try{ ws.send(JSON.stringify(msg)); }catch(e){ return false; }
+    return true;
+  };
+  L.rtt=ms=>meter.rtt(ms);
+  L.stats=()=>Object.assign({link:L.link},meter.read());
+  L.close=()=>{ shut=true; o.clearTimeout(timer); o.clearTimeout(watch); dropSocket(); if(es){ es.close(); es=null; } };
+  if(chooseLink({param:o.param,opened:false,elapsedMs:0,closed:false})==='sse') startEvents(); else startSocket();
+  return L;
+}
+/*NET-PURE-END*/
 
 /* ================= page ================= */
 const $=id=>document.getElementById(id);
@@ -2360,6 +2467,9 @@ function forgeInstall(S,rules,FS,API){
 // The page's side of it. forge is the latest forge event worth showing (null: none); the window types the code in.
 // ?forge=0 in the address switches it off for matches played here and for rooms made from here.
 const FORGE_PAGE=new URLSearchParams(location.search).get('forge')!=='0', FORGE_CPS=160;
+// ?net=ws: reach rooms over a WebSocket, falling back to the event stream; ?net=ws-only: never fall back (see openLink).
+// Without it, or if wire.js or WebSocket is missing here, rooms are reached over the event stream as they always were.
+const NET_LINK=(()=>{ const p=new URLSearchParams(location.search).get('net'); return (p==='ws'||p==='ws-only')&&window.Wire&&window.WebSocket?p:''; })();
 let forge=null, forgeAt=0, forgeOff={}, forgeSaid={}, forgeNames='';
 const forgeNamesNow=()=>view?view.items.map(r=>r.map(it=>it?it.name:'').join('|')).join('/'):'';
 function setForge(d){
@@ -2621,12 +2731,16 @@ addEventListener('blur',releaseAll); document.addEventListener('visibilitychange
 // folded into the next one, sent the moment the first returns. Requests can no longer queue up behind each other (the
 // lag) or arrive after a newer one, and a failed or slow one is retried at once. The server lets go of a held direction
 // if it stops hearing from a controller, so a lost release cannot leave the fighter running.
+// On a socket (?net=ws) there is nothing to wait for: every change goes at once, in order, and the repeat below still
+// covers a release the server never heard.
 let inFly=false, inDirty=false;
 function sendInput(){
-  if(!net||net.side<0) return; if(inFly){ inDirty=true; return; }
-  inFly=true; inDirty=false; const n=net, ctl=new AbortController(), to=setTimeout(()=>ctl.abort(),700); let ok=false;
+  if(!net||net.side<0) return;
+  if(net.link==='ws'&&net.line.send(Object.assign({t:'input',seq:++net.seq},inp[net.side]))) return;
+  if(inFly){ inDirty=true; return; }
+  inFly=true; inDirty=false; const n=net, ctl=new AbortController(), to=setTimeout(()=>ctl.abort(),700), sentAt=performance.now(); let ok=false;
   fetch('/duel/act',{method:'POST',headers:{'Content-Type':'application/json'},signal:ctl.signal,body:JSON.stringify(Object.assign({room:n.code,id:cid,type:'input',seq:++n.seq},inp[n.side]))})
-    .then(r=>{ ok=r.ok; }).catch(()=>{}).finally(()=>{ clearTimeout(to); inFly=false; if(net!==n) return; if(!ok) setTimeout(sendInput,80); else if(inDirty) sendInput(); });
+    .then(r=>{ ok=r.ok; if(ok&&n.line) n.line.rtt(performance.now()-sentAt); }).catch(()=>{}).finally(()=>{ clearTimeout(to); inFly=false; if(net!==n) return; if(!ok) setTimeout(sendInput,80); else if(inDirty) sendInput(); });
 }
 setInterval(()=>{ if(net&&net.side>=0&&view&&(view.phase==='fight'||view.phase==='count')) sendInput(); },150);
 // iPad Safari ignores the viewport's no-zoom setting, so stop the zoom gestures by hand: a second tap soon after the first
@@ -2676,7 +2790,7 @@ function resetLocal(){
 function setMode(m){
   deskMenu=false;
   mode=m; for(const b of ['Bot','2p','Online','Practice']) $('mode'+b).setAttribute('aria-pressed',m===b.toLowerCase());
-  if(net){ net.es.close(); net=null; } setScreen(false); setPad(); sim=null; bot=null; resetLocal(); lastPhase=''; overlayKey='';
+  if(net){ hangUp(); net=null; } setScreen(false); setPad(); sim=null; bot=null; resetLocal(); lastPhase=''; overlayKey='';
   deskStage=m==='online'&&!RETRO; deskSent=''; rEdgesSent=''; rLayoutSent=''; rTick=7; wobj.clear(); wPending[0]=[]; wPending[1]=[];
   if(m==='online'){ local=[false,false]; ARENA_W=960; ARENA_PLATS=PLATS; view=createDuel().snapshot(); buildDesks(); buildControls(); const code=(location.hash||'').slice(1).toUpperCase(); if(/^[A-Z]{4}$/.test(code)) joinRoom(code,watched()===code); return; }
   if(location.hash) history.replaceState(null,'',location.pathname);
@@ -2723,7 +2837,7 @@ function replayBuild(){
 // Fetch a room's recording and play it. Anything that stops it is said in words under the bar.
 function setReplay(code){
   deskMenu=false; mode='replay'; for(const b of ['Bot','2p','Online','Practice']) $('mode'+b).setAttribute('aria-pressed',false);
-  if(net){ net.es.close(); net=null; } setScreen(false); setPad(); sim=null; bot=null; rep=null; resetLocal(); lastPhase=''; overlayKey=''; deskStage=false; wobj.clear(); wPending[0]=[]; wPending[1]=[];
+  if(net){ hangUp(); net=null; } setScreen(false); setPad(); sim=null; bot=null; rep=null; resetLocal(); lastPhase=''; overlayKey=''; deskStage=false; wobj.clear(); wPending[0]=[]; wPending[1]=[];
   local=[false,false]; ARENA_W=960; ARENA_PLATS=PLATS; view=createDuel().snapshot(); buildDesks(); buildControls(); $('overlay').hidden=true;
   replayBuild(); const say=t=>{ $('repMsg').textContent=t; };
   if(!/^[A-Z]{4}$/.test(code)){ say('A replay link ends in a room\u2019s four letters, like duel?replay=ABCD.'); return; }
@@ -2784,7 +2898,7 @@ $('drawHere').onclick=()=>{ if(net&&net.watch) setMode('bot'); };
 function setPad(){
   const on=!RETRO&&!!(net&&net.side>=0&&net.screen); if(on===padView) return;      // the retro desktop shows everything itself
   padView=on; document.body.classList.toggle('handheld',on); lastPhase=''; overlayKey='';
-  const w=$('who'); w.hidden=!on; if(on){ w.textContent='You are '+NAME[net.side]; w.style.background=PCOL[net.side]; }
+  const w=$('who'); w.hidden=!on; if(on){ w.textContent='You are '+NAME[net.side]+linkNote(); w.style.background=PCOL[net.side]; }
 }
 // The game has two ways to play, both with this device as the screen and phones or tablets as the controllers:
 // one player against the bot, or two players against each other.
@@ -2799,7 +2913,7 @@ function setBrain(b){
 }
 $('cpuBrain').onclick=()=>setBrain(cpuBrain==='net'?'classic':'net');
 function startMatch(bot){
-  wantBot=!!bot; if(mode!=='online') setMode('online'); else if(net){ net.es.close(); net=null; resetLocal(); lastPhase=''; overlayKey=''; }
+  wantBot=!!bot; if(mode!=='online') setMode('online'); else if(net){ hangUp(); net=null; resetLocal(); lastPhase=''; overlayKey=''; }
   history.replaceState(null,'',location.pathname+location.search); createRoom(true);
 }
 async function createRoom(watch){
@@ -2808,12 +2922,13 @@ async function createRoom(watch){
   catch(e){ alert('Could not create a room: '+(e.message||'the server did not answer')); }
 }
 function joinRoom(code,watch){
-  if(net) net.es.close();
+  hangUp();
   watch=!!watch; try{ if(watch) sessionStorage.setItem('dd-watch',code); else sessionStorage.removeItem('dd-watch'); }catch(e){}
-  const es=new EventSource('/duel/events?room='+code+'&id='+cid+(watch?'&watch=1':'')); net={code,es,side:-1,watch,bot:false,screen:false,present:[false,false],seq:Date.now(),gone:false};
+  // line: the link to the room (openLink), opened at the end of this function; link: which one is in use, 'sse', 'ws' or '' while connecting.
+  const me={code,line:null,link:'',side:-1,watch,bot:false,screen:false,present:[false,false],seq:Date.now(),gone:false}, subs=[]; net=me;
   setScreen(watch); setPad();
   history.replaceState(null,'','#'+code); resetLocal();
-  const on=(name,fn)=>es.addEventListener(name,e=>{ if(net&&net.es===es) fn(JSON.parse(e.data)); });
+  const on=(name,fn)=>subs.push([name,fn]);      // what to do with each event of the room, whichever link brings it
   on('hello',d=>{ net.side=d.side; net.bot=!!d.bot; net.brain=d.brain||''; local=[d.side===0,d.side===1]; buildDesks(); buildControls(); lastPhase=''; setPad(); });
   // Once a big screen has been seen the player view stays, so the screen reloading does not flip the layout mid-fight.
   on('players',d=>{ net.present=d.present; net.bot=!!d.bot; net.screen=net.screen||!!d.screen; setPad(); });
@@ -2823,8 +2938,17 @@ function joinRoom(code,watch){
   on('forge',setForge);      // the room's rules: being written, or written (see RuleForge)
   on('plats',d=>{ if(!(deskLike()&&deskEdges&&net.watch)) ARENA_PLATS=d.plats||PLATS; });
   on('hello',()=>{ deskSent=''; rLayoutSent=''; rEdgesSent=''; deskTerrain(); });
-  on('gone',()=>{ net.gone=true; es.close(); });
+  on('gone',()=>{ net.gone=true; hangUp(); });
+  const q='room='+code+'&id='+cid+(watch?'&watch=1':'');
+  me.line=openLink({param:NET_LINK,wsUrl:(location.protocol==='https:'?'wss://':'ws://')+location.host+'/duel/ws?'+q,sseUrl:'/duel/events?'+q,names:[...new Set(subs.map(x=>x[0]))],
+    emit:(name,d)=>{ if(net===me) for(const [n,fn] of subs) if(n===name) fn(d); },
+    WebSocket:window.WebSocket,EventSource:window.EventSource,Wire:window.Wire,now:()=>performance.now(),setTimeout:(f,ms)=>setTimeout(f,ms),clearTimeout:t=>clearTimeout(t),
+    onLink:l=>{ me.link=l; if(net===me&&padView) $('who').textContent='You are '+NAME[me.side]+linkNote(); }});
 }
+// Closes the link to the room this page is in, if it has one.
+function hangUp(){ if(net&&net.line) net.line.close(); }
+// With ?net= in the address, a player's badge also says which link the device is on.
+function linkNote(){ return NET_LINK&&net&&net.link?' \u00b7 '+net.link:''; }
 // The art board and everything drawn in it. Shapes arrive once, with their strokes; after that only positions change.
 function worldEvent(e){
   const col=s=>s>=0?PCOL[s]:'#888', P2=st=>st.map(p=>({x:p[0],y:p[1]}));
@@ -3118,7 +3242,7 @@ function retroSync(menu){
   Q('#score').textContent=NAME[0]+' '+v.wins[0]+' : '+v.wins[1]+' '+NAME[1]+(v.phase==='fight'&&!v.practice?'  \u00b7  '+Math.ceil(v.t)+'s':v.phase==='draw'?'  \u00b7  draw '+Math.max(0,Math.ceil(v.t)):'');
   Q('#playhead').style.left=(Math.floor(FXI.S.time*12)%200*9)+'px';
   document.querySelectorAll('#hacks > div').forEach((d,i)=>d.classList.toggle('sel',i===FXI.hackSel));
-  const mtxt='Mode: '+({bot:'Player vs CPU',practice:'Practice','2p':'2 players',online:bigScreen?'Big screen':'Online'}[mode])+' \u00b7 NetLink: '+(net?'room '+net.code:'local sim');
+  const mtxt='Mode: '+({bot:'Player vs CPU',practice:'Practice','2p':'2 players',online:bigScreen?'Big screen':'Online'}[mode])+' \u00b7 NetLink: '+(net?'room '+net.code+(net.line?' \u00b7 '+linkText(net.line.stats()):''):'local sim');      // the link: which one, round trip, jitter, kB/s arriving
   if(Q('#st-net').textContent!==mtxt) Q('#st-net').textContent=mtxt;
   const sh=sheetOn(); document.body.classList.toggle('sheetstage',sh);
   Q('#inkos .titlebar span').textContent=(sh?'Granola Sheets 97 \u2014 Anthropik_IPO_model_v7_FINAL_final(2).xls  [':'InkShop 2.0 \u2014 arena.ink  [')+mtxt.slice(6).split(' \u00b7 ')[0]+']';
@@ -3184,7 +3308,7 @@ function syncUI(){
     o.innerHTML=`<div class="box"><h2>That room has closed</h2><p>Rooms close after a while with nobody in them.</p><button class="primary" id="mkRoom">Create a new room</button></div>`;
     $('mkRoom').onclick=()=>{ const w=net.watch; net=null; history.replaceState(null,'',location.pathname); createRoom(w); };
   }else if(key.startsWith('wait')){
-    const isLocal=/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname), base=isLocal&&serverInfo.lanUrl?serverInfo.lanUrl:location.origin, url=base+'/duel#'+net.code;
+    const isLocal=/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname), base=isLocal&&serverInfo.lanUrl?serverInfo.lanUrl:location.origin, url=base+'/duel'+(NET_LINK?'?net='+NET_LINK:'')+'#'+net.code;      // devices that scan a ?net=ws screen come in on a socket too
     if(padView){ o.innerHTML=`<div class="box"><h2>Waiting for ${NAME[1-net.side]} to scan the big screen</h2><p style="margin:0">You can start drawing now.</p></div>`; return; }
     const head=net.watch?`<h2>Scan to play · room <span class="code">${net.code}</span></h2>
       <div class="seats">${[0,1].map(s=>`<span class="${net.present[s]?'in':''}" style="${net.present[s]?'background:'+PCOL[s]:''}">${NAME[s]}: ${net.bot&&s===1?(net.brain==='net'?'the trained bot ✓':'the bot ✓'):net.present[s]?'joined ✓':'waiting…'}</span>`).join('')}</div>

@@ -1,6 +1,6 @@
 // Doodle Duel server routes: serves duel.html, reads drawn items with OpenAI, and runs online duel rooms.
 // Loaded by server.js. The match rules come from the marked block in duel.html, so there is one copy of them.
-const fs=require('fs'), path=require('path');
+const fs=require('fs'), path=require('path'), WS=require('./ws.js'), Wire=require('./wire.js');
 
 const PROMPT="You are the referee of a stick-figure fighting game. The attached image is a quick doodle a player drew as their fighter's weapon or ability. It can be anything at all: a real weapon, a tool, an animal, food, furniture, a vehicle, a made-up thing. Work out what it is, then decide how a fighter would use THAT object in a fight.\nReply with JSON only, no other text:\n{\"name\":\"2-3 word name of what was drawn\",\"kind\":\"melee|ranged|bomb|shield|dash|heal\",\"style\":\"blade|spear|hammer|fist|dual|bow|gun|staff|hurl|akimbo\",\"element\":\"fire|water|plant|none\",\"power\":1-10,\"range\":1-10,\"speed\":1-10,\"traits\":[\"first choice\",\"second choice\"]}\nkind: \"melee\" for anything swung, stabbed or punched with (sword, axe, club, whip, chainsaw, fish, frying pan, guitar). \"ranged\" for anything that shoots, or that you would throw (gun, bow, wand, laser, shuriken, banana, ball, bird). \"bomb\" for anything that explodes or splashes over an area (bomb, grenade, flask, meteor, firework). \"shield\" for anything that blocks or protects (shield, wall, armour, helmet, umbrella, door, tree, rock, fence, box, barrel, or anything big you could hide behind). \"dash\" for anything that makes you fast or lets you fly (wings, rocket, boots, skateboard, car, horse, lightning bolt). \"heal\" for anything that restores health (heart, food, drink, bandage, medkit).\nstyle is how it is fought with. For melee: \"blade\" for anything with an edge (sword, knife, axe, saw, scissors); \"spear\" for long thin things that thrust or lash (spear, lance, trident, pole, whip, chain, fishing rod); \"hammer\" for heavy blunt things (hammer, mace, club, bat, frying pan, guitar, chair, big fish); \"fist\" for things worn on hands or feet (gloves, claws, boots, paws); \"dual\" when the drawing shows TWO separate similar one-handed weapons, one for each hand (twin swords, a pair of daggers, two axes, sai, sickles). For ranged: \"bow\" for bows, crossbows and slingshots; \"gun\" for anything with a trigger or barrel (gun, cannon, laser, hose); \"staff\" for magic (staff, wand, orb, spell book, crystal); \"hurl\" for anything thrown by hand (shuriken, knife, boomerang, rock, card, banana, ball, pie); \"akimbo\" when the drawing shows TWO separate similar one-handed guns (two pistols, twin revolvers, a pair of blasters). Count the objects: one weapon is never \"dual\" or \"akimbo\", however many parts or blades it has, and two crossed or side-by-side copies of the same weapon always are. For other kinds use \"\".\nelement is \"fire\" for flames, heat or lava, \"water\" for water or ice, \"plant\" for leaves, wood or vines, otherwise \"none\". Ink colour is a hint (red fire, blue water, green plant) but the content of the drawing decides.\npower, range and speed describe the object itself, not how well it is drawn: power is how hard one hit lands (a sledgehammer 9, a feather 1), range is how far it reaches or flies (a sniper rifle 10, a spear 7, a knife 2), speed is how quickly it can be used again (a dagger 9, a cannon 2). Make them differ: a real object is never 5, 5, 5. The game rescales them to a fixed total, so only the proportions matter.\ntraits: the two that best suit the object, best first, chosen from: pierce (gets through shields: drills, needles, lasers), heavy (huge knockback: hammers, cannons, trucks), flurry (hits twice: chainsaws, claws, twin blades, machine guns), pull (drags the enemy in: hooks, whips, magnets, lassos, vacuums), blast (bursts on hit: rockets, fireworks, magic), launch (pops the enemy upward: springs, uppercuts, geysers, shovels), lucky (sometimes double damage: dice, cards, anything silly), guard (melee only, protects while swinging: big or armoured weapons), boomerang (ranged only, comes back: boomerangs, yo-yos, bananas, frisbees), bounce (ranged and bomb only, bounces: balls, rubber things, eggs), homing (ranged only, seeks the enemy: birds, bees, missiles, magic), swift (makes you run faster: light or sporty things), thorns (shield only, hurts attackers: spikes, cactus), bubble (shield only, covers all sides: domes, bubbles, shells), cleanse (heal only, cures burning and slowing: medicine, water), feast (heal only, an extra helping: big meals).\nAlways pick the closest fit, even for a scribble. Never refuse and never leave a field out.";
 
@@ -118,17 +118,60 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
     if(bot){ room.players.set('(bot)',1); room.bot=makeCpu(room); armBot(room); }
     rooms.set(code,room); return room;
   }
-  const sse=(res,event,data)=>res.write('event: '+event+'\ndata: '+JSON.stringify(data)+'\n\n');
-  const broadcast=(room,event,data)=>{ for(const c of room.clients) sse(c.res,event,data); };
+  // The one place an event leaves for a device, whichever way the device is connected. On the event stream (c.res) it
+  // is a named event. On a socket (c.ws) it is a text frame {"ev":name,"data":...}, except the match's state, which goes
+  // as a binary frame: the whole snapshot, or only what has changed since the last one the device said it holds
+  // (c.wire, see wire.js). An event sent from anywhere in this file therefore reaches both kinds of device.
+  // A snapshot shares lists with its match, which goes on changing them, so sockets patch against a copy of it. The
+  // copy is made once per snapshot, however many sockets it goes to.
+  const frozen=(()=>{ let of=null, copy=null; return snap=>snap===of?copy:(of=snap,copy=Wire.clone(snap)); })();
+  const tell=(c,event,data)=>{
+    if(!c.ws) c.res.write('event: '+event+'\ndata: '+JSON.stringify(data)+'\n\n');
+    else if(event==='state') c.ws.send(c.wire.frame(frozen(data),Date.now()));
+    else c.ws.send(JSON.stringify({ev:event,data}));
+  };
+  const broadcast=(room,event,data)=>{ for(const c of room.clients) tell(c,event,data); };
   function present(room){ const p=[false,false]; for(const c of room.clients) if(c.side>=0) p[c.side]=true; if(room.bot) p[1]=true; return p; }
   // Give the bot its two ready-made items for this match and tell every device what they look like.
   function armBot(room){
     D.botLoadout().forEach((b,k)=>{ const it=room.sim.setItem(1,k,b.spec,b.cost); if(!it) return;
-      room.art[1][k]={strokes:b.strokes,ver:it.ver,kind:it.kind,style:it.style}; noteArt(room,1,k); for(const c of room.clients) sse(c.res,'item',{side:1,slot:k,strokes:b.strokes,ver:it.ver,kind:it.kind,style:it.style}); });
+      room.art[1][k]={strokes:b.strokes,ver:it.ver,kind:it.kind,style:it.style}; noteArt(room,1,k); broadcast(room,'item',{side:1,slot:k,strokes:b.strokes,ver:it.ver,kind:it.kind,style:it.style}); });
     room.dirty=true; scheduleForge(room);
   }
   // Who is here: the two seats, and whether a big screen is showing the match (players' devices then act as sketchbook and controller only).
   const roster=room=>({present:present(room),screen:[...room.clients].some(c=>c.watch),bot:!!room.bot});
+  // A device arrives in a room, on the event stream (link is {res}) or on a socket ({ws, wire}). It takes a seat if it
+  // had one or one is free, and is told everything about the match so far.
+  function enter(room,id,watch,link){
+    // A big screen (watch) shows the match without taking a player's seat; it may ask for a rematch.
+    let side=watch?-1:room.players.get(id);
+    if(watch) room.watchers.add(id);
+    else if(side===undefined){
+      const taken=[...room.players.values()];
+      side=!taken.includes(0)?0:(!taken.includes(1)?1:-1);
+      if(side>=0) room.players.set(id,side);
+    }
+    const client=Object.assign({id,side,seq:-1,watch},link); room.clients.add(client); room.seen=Date.now();
+    tell(client,'hello',{side,code:room.code,watch,bot:!!room.bot,brain:room.bot?room.brain:''});
+    room.art.forEach((a,s)=>a.forEach((x,slot)=>{ if(x) tell(client,'item',{side:s,slot,strokes:x.strokes,ver:x.ver,kind:x.kind,style:x.style}); }));
+    broadcast(room,'players',roster(room));
+    if(room.plats) tell(client,'plats',{plats:room.plats});
+    if(FORGE_ON&&room.forge.state!=='idle') tell(client,'forge',forgeMsg(room.forge));      // the rules of the match so far, for a device that joins or comes back late
+    tell(client,'state',room.sim.snapshot());
+    return client;
+  }
+  // ...and goes: its connection has closed. A player with no device left lets go of the directions it held.
+  function leave(room,client){
+    if(!room.clients.delete(client)) return;
+    broadcast(room,'players',roster(room));
+    if(client.side>=0&&!present(room)[client.side]) room.sim.setInput(client.side,Object.assign({},room.sim.cnt[client.side],{l:0,r:0,d:0}));
+  }
+  // A controller's buttons, sent by request or over its socket (c: the device's entry in the room, if it has one).
+  // Messages can arrive out of order, so only the newest one counts.
+  function takeInput(room,c,side,body){
+    const seq=+body.seq||0;
+    if(c&&seq>c.seq){ c.seq=seq; (room.heldAt=room.heldAt||[0,0])[side]=(body.l||body.r||body.d)?Date.now():0; (room.lastIn=room.lastIn||[null,null])[side]=body; room.sim.setInput(side,{l:!!body.l,r:!!body.r,d:!!body.d,j:+body.j||0,a:+body.a||0,b:+body.b||0,m:+body.m||0,q:+body.q||0,u:+body.u||0,h:Math.max(0,Math.min(4,body.h|0))}); }
+  }
   // 120 ticks a second (the match steps at 120 Hz); state goes out 60 times a second and screens glide in between. The match only advances while both players are connected.
   setInterval(()=>{
     const now=Date.now();
@@ -145,7 +188,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       if(room.clients.size) room.seen=now; else if(now-room.seen>10*60e3){ shelve(room); rooms.delete(room.code); }
     }
   },8);
-  setInterval(()=>{ for(const room of rooms.values()) for(const c of room.clients) c.res.write(': ping\n\n'); shelf.sweep(Date.now()); },15000);
+  setInterval(()=>{ for(const room of rooms.values()) for(const c of room.clients) if(c.res) c.res.write(': ping\n\n'); shelf.sweep(Date.now()); },15000);      // (sockets are pinged by ws.js)
 
   function cleanPlats(a){
     if(!Array.isArray(a)||a.length>32) return null;
@@ -190,7 +233,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   const handle=async function(req,res,url){
     const p=url.pathname;
     // Animation clip files and the preview lab are plain static files.
-    if(req.method==='GET'&&(/^\/anim\/[a-z_]+\.js$/.test(p)||p==='/anim-lab.html'||p==='/inkshop.js'||p==='/forgescript.js'||p==='/sfx.js'||p==='/inkshop.css')){      // forgescript.js: the rule language, for matches simulated in the page
+    if(req.method==='GET'&&(/^\/anim\/[a-z_]+\.js$/.test(p)||p==='/anim-lab.html'||p==='/inkshop.js'||p==='/forgescript.js'||p==='/wire.js'||p==='/sfx.js'||p==='/inkshop.css')){      // forgescript.js: the rule language, for matches simulated in the page; wire.js: state frames, for a page on a socket
       const file=path.join(__dirname,p.slice(1));
       if(!fs.existsSync(file)){ res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-cache'}); res.end('/* '+p+' is not written yet */'); return true; }
       res.writeHead(200,{'Content-Type':(p.endsWith('.html')?'text/html':p.endsWith('.css')?'text/css':'text/javascript')+'; charset=utf-8','Cache-Control':'no-cache'}); fs.createReadStream(file).pipe(res); return true;
@@ -231,27 +274,9 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
     if(req.method==='GET'&&p==='/duel/events'){
       const room=rooms.get(String(url.searchParams.get('room')||'').toUpperCase()), id=String(url.searchParams.get('id')||'').slice(0,40);
       res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});
-      if(!room||!id){ sse(res,'gone',{}); res.end(); return true; }
-      // A big screen (watch=1) shows the match without taking a player's seat; it may ask for a rematch.
-      const watch=url.searchParams.get('watch')==='1';
-      let side=watch?-1:room.players.get(id);
-      if(watch) room.watchers.add(id);
-      else if(side===undefined){
-        const taken=[...room.players.values()];
-        side=!taken.includes(0)?0:(!taken.includes(1)?1:-1);
-        if(side>=0) room.players.set(id,side);
-      }
-      const client={res,id,side,seq:-1,watch}; room.clients.add(client); room.seen=Date.now();
-      sse(res,'hello',{side,code:room.code,watch,bot:!!room.bot,brain:room.bot?room.brain:''});
-      room.art.forEach((a,s)=>a.forEach((x,slot)=>{ if(x) sse(res,'item',{side:s,slot,strokes:x.strokes,ver:x.ver,kind:x.kind,style:x.style}); }));
-      broadcast(room,'players',roster(room));
-      if(room.plats) sse(res,'plats',{plats:room.plats});
-      if(FORGE_ON&&room.forge.state!=='idle') sse(res,'forge',forgeMsg(room.forge));      // the rules of the match so far, for a device that joins or comes back late
-      sse(res,'state',room.sim.snapshot());
-      req.on('close',()=>{
-        room.clients.delete(client); broadcast(room,'players',roster(room));
-        if(side>=0&&!present(room)[side]) room.sim.setInput(side,Object.assign({},room.sim.cnt[side],{l:0,r:0,d:0}));
-      });
+      if(!room||!id){ tell({res},'gone',{}); res.end(); return true; }
+      const client=enter(room,id,url.searchParams.get('watch')==='1',{res});
+      req.on('close',()=>leave(room,client));
       return true;
     }
     if(req.method==='POST'&&p==='/duel/act'){
@@ -282,10 +307,8 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
         S.stroke(side,a.map(q=>({x:Math.max(-200,Math.min(8000,q[0])),y:Math.max(-4000,Math.min(200,q[1]))})),String(body.col||'#111111').slice(0,9)); send(200,{}); return true;
       }
       if(body.type==='input'){
-        // Requests can arrive out of order, so only the newest one counts.
-        const seq=+body.seq||0; let c=null; for(const x of room.clients) if(x.id===id) c=x;
-        if(c&&seq>c.seq){ c.seq=seq; (room.heldAt=room.heldAt||[0,0])[side]=(body.l||body.r||body.d)?Date.now():0; (room.lastIn=room.lastIn||[null,null])[side]=body; S.setInput(side,{l:!!body.l,r:!!body.r,d:!!body.d,j:+body.j||0,a:+body.a||0,b:+body.b||0,m:+body.m||0,q:+body.q||0,u:+body.u||0,h:Math.max(0,Math.min(4,body.h|0))}); }
-        send(200,{}); return true;
+        let c=null; for(const x of room.clients) if(x.id===id) c=x;
+        takeInput(room,c,side,body); send(200,{}); return true;
       }
       if(body.type==='item'){ const [code,out]=await makeItem(room,side,body); send(code,out); return true; }
       if(body.type==='stock'){
@@ -321,6 +344,27 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
     send(404,{error:'not found'}); return true;
   };
   handle.brains=()=>NET?['classic','net']:['classic'];      // which CPUs a bot room can have (for /info and the menu)
+  // The socket way into a room: GET /duel/ws?room=CODE&id=CLIENT[&watch=1], upgraded to a WebSocket (server.js calls
+  // this with its http server). Down it comes everything the event stream carries. Up it come text frames: the
+  // controller's buttons {"t":"input","seq":n,...buttons}, which state the device holds {"t":"ack","ack":n} (an input
+  // may carry "ack" as well), and {"t":"ping","ms":x}, answered with the event pong {ms:x} so the page can time the
+  // round trip. Everything else a device does stays on POST /duel/act.
+  handle.sockets=server=>WS.attach(server,'/duel/ws',(sock,req)=>{
+    const url=new URL(req.url,'http://x'), room=rooms.get(String(url.searchParams.get('room')||'').toUpperCase()), id=String(url.searchParams.get('id')||'').slice(0,40);
+    if(!room||!id){ tell({ws:sock},'gone',{}); sock.close(); return; }
+    const before=[...room.clients].filter(c=>c.ws&&c.id===id);
+    const client=enter(room,id,url.searchParams.get('watch')==='1',{ws:sock,wire:Wire.createSender()});
+    for(const c of before){ leave(room,c); c.ws.close(); }      // the same device again (it reloaded, or woke from sleep): its old socket goes, its seat stays taken throughout
+    sock.on('message',(data,isBinary)=>{
+      try{
+        const m=isBinary?null:JSON.parse(data); if(!m||typeof m!=='object') return;
+        if(m.ack!==undefined) client.wire.ack(m.ack);
+        if(m.t==='input'){ if(client.side>=0&&room.clients.has(client)) takeInput(room,client,client.side,m); }
+        else if(m.t==='ping') tell(client,'pong',{ms:+m.ms||0});
+      }catch(e){}      // not JSON: nothing a device of ours sends
+    });
+    sock.on('close',()=>leave(room,client));
+  });
   return handle;
 };
 
