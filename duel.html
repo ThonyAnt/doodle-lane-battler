@@ -25,6 +25,7 @@ h1{font-family:var(--display);font-weight:400;font-size:32px;line-height:1;margi
 .controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-left:auto}
 .seg{display:flex;border:2px solid var(--ink);border-radius:10px;overflow:hidden;background:var(--card)}
 .seg button{border:0;background:transparent;border-radius:0;padding:6px 12px}
+.ultlock .tc button{filter:grayscale(1);opacity:.4;transition:opacity .12s}
 .seg .herelabel{align-self:center;padding:0 4px 0 10px;font-size:13px;color:var(--muted);white-space:nowrap}
 .seg button[aria-pressed="true"]{background:var(--ink);color:#fff}
 button{font:600 14px var(--body);color:var(--ink);background:var(--card);border:2px solid var(--ink);border-radius:10px;padding:6px 14px;cursor:pointer}
@@ -749,14 +750,14 @@ const MOVES={
   ult_akimbo:{dur:1.2,ult:1,cast:0.45,end:1}
 };
 // Every weapon style has its own ultimate. They all cost a full overdrive bar and are all worth FLEET_DMG if everything
-// lands, so they differ in shape and in how the foe gets out of the way, not in strength. `move` is the casting move,
+// lands, so they differ in shape and in where the foe has to be standing to be caught, not in strength (the foe is held while one plays; see ultLock). `move` is the casting move,
 // `kind` picks the behaviour in ultStep, min / max are the distances at which the bot will try it. Drawings that are
 // not weapons (bomb, shield, wings, snack) use the blade's.
 //   fan     copies gather in a fan overhead and fly at the foe one by one, curving a little
 //   rain    copies line up high above the foe and dive at wherever the foe is, one by one, without curving
 //   ring    copies circle the fighter and all let go at once, curving
 //   meteor  one big orb drops on the spot where the foe stood at the cast and bursts
-//   quake   a leap and a slam; a shock wave runs along the ground both ways (jump it)
+//   quake   a leap and a slam; a shock wave runs along the ground both ways (it passes under a foe who was in the air when it started)
 //   rush    a lunge and eight quick blows up close
 //   cross   three blinks through the foe, a cut each time, if the foe is near enough
 //   pierce  one huge arrow straight ahead
@@ -772,7 +773,11 @@ const ULTS={
   akimbo:{name:'CROSSFIRE',move:'ult_akimbo',kind:'fire',min:60}
 };
 const ultOf=it=>(it&&ULTS[it.style])||ULTS.blade;
-const FLEET_DMG=30, FLEET_GAP=0.09, FLEET_SPEED=1150;   // damage of the whole volley (shared between the copies), time between launches, flight speed
+// Pacing of an ultimate. It is announced while everything holds still (ULT_INTRO), the casting move then plays slower than
+// it was animated (ULT_RATE; the clip and its marks are untouched), every blow that lands holds the picture for a beat
+// (ULT_BEAT) so the blows read one by one, and the last one holds it much longer (ULT_FINAL) under the screen flash.
+const ULT_INTRO=0.85, ULT_RATE=0.8, ULT_BEAT=0.09, ULT_FINAL=0.55;
+const FLEET_DMG=30, FLEET_GAP=0.12, FLEET_SPEED=1150;   // damage of the whole volley (shared between the copies), time between launches, flight speed
 // What a melee or ranged drawing is fought with. Each style has its own moves and animation set.
 const RUN_SPEED=330;   // top ground speed in px/s; fighters reach it in about an eighth of a second
 const MELEE_STYLES=['blade','spear','hammer','fist','dual'], RANGED_STYLES=['bow','gun','staff','hurl','akimbo'];
@@ -929,6 +934,14 @@ function createDuel(opts){
   // fighter still takes damage but is not staggered, knocked back, flung, disarmed or stunned out of it, and cannot swap
   // their own weapon or dash away by drawing. Only a knockout ends it early.
   const casting=f=>!!(f.act&&MOVES[f.act.m].ult);
+  // An ultimate stops the fight for everyone else. From the moment it starts until its last piece has landed or faded,
+  // the other fighter hangs exactly where they are (mid-air, mid-swing), their shots hang in the air, drawn shapes, hacks
+  // and the stage wait, and the round clock stops. Nothing either player presses or draws in that time counts. Only the
+  // caster and what the ultimate throws keep moving. Blows that land still take health at once; the knock-back from the
+  // last one is held and sends the other fighter flying when time starts again. S.ult is whose ultimate is playing (-1 if
+  // none), S.ultT how long it has run, S.ultDmg what it has done so far.
+  S.ult=-1; S.ultT=0; S.ultDmg=0;
+  const ultLock=()=>{ for(const f of S.f) if(casting(f)&&f.hp>0) return f.side; const p=S.pr.find(p=>p.tr==='fleet'); return p?p.side:-1; };
   S.sheet=(opts&&opts.stage==='sheet')?{}:null;        // the spreadsheet stage (see sheetTick)
   S.inkLeft=side=>Math.round(INK_MAX-S.items[side].reduce((n,it)=>n+(it?it.cost:0),0));
   S.setItem=(side,k,spec,cost)=>{
@@ -973,6 +986,7 @@ function createDuel(opts){
   // l, r, d are held buttons; j, a, b are running press counts so a quick tap is never lost.
   S.setInput=(side,i)=>{
     const f=S.f[side], inp=S.inp[side], c=S.cnt[side]; inp.l=i.l?1:0; inp.r=i.r?1:0; inp.d=i.d?1:0;
+    if(S.ult>=0){ for(const k of ['j','a','b','m','q','u']) if(i[k]!==undefined) c[k]=i[k]; return; }      // an ultimate is playing: nothing pressed counts
     if(i.j!==c.j){ c.j=i.j; if(S.phase==='fight') f.jq=Math.min(2,f.jq+1); }
     if(i.a!==c.a){ c.a=i.a; f.buf[0]=0.32; }
     if(i.b!==c.b){ c.b=i.b; f.buf[1]=0.32; }
@@ -983,13 +997,14 @@ function createDuel(opts){
   // The ultimate of the held drawing (or of the other one, if that hand is empty); see ULTS. Where it throws copies of the
   // drawing, more ink means more copies, but the total damage is fixed, so ink buys spread and spectacle, not damage.
   S.startUlt=side=>{
-    const f=S.f[side], e=S.f[1-side]; if(S.phase!=='fight'||f.od<100||f.hp<=0||f.stun>0||f.hurt>0||f.trap>0||f.dash>0||(f.act&&MOVES[f.act.m].ult)) return false;
+    const f=S.f[side], e=S.f[1-side]; if(S.phase!=='fight'||S.ult>=0||f.od<100||f.hp<=0||f.stun>0||f.hurt>0||f.trap>0||f.dash>0||(f.act&&MOVES[f.act.m].ult)) return false;
     const k=S.items[side][f.held]?f.held:S.items[side][1-f.held]?1-f.held:-1; if(k<0) return false;
     const it=S.items[side][k], U=ultOf(it), copies=Math.max(3,Math.min(7,3+Math.floor(it.cost/12))), n={fan:copies,rain:copies,ring:copies+1,rush:8,cross:3,storm:12,fire:6}[U.kind]||1;
     f.od=0; f.held=k; f.shield=0; f.buf[0]=f.buf[1]=0; if(e.x!==f.x) f.face=Math.sign(e.x-f.x);
-    f.act={k,m:U.move,u:U.kind,v:0,t:0,dur:MOVES[U.move].dur,rate:1,done:0,lunged:false,n};
-    S.stop=Math.max(S.stop,0.3);                                              // the world holds its breath
-    S.events.push({e:'ult',side,x:Math.round(f.x),y:Math.round(f.y),n},{e:'flash',text:U.name,sub:(side?'Red':'Blue')+'’s '+it.name,side},{e:'log',side,msg:'✦ '+U.name+' — '+it.name});
+    f.act={k,m:U.move,u:U.kind,v:0,t:0,dur:MOVES[U.move].dur,rate:ULT_RATE,done:0,lunged:false,n};
+    S.stop=Math.max(S.stop,ULT_INTRO);                                        // the world holds its breath while it is announced
+    S.ult=side; S.ultT=0; S.ultDmg=0; e.buf[0]=e.buf[1]=0; e.jq=0; e.mbuf=0;      // and stays stopped for the other fighter until it is over (see ultLock)
+    S.events.push({e:'ult',side,x:Math.round(f.x),y:Math.round(f.y),n,name:U.name,sub:(side?'Red':'Blue')+'’s '+it.name,slot:k,intro:ULT_INTRO},{e:'log',side,msg:'✦ '+U.name+' — '+it.name});
     return true;
   };
   // For the move tester page (/moves): start any ordinary move outright, whatever the fighter is doing. Practice only, so
@@ -1019,11 +1034,12 @@ function createDuel(opts){
     } else if(el==='water') kx*=1.45;
     // A hit with no stun only nudges: it adds to the target's speed instead of replacing it, and does not lift them.
     const firm=casting(t);   // a fighter casting an ultimate takes the damage and stands their ground
-    t.hp-=dmg; if(!firm){ if(stun>0) t.vx=kx; else{ t.vx+=kx*0.25; ky=0; } if(ky>0){ t.vy=ky; t.ground=false; } else if(ky<0&&!t.ground) t.vy=ky; }
+    t.hp-=dmg; if(tr==='fleet') S.ultDmg+=dmg; if(!firm){ if(stun>0) t.vx=kx; else{ t.vx+=kx*0.25; ky=0; } if(ky>0){ t.vy=ky; t.ground=false; } else if(ky<0&&!t.ground) t.vy=ky; }
     // Hit-stop: a hit that staggers freezes the whole fight (both fighters, shots, the clock) for a few frames, longer the
     // harder it lands. Nothing moves, so it changes how a hit feels and not who wins. w is the hit's weight, 0 to 1.
     const w=blocked?0:Math.min(1,dmg/20+(fin?0.3:0));
     if(stun>0&&!blocked) S.stop=Math.max(S.stop,0.03+0.07*w);
+    if(tr==='fleet'&&!blocked) S.stop=Math.max(S.stop,fin?ULT_FINAL:ULT_BEAT);       // an ultimate's blows land one beat at a time
     if(!blocked){
       if(stun>0&&!firm){ t.hurt=Math.max(t.hurt,stun); t.act=null; t.dash=0; }
       if(el==='fire'){ t.burn=2; t.burnDps=dmg*0.15; }
@@ -1191,8 +1207,9 @@ function createDuel(opts){
     }
     if(land){ f.vy=0; f.jumps=0; } f.ground=land;
   }
-  function projectiles(dt){
+  function projectiles(dt,only){
     for(const p of S.pr){
+      if(only>=0&&!(p.tr==='fleet'&&p.side===only)) continue;     // an ultimate is playing: everything else hangs in the air
       const e=S.f[1-p.side];
       if(p.hover){
         // A copy from the ultimate, waiting in the fan. ang is where it points (0 = right, positive = up).
@@ -1296,7 +1313,7 @@ function createDuel(opts){
     fx('obj',{o:{id:o.id,kind:o.kind,x:rr(o.x),y:rr(o.y),w:rr(o.w),h:rr(o.h||0),color:o.color,side:o.owner,dyn:o.dyn?1:0,perm:o.life===Infinity?1:0,msg:o.msg,strokes:(o.local||o.strokes||[]).map(st=>st.map(p=>[rr(p.x),rr(p.y)]))}}); return o; };
   /* -- drawing pipeline (his endStroke / finalize / applyGlyph, with ink and ownership kept on the server) -- */
   S.stroke=(side,pts,color)=>{
-    const f=S.f[side]; if(S.phase!=='fight'||f.hp<=0||!Array.isArray(pts)||pts.length<2) return false;
+    const f=S.f[side]; if(S.phase!=='fight'||S.ult>=0||f.hp<=0||!Array.isArray(pts)||pts.length<2) return false;
     const L=pathLen(pts), cost=L*INK_PX; if(L<8) return false;
     if(f.ink2<cost){ floatT(pts[0].x,pts[0].y,'not enough ink',side); return false; }
     f.ink2-=cost; f.od=Math.min(100,f.od+L*0.012);
@@ -1363,7 +1380,7 @@ function createDuel(opts){
   }
   /* -- hacks (his startHack / counterHack / execHack / patchCanvas) -- */
   const counterFor=(f,h)=>h.id==='overclock'?STYLE_COUNTER[itemOf(f.side,f.held).style]||'wall':h.counter;
-  S.startHack=(side,idx)=>{ const f=S.f[side], h=HACKS[idx]; if(!h||S.phase!=='fight'||f.od<100||S.hack||f.hp<=0||f.stun>0) return false;
+  S.startHack=(side,idx)=>{ const f=S.f[side], h=HACKS[idx]; if(!h||S.phase!=='fight'||S.ult>=0||f.od<100||S.hack||f.hp<=0||f.stun>0) return false;
     if(h.id==='breakout'&&(!BOARD||S.broken)){ floatT(f.x,-(f.y+120),BOARD?'already breached':'nothing to break out of',side); return false; }
     f.od=0; S.hack={by:side,target:1-side,def:h,t:h.tele,max:h.tele,counter:counterFor(f,h)}; log(f,'\u25b6 running '+h.name+' \u2014 counter glyph: '+S.hack.counter); return true; };
   function counterHack(f,key){ const h=S.hack, by=S.f[h.by]; S.hack=null; by.stun=1.2; if(!casting(by)) by.act=null; f.od=Math.min(100,f.od+20);
@@ -1494,9 +1511,9 @@ function createDuel(opts){
       S.phase='fight'; S.t=ROUND_TIME-5;
       for(const f of S.f){ f.hp=Math.max(1,f.hp); f.rest=f.hurt>0||f.burn>0?0:(f.rest||0)+dt; if(f.rest>1.5){ f.hp=HP; f.uses=usesFor(f.side); } }
     }
-    if(S.phase==='fight'&&S.stop>0){ S.stop-=dt; return; }   // hit-stop: everything waits, the round clock included
+    if(S.phase==='fight'&&S.stop>0){ S.stop-=dt; if(S.ult>=0) S.ultT+=dt; return; }   // hit-stop: everything waits, the round clock included
     S.t-=dt;
-    if(S.phase==='draw'){ if((S.ready[0]&&S.ready[1])||S.t<=0){ S.phase='count'; S.t=3; S.stop=0; S.f=[fresh(0),fresh(1)]; for(const f of S.f) f.uses=usesFor(f.side); S.pr=[]; resetWorld(); } return; }
+    if(S.phase==='draw'){ if((S.ready[0]&&S.ready[1])||S.t<=0){ S.phase='count'; S.t=3; S.stop=0; S.ult=-1; S.f=[fresh(0),fresh(1)]; for(const f of S.f) f.uses=usesFor(f.side); S.pr=[]; resetWorld(); } return; }
     if(S.phase==='count'){ if(S.t<=0){ S.phase='fight'; S.t=ROUND_TIME; S.events.push({e:'go'}); } return; }
     if(S.phase==='end'){
       if(S.t>0) return;
@@ -1504,9 +1521,23 @@ function createDuel(opts){
       else{ S.round++; S.phase='draw'; S.t=25; S.ready=[false,false]; S.f=[fresh(0),fresh(1)]; S.pr=[]; resetWorld(); }
       return;
     }
-    S.time+=dt; SOL=solids();
-    for(const f of S.f) control(f,dt);
-    projectiles(dt); world(dt); if(S.sheet) sheetTick(dt);
+    const lk=ultLock();
+    if(lk>=0){
+      // An ultimate is playing (see ultLock): only its caster and its own pieces move. Once the casting move itself is over
+      // the caster stands and waits too, so nobody gets free hits on a fighter who cannot answer.
+      S.ult=lk; S.ultT+=dt; S.t+=dt; SOL=solids();
+      const c=S.f[lk], held=S.inp[lk]; if(!casting(c)){ S.inp[lk]={l:0,r:0,d:0}; c.buf[0]=c.buf[1]=0; c.jq=0; c.mbuf=0; }
+      control(c,dt); S.inp[lk]=held; projectiles(dt,lk);
+      if(S.ultT>6) S.pr=S.pr.filter(p=>p.tr!=='fleet');                          // never hold the fight for ever
+    }else{
+      if(S.ult>=0){       // time starts again
+        const e=S.f[1-S.ult]; S.events.push({e:'ultend',side:S.ult,x:Math.round(e.x),y:Math.round(e.y+60),n:Math.round(S.ultDmg)}); S.ult=-1;
+        for(const f of S.f){ f.buf[0]=f.buf[1]=0; f.jq=0; f.mbuf=0; }
+      }
+      S.time+=dt; SOL=solids();
+      for(const f of S.f) control(f,dt);
+      projectiles(dt,-1); world(dt); if(S.sheet) sheetTick(dt);
+    }
     const a=S.f[0], b=S.f[1], d0=a.hp<=0, d1=b.hp<=0;
     if(!S.practice&&(d0||d1||S.t<=0)){
       S.winner=d0&&d1?-1:d0?1:d1?0:Math.abs(a.hp-b.hp)<0.5?-1:a.hp>b.hp?0:1;
@@ -1515,19 +1546,19 @@ function createDuel(opts){
     }
   }
   S.step=dt=>{ acc+=Math.min(0.25,dt); while(acc>=STEP){ acc-=STEP; tick(STEP); } };
-  S.snapshot=()=>({phase:S.phase,t:+S.t.toFixed(2),round:S.round,wins:S.wins,ready:S.ready,winner:S.winner,champ:S.champ,ink:[S.inkLeft(0),S.inkLeft(1)],practice:S.practice,hs:S.phase==='fight'&&S.stop>0?1:0,
+  S.snapshot=()=>({phase:S.phase,t:+S.t.toFixed(2),round:S.round,wins:S.wins,ready:S.ready,winner:S.winner,champ:S.champ,ink:[S.inkLeft(0),S.inkLeft(1)],practice:S.practice,hs:S.phase==='fight'&&S.stop>0?1:0,ul:S.phase==='fight'&&S.ult>=0?[S.ult,+S.ultT.toFixed(2)]:null,
     w:W,board:BOARD,sheet:sheetView(),broken:S.broken&&{t:r1(S.broken.t),hole:S.broken.hole},breached:S.breached,cells:S.cells.filter(c=>c.hp<2&&c.side!=='c').map(c=>[c.id,c.hp]),
     objs:S.objs.map(o=>[o.id,r1(o.x),r1(o.y),o.life===Infinity?-1:r1(o.life)]),fields:S.fields.map(q=>({a:q.a,b:q.b,u:q.u,life:r1(q.life),max:q.max,col:q.col})),
     hack:S.hack&&{by:S.hack.by,target:S.hack.target,name:S.hack.def.name,desc:S.hack.def.desc,t:+S.hack.t.toFixed(2),max:S.hack.max,counter:S.hack.counter},
     fxs:S.effects.map(e=>({by:e.by,target:e.target,counter:e.counter,name:e.name})),
     items:S.items.map(a=>a.map(it=>it&&{name:it.name,kind:it.kind,style:it.style,el:it.el,cost:Math.round(it.cost),ver:it.ver,sz:Math.round(it.st.size),
       pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune})),
-    f:S.f.map(f=>({x:r1(f.x),y:r1(f.y),vx:Math.round(f.vx),vy:Math.round(f.vy),face:f.face,hp:Math.max(0,r1(f.hp)),g:f.ground?1:0,
+    f:S.f.map(f=>({x:r1(f.x),y:r1(f.y),vx:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vx),vy:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vy),face:f.face,hp:Math.max(0,r1(f.hp)),g:f.ground?1:0,
       act:f.act?{k:f.act.k,m:f.act.m+(f.act.v?'_b':''),t:+f.act.t.toFixed(3),r:+f.act.rate.toFixed(2)}:null,
       sh:f.shield>0?1:0,hurt:f.hurt>0?1:0,burn:f.burn>0?1:0,slow:f.slow>0?1:0,dash:f.dash>0?1:0,held:f.held,
       cd:[+(f.cd[0]/f.cdMax[0]).toFixed(2),+(f.cd[1]/f.cdMax[1]).toFixed(2)],uses:f.uses,
       ink2:Math.round(f.ink2),od:Math.round(f.od),stun:f.stun>0?1:0,trap:f.trap>0?1:0,bub:f.bubble?Math.round(f.bubble.r):0,oc:f.overclock>0?1:0,sc:+f.scale.toFixed(2),fl:f.flung>0?1:0})),
-    pr:S.pr.map(p=>({id:p.id,k:p.k,st:p.st,big:p.big,side:p.side,slot:p.slot,x:r1(p.x),y:r1(p.y),vx:Math.round(p.vx),vy:Math.round(p.vy),el:p.el,h:p.hover?1:undefined,a:p.st==='fleet'?+p.ang.toFixed(2):undefined})),
+    pr:S.pr.map(p=>({id:p.id,k:p.k,st:p.st,big:p.big,side:p.side,slot:p.slot,x:r1(p.x),y:r1(p.y),vx:Math.round(p.vx),vy:Math.round(p.vy),el:p.el,h:p.hover?1:undefined,a:p.st==='fleet'?+p.ang.toFixed(2):undefined,z:S.ult>=0&&!(p.tr==='fleet'&&p.side===S.ult)?1:undefined})),
     ev:S.events.splice(0)});
   if(S.sheet) sheetReset();
   return S;
@@ -2069,9 +2100,10 @@ function accept(v){
     // A hit shakes the screen by its weight. Only the ultimate gets an impact frame: when its last copy lands, the picture
     // is inverted for a few frames (on a white stage a plain white flash would not show). Ordinary attacks and knockouts
     // never black the screen out.
-    if(e.e==='hit'){ shake=Math.max(shake,(2.5+9*(e.w||0))*soft); if(e.fin&&e.ult&&now-impactAt>400){ impactAt=now; impactUntil=now+70; } }
+    if(e.e==='hit'){ shake=Math.max(shake,(2.5+9*(e.w||0))*soft); if(e.fin&&e.ult&&now-impactAt>900){ impactAt=now; impactUntil=now+IMPACT_MS; shake=Math.max(shake,18*soft); } }
     if(e.e==='ko') shake=Math.max(shake,14*soft);
-    if(e.e==='ult'){ shake=Math.max(shake,7*soft); FXI.ring(e.x,-(e.y+60),PCOL[e.side]); FXI.burst(e.x,-(e.y+60),PCOL[e.side],22); }
+    if(e.e==='ult'){ ultFx={side:e.side,name:e.name||'ULTIMATE',sub:e.sub||'',slot:e.slot|0,intro:e.intro||0.85,t0:now}; ultEnd=null; shake=Math.max(shake,10*soft); FXI.ring(e.x,-(e.y+60),PCOL[e.side]); FXI.burst(e.x,-(e.y+60),PCOL[e.side],22); }
+    if(e.e==='ultend'){ ultEnd={side:e.side,x:e.x,y:e.y,n:e.n,t0:now}; shake=Math.max(shake,14*soft); }
     if(e.e==='zip') FXI.spark(e.x,-e.y,PCOL[e.side]);
     if(e.e==='del'){ shake=Math.max(shake,12); sheetDels.push({x:e.x,y:e.y,t0:performance.now()}); }
     if(e.e==='hit'&&navigator.vibrate&&local[e.side]&&navigator.userActivation&&navigator.userActivation.hasBeenActive) navigator.vibrate(30);
@@ -2308,6 +2340,7 @@ function retroSync(menu){
 }
 function syncUI(){
   const v=view;
+  document.body.classList.toggle('ultlock',!!(v.ul&&v.phase==='fight'));      // an ultimate is playing: the controller greys out
   for(const s of [0,1]){
     $('hp'+s).style.width=(v.phase==='draw'?100:v.f[s].hp*100/HP)+'%';
     $('pip'+s).textContent='●'.repeat(v.wins[s])+'○'.repeat(Math.max(0,WINS-v.wins[s]));
@@ -2425,8 +2458,10 @@ function pickClip(v,i,st,age){
   return ['idle'];
 }
 function drawFighter(v,i,now,age,dt){
+  // While the other fighter's ultimate plays this one is held: drawn in grey, pose and place frozen.
+  const held=!!(v.ul&&v.ul[0]!==i&&v.phase==='fight'); if(held){ dt=0; age=0; }
   // During hit-stop the fighter who was hit rattles in place and pales.
-  const f=v.f[i], rattle=v.hs&&f.hurt&&v.phase==='fight', col=rattle&&!CALM?PFLASH[i]:PCOL[i], d=f.face, fight=v.phase==='fight', st=anim[i];
+  const f=v.f[i], rattle=v.hs&&f.hurt&&v.phase==='fight', col=rattle&&!CALM?PFLASH[i]:held?'#7b8294':PCOL[i], d=f.face, fight=v.phase==='fight', st=anim[i];
   const x=f.x+(fight?f.vx*age:0)+(rattle?Math.sin(now*0.9)*2.6:0), base=GY-Math.max(0,f.y+(fight&&!f.g?f.vy*age:0));
   const hideItems=net&&v.phase==='draw'&&i!==net.side&&net.side>=0, items=v.items[i];
   const k=f.held, it=hideItems?null:items[k], kind=it?it.kind:'melee';
@@ -2720,6 +2755,87 @@ function sheetFront(v,now){
   }
   L.restore();
 }
+/* ---------- the ultimate, on screen ----------
+   While an ultimate plays (snapshot field ul = [whose, seconds so far]) the rules hold everything but the caster still.
+   The page shows that as a cut scene:
+     - the stage goes dark with a pool of light on the caster, darkest while the ultimate is announced
+     - black bars close in at the top and bottom, with the ultimate's name in the top one for as long as it plays
+     - during the announcement a slanted band crosses the stage carrying the name in large type and the drawing itself,
+       lines streak in toward the caster and rings close on them
+     - the held fighter and held shots are drawn in grey (see drawFighter)
+     - each blow holds the picture for a beat; the last one inverts the screen (see impactOn) and, when time starts
+       again, the total damage is stamped over the fighter who took it
+   Nothing here runs on the desktop overlay's own screen dimming, and people who ask for reduced motion get the dark
+   stage and the name without the streaks, the shake or the flash. */
+let ultFx=null, ultEnd=null;
+const ultRect=v=>{ const b=v.board&&!v.breached&&!v.broken?v.board:null; return b?[b.x0,GY-b.top,b.x1-b.x0,b.top-b.floor]:[-OX-20,-OY/VS-20,VW+40,cv.height/VS+40]; };
+const ease=t=>{ t=Math.max(0,Math.min(1,t)); return 1-Math.pow(1-t,3); };
+// The final blow: the picture is inverted, held, let go for a moment and inverted again. Two flashes in under half a
+// second, which stays inside the usual limit of three a second.
+const IMPACT_MS=460, impactOn=now=>{ const k=now-impactAt; return k>=0&&k<IMPACT_MS&&(k<240||k>=320); };
+function ultBack(v,now){
+  const ul=v.phase==='fight'?v.ul:null, out=!ul&&ultEnd?1-(now-ultEnd.t0)/380:0; if((!ul&&out<=0)||DESK) return;
+  const side=ul?ul[0]:ultEnd.side, c=v.f[side], t=ul?ul[1]:9, intro=ultFx?ultFx.intro:0.85, R=ultRect(v), k=ul?Math.min(1,t/0.14):out;
+  const cx=c.x, cy=GY-c.y-70, deep=(t<intro?0.88:0.7)*k;
+  L.save(); L.beginPath(); L.rect(R[0],R[1],R[2],R[3]); L.clip();
+  const g=L.createRadialGradient(cx,cy,50,cx,cy,460); g.addColorStop(0,'rgba(8,10,28,'+(deep*0.18).toFixed(3)+')'); g.addColorStop(1,'rgba(8,10,28,'+deep.toFixed(3)+')');
+  L.fillStyle=g; L.fillRect(R[0],R[1],R[2],R[3]);
+  if(ul&&!CALM){
+    // streaks: drawn in toward the caster while it is announced, flung outward once it is let go
+    const inward=t<intro, T=now/1000; L.lineCap='round';
+    for(let i=0;i<30;i++){ const a=i*2.399+0.3, p=((T*(inward?1.5:2.3)+i*0.371)%1), r=inward?520-420*p:150+520*p, len=inward?70:110, al=Math.sin(Math.PI*p)*(inward?0.5:0.32);
+      L.strokeStyle=i%4?'rgba(255,255,255,'+al.toFixed(3)+')':PFLASH[side]; L.globalAlpha=i%4?1:al; L.lineWidth=i%3?1.5:3;
+      L.beginPath(); L.moveTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r*0.7); L.lineTo(cx+Math.cos(a)*(r+len),cy+Math.sin(a)*(r+len)*0.7); L.stroke(); }
+    L.globalAlpha=1;
+    // rings closing on the caster as the power gathers
+    if(inward) for(let i=0;i<3;i++){ const p=((t*1.9+i/3)%1); L.strokeStyle=PFLASH[side]; L.globalAlpha=0.75*p; L.lineWidth=2+4*p; L.beginPath(); L.ellipse(cx,cy,150-118*p,(150-118*p)*0.82,0,0,7); L.stroke(); }
+    L.globalAlpha=1;
+  }
+  L.restore();
+}
+function ultFront(v,now){
+  const ul=v.phase==='fight'?v.ul:null;
+  if(ultFx&&!ul&&!ultFx.end&&now-ultFx.t0>250) ultFx.end=now;                 // it is over: the bars open again
+  if(ultFx&&ultFx.end&&now-ultFx.end>320) ultFx=null;
+  if(ultEnd&&now-ultEnd.t0>1300) ultEnd=null;
+  const R=ultRect(v), mx=R[0]+R[2]/2;
+  if(ultFx){
+    const el=(now-ultFx.t0)/1000, side=ultFx.side, col=PCOL[side], pale=PFLASH[side], k=ultFx.end?1-ease((now-ultFx.end)/300):ease(el/0.16), bar=Math.min(46,R[3]*0.09)*k;
+    L.save(); L.beginPath(); L.rect(R[0],R[1],R[2],R[3]); L.clip();
+    if(!DESK){ L.fillStyle='#05060f'; L.fillRect(R[0],R[1],R[2],bar); L.fillRect(R[0],R[1]+R[3]-bar,R[2],bar); }
+    if(bar>20){ L.font='italic 900 '+Math.round(bar*0.5)+'px "Arial Black",Impact,sans-serif'; L.textBaseline='middle'; L.textAlign=side?'right':'left'; L.fillStyle=pale; L.globalAlpha=k;
+      L.fillText('✦ '+ultFx.name,side?R[0]+R[2]-18:R[0]+18,R[1]+bar/2+1); L.globalAlpha=1; }
+    // the announcement: a slanted band with the name on it, in from the caster's side and out the other
+    const intro=ultFx.intro, inK=ease(el/0.16), outK=ease((el-(intro-0.14))/0.2), dir=side?-1:1;
+    if(el<intro+0.08&&!ultFx.end){
+      const h=Math.min(150,R[3]*0.3), cy=R[1]+R[3]*0.42, slide=dir*((1-inK)*-R[2]*1.1+outK*R[2]*1.2), drift=dir*(el-intro/2)*46;
+      L.save(); L.translate(mx+slide,cy); L.transform(1,0,-0.22,1,0,0);
+      L.fillStyle='rgba(6,8,22,.94)'; L.fillRect(-R[2],-h/2,R[2]*2,h);
+      L.fillStyle=col; L.fillRect(-R[2],-h/2-7,R[2]*2,7); L.fillRect(-R[2],h/2,R[2]*2,7); L.fillStyle=pale; L.fillRect(-R[2],-h/2-10,R[2]*2,2); L.fillRect(-R[2],h/2+8,R[2]*2,2);
+      if(!CALM){ L.save(); L.beginPath(); L.rect(-R[2],-h/2,R[2]*2,h); L.clip(); L.lineCap='butt';
+        for(let i=0;i<16;i++){ const y=-h/2+((i*37)%100)/100*h, p=((now/1000*(2.2+i%3)+i*0.29)%1), x=dir*(R[2]*(1-2*p)), w=90+((i*53)%120);
+          L.strokeStyle=i%3?'rgba(255,255,255,.16)':col; L.globalAlpha=i%3?1:0.5; L.lineWidth=i%4?2:5; L.beginPath(); L.moveTo(x,y); L.lineTo(x+dir*w,y); L.stroke(); }
+        L.restore(); L.globalAlpha=1; }
+      const name=ultFx.name, size=Math.max(26,Math.min(h*0.56,R[2]*0.74/(name.length*0.66)));
+      L.font='italic 900 '+Math.round(size)+'px "Arial Black",Impact,sans-serif'; L.textAlign='center'; L.textBaseline='middle';
+      const pop=1+0.5*(1-ease(el/0.22)); L.save(); L.translate(drift,-h*0.08); L.scale(pop,pop);
+      L.fillStyle=col; L.fillText(name,5,5); L.fillStyle='#fff'; L.fillText(name,0,0); L.restore();
+      L.font='600 '+Math.round(Math.max(13,size*0.26))+'px "Arial",sans-serif'; L.fillStyle=pale; L.fillText(ultFx.sub||'',drift*0.6,h*0.3);
+      // the drawing itself, large, at the leading end of the band
+      if(art[side]&&art[side][ultFx.slot]){ L.save(); L.translate(-dir*Math.min(R[2]*0.36,330)+drift*1.6,0); L.fillStyle=pale; L.globalAlpha=0.92; L.beginPath(); L.ellipse(0,0,h*0.62,h*0.44,-0.5*dir,0,7); L.fill(); L.rotate(-0.5*dir); L.globalAlpha=1; sprite(side,ultFx.slot,h*0.95); L.restore(); }      // on a pale plate, so dark ink shows against the dark band
+      L.restore();
+    }
+    L.restore();
+  }
+  // time starts again: what the whole ultimate took, stamped over the fighter who took it
+  if(ultEnd){
+    const el=(now-ultEnd.t0)/1000, x=ultEnd.x, y=GY-ultEnd.y-70, col=PCOL[ultEnd.side];
+    if(!CALM&&el<0.5){ L.save(); L.strokeStyle=PFLASH[ultEnd.side]; L.globalAlpha=1-el/0.5; L.lineWidth=10*(1-el/0.5)+1; L.beginPath(); L.arc(x,GY-ultEnd.y,30+el*520,0,7); L.stroke(); L.restore(); }
+    if(ultEnd.n>0){ const s=el<0.14?2.4-1.4*ease(el/0.14):1, a=el>0.95?Math.max(0,1-(el-0.95)/0.35):1;
+      L.save(); L.translate(x,y-el*22); L.scale(s,s); L.rotate(-0.08); L.globalAlpha=a; L.font='italic 900 58px "Arial Black",Impact,sans-serif'; L.textAlign='center'; L.textBaseline='middle';
+      L.lineWidth=9; L.strokeStyle='#fff'; L.strokeText('−'+ultEnd.n,0,0); L.fillStyle=col; L.fillText('−'+ultEnd.n,0,0); L.restore(); }
+  }
+}
 function render(now){
   const v=view, age=net&&!v.hs?Math.min(0.08,(now-viewAt)/1000):0, dt=Math.max(0,Math.min(0.05,(now-(lastRender||now))/1000)); lastRender=now;
   fitCanvas(); L.setTransform(1,0,0,1,0,0); L.clearRect(0,0,cv.width,cv.height); L.setTransform(VS,0,0,VS,OX*VS,OY);
@@ -2735,14 +2851,11 @@ function render(now){
   if(!v.sheet) for(const p of ARENA_PLATS){ L.beginPath(); L.moveTo(p.x0+(terrain?3:0),GY-p.y+(terrain?0:2)); L.lineTo(p.x1-(terrain?3:0),GY-p.y+(terrain?0:2)); L.stroke(); }
   L.globalAlpha=1; L.strokeStyle='#111';
   worldBack(v,now);
-  // the ultimate's wind-up: the stage darkens around the fighter who is casting it (not on the desktop overlay, where it would dim the user's own screen)
-  if(!DESK) for(const f of v.f){ const UM=f.act&&MOVES[f.act.m.replace(/_b$/,'')], end=UM&&UM.ult?UM.cast+0.33:0; if(!end||f.act.t>=end) continue;
-    const t=f.act.t, a=Math.min(1,t/0.12)*Math.min(1,(end-t)/0.3)*(v.hs?1:0.85), cx=f.x, cy=GY-f.y-70;
-    const g=L.createRadialGradient(cx,cy,40,cx,cy,520); g.addColorStop(0,'rgba(10,12,30,0)'); g.addColorStop(1,'rgba(10,12,30,'+(0.62*a).toFixed(3)+')');
-    L.save(); L.fillStyle=g; if(v.board&&!v.breached&&!v.broken) L.fillRect(v.board.x0,GY-v.board.top,v.board.x1-v.board.x0,v.board.top-v.board.floor); else L.fillRect(-OX-20,-OY/VS-20,VW+40,cv.height/VS+40); L.restore(); }
+  // an ultimate is playing: the stage goes dark around its caster (see ultBack)
+  ultBack(v,now);
   // projectiles
   for(const p of v.pr){
-    const x=p.x+p.vx*age, y=GY-(p.y+p.vy*age), it=v.items[p.side][p.slot];
+    const pa=p.z?0:age, x=p.x+p.vx*pa, y=GY-(p.y+p.vy*pa), it=v.items[p.side][p.slot];
     if(p.k==='bolt'){ const path=wBolt[p.id]=wBolt[p.id]||[]; path.push({x:x+(Math.random()-.5)*12,y:y+(Math.random()-.5)*12}); if(path.length>10) path.shift();
       L.save(); L.strokeStyle='#fc0'; L.shadowColor='#ff0'; L.shadowBlur=12; L.lineWidth=3; if(path.length>1) FXI.strokePath(path); L.restore(); continue; }
     if(p.st==='wave'){   // the hammer's shock wave: a crest of ink running along the ground, with grit thrown up behind it
@@ -2799,7 +2912,8 @@ function render(now){
   }
   L.globalAlpha=1; L.setTransform(VS,0,0,VS,OX*VS,OY);
   // impact frame: put white behind everything, then invert it, so the stage goes black and the ink white for a few frames
-  if(now<impactUntil&&!DESK&&!CALM){ L.save(); const b=v.board&&!v.breached&&!v.broken?v.board:null, R=b?[b.x0,GY-b.top,b.x1-b.x0,b.top-b.floor]:[-OX-20,-OY/VS-20,VW+40,cv.height/VS+40];
+  ultFront(v,now);
+  if(impactOn(now)&&!DESK&&!CALM){ L.save(); const b=v.board&&!v.breached&&!v.broken?v.board:null, R=b?[b.x0,GY-b.top,b.x1-b.x0,b.top-b.floor]:[-OX-20,-OY/VS-20,VW+40,cv.height/VS+40];
     L.fillStyle='#fff'; L.globalCompositeOperation='destination-over'; L.fillRect(R[0],R[1],R[2],R[3]); L.globalCompositeOperation='difference'; L.fillRect(R[0],R[1],R[2],R[3]); L.restore(); }
   // banners
   const banner=(t,size,y,col)=>{ L.font=size+'px "Gochi Hand",cursive'; L.textAlign='center'; L.lineWidth=8; const bx=v.board?(v.board.x0+v.board.x1)/2:ARENA_W/2, by=v.board?y-(v.board.floor+Math.max(0,v.board.top-v.board.floor-330)):y; L.strokeStyle='#fffdf6'; L.strokeText(t,bx,by); L.fillStyle=col||'#1c2541'; L.fillText(t,bx,by); };
@@ -2816,7 +2930,7 @@ function render(now){
 }
 let last=performance.now(), fpsT=0, fpsN=0;
 function frame(now){
-  const dt=Math.min(0.05,(now-last)/1000); last=now;
+  const dt=Math.max(0,Math.min(0.05,(now-last)/1000)); last=now;      // never negative: a late frame must not run the match backwards
   deskSync();
   const ts=LAB?lab.speed:RETRO?FXI.P.speed:1;                                          // his Time scale slider (local matches)
   if(sim&&!deskPaused){ if(bot){ bot(sim,dt*ts); if(sim.phase==='draw'&&!sim.ready[1]) sim.setReady(1); } sim.step(dt*ts); if(LAB) labTick(dt*ts); accept(sim.snapshot()); }
