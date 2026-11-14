@@ -37,12 +37,14 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   const rooms=new Map(), LETTERS='ABCDEFGHJKLMNPQRSTUVWXYZ';
   function newRoom(){
     let code; do{ code=Array.from({length:4},()=>LETTERS[Math.floor(Math.random()*LETTERS.length)]).join(''); }while(rooms.has(code));
-    const now=Date.now(), room={code,sim:D.createDuel(),art:[[null,null],[null,null]],players:new Map(),clients:new Set(),last:now,sent:0,seen:now,dirty:true};
+    const now=Date.now(), room={code,sim:D.createDuel(),art:[[null,null],[null,null]],players:new Map(),watchers:new Set(),clients:new Set(),last:now,sent:0,seen:now,dirty:true};
     rooms.set(code,room); return room;
   }
   const sse=(res,event,data)=>res.write('event: '+event+'\ndata: '+JSON.stringify(data)+'\n\n');
   const broadcast=(room,event,data)=>{ for(const c of room.clients) sse(c.res,event,data); };
   function present(room){ const p=[false,false]; for(const c of room.clients) if(c.side>=0) p[c.side]=true; return p; }
+  // Who is here: the two seats, and whether a big screen is showing the match (players' devices then act as sketchbook and controller only).
+  const roster=room=>({present:present(room),screen:[...room.clients].some(c=>c.watch)});
   // 30 ticks a second. The match only advances while both players are connected.
   setInterval(()=>{
     const now=Date.now();
@@ -112,19 +114,22 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       const room=rooms.get(String(url.searchParams.get('room')||'').toUpperCase()), id=String(url.searchParams.get('id')||'').slice(0,40);
       res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});
       if(!room||!id){ sse(res,'gone',{}); res.end(); return true; }
-      let side=room.players.get(id);
-      if(side===undefined){
+      // A big screen (watch=1) shows the match without taking a player's seat; it may ask for a rematch.
+      const watch=url.searchParams.get('watch')==='1';
+      let side=watch?-1:room.players.get(id);
+      if(watch) room.watchers.add(id);
+      else if(side===undefined){
         const taken=[...room.players.values()];
         side=!taken.includes(0)?0:(!taken.includes(1)?1:-1);
         if(side>=0) room.players.set(id,side);
       }
-      const client={res,id,side,seq:-1}; room.clients.add(client); room.seen=Date.now();
-      sse(res,'hello',{side,code:room.code});
+      const client={res,id,side,seq:-1,watch}; room.clients.add(client); room.seen=Date.now();
+      sse(res,'hello',{side,code:room.code,watch});
       room.art.forEach((a,s)=>a.forEach((x,slot)=>{ if(x) sse(res,'item',{side:s,slot,strokes:x.strokes,ver:x.ver,kind:x.kind,style:x.style}); }));
-      broadcast(room,'players',{present:present(room)});
+      broadcast(room,'players',roster(room));
       sse(res,'state',room.sim.snapshot());
       req.on('close',()=>{
-        room.clients.delete(client); broadcast(room,'players',{present:present(room)});
+        room.clients.delete(client); broadcast(room,'players',roster(room));
         if(side>=0&&!present(room)[side]) room.sim.setInput(side,Object.assign({},room.sim.cnt[side],{l:0,r:0,d:0}));
       });
       return true;
@@ -134,7 +139,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       const room=rooms.get(String(body.room||'').toUpperCase());
       if(!room){ send(404,{error:'That room has closed.'}); return true; }
       const id=String(body.id||''), side=room.players.get(id);
-      if(side===undefined||side<0){ send(403,{error:'You are not a player in this room.'}); return true; }
+      if((side===undefined||side<0)&&!(body.type==='rematch'&&room.watchers.has(id))){ send(403,{error:'You are not a player in this room.'}); return true; }
       const S=room.sim;
       if(body.type==='input'){
         // Requests can arrive out of order, so only the newest one counts.
