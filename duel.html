@@ -1241,17 +1241,17 @@ function createDuel(opts){
   const sheetPush=()=>applyPlats(SP.map(p=>Object.assign({},p)));
   const say=(h,m,c,r)=>{ h.msg=m; h.said=h.t; if(c!==undefined) h.aim={x:(c+0.5)*SHEET_COL,y:(r-0.5)*SHEET_ROW}; };
   const SCRIPT=[
-    [0,   h=>{ SP=[cellAt(1,3,3,'Revenue'),cellAt(6,8,3,'EBITDA'),cellAt(3,6,6,'=SUM(B4:I4)')]; say(h,'=DCF(DoodleCorp)     // ok. focus.',4,6); }],
-    [4,   h=>{ SP.push(cellAt(4,5,1,'growth 40%')); say(h,'growth = 40%. forever. obviously.',4,1); }],
+    [0,   h=>{ SP=[cellAt(1,3,3,'Revenue'),cellAt(6,8,3,'EBITDA'),cellAt(3,6,6,'=NPV(WACC,C17:J17)')]; say(h,'=DCF(Anthropik)     // IPO prices at 9am. focus.',4,6); }],
+    [4,   h=>{ SP.push(cellAt(4,5,1,'40.0%')); say(h,'growth = 40%. forever. obviously.',4,1); }],
     [8,   h=>{ const p=SP.find(p=>p.lb==='Revenue'); if(p) h.move={id:p.id,from:p.x0,to:p.x0+2*SHEET_COL,t0:h.t,dur:1.6}; say(h,'dragging Revenue two columns over...',4,3); }],
-    [12,  h=>{ SP.push(cellAt(6,8,5,'EBITDA (2)')); say(h,'Ctrl+C   Ctrl+V     // nobody checks',7,5); }],
-    [16,  h=>{ SP=SP.filter(p=>p.lb!=='=SUM(B4:I4)'); say(h,'delete row 7. never liked it.',5,6); }],
-    [19,  h=>{ SP.push(cellAt(0,0,2,'1'),cellAt(1,1,4,'2'),cellAt(0,0,6,'3')); say(h,'fill down. looks like a model now.',0,4); }],
+    [12,  h=>{ SP.push(cellAt(6,8,5,'EBITDA (adj.)')); say(h,'Ctrl+C   Ctrl+V     // nobody checks adjusted EBITDA',7,5); }],
+    [16,  h=>{ SP=SP.filter(p=>p.lb!=='=NPV(WACC,C17:J17)'); say(h,'delete the NPV row. never liked it.',5,6); }],
+    [19,  h=>{ SP.push(cellAt(0,0,2,'40.0%'),cellAt(1,1,4,'40.0%'),cellAt(0,0,6,'40.0%')); say(h,'fill down. looks like a model now.',0,4); }],
     [22,  h=>{ say(h,'why is enterprise value NEGATIVE',9,8); }],
     [23.5,h=>{ h.all=1; say(h,'THIS MODEL IS COOKED'); }],
     [24.5,h=>{ h.all=0; SP=[]; fx('quake',{x:rr(W/2),y:0,n:300}); for(let n=0;n<10;n++) h.rain.push({x:50+((n*223)%(W-100)),y:440+n*52,vy:-(240+(n%3)*45)}); say(h,'#REF!   #REF!   #REF!   #REF!'); }],
     [29.5,h=>{ SP=[cellAt(1,3,3,'Revenue'),cellAt(6,8,3,'EBITDA')]; say(h,'Ctrl+Z   Ctrl+Z   Ctrl+Z   Ctrl+Z',4,3); }],
-    [32.5,h=>{ SP.push(cellAt(3,6,6,'Terminal value')); say(h,'ok. terminal value. breathe.',4,6); }],
+    [32.5,h=>{ SP.push(cellAt(3,6,6,'=J16*(1+g)/(WACC-g)')); say(h,'ok. terminal value. breathe.',4,6); }],
     [36.5,h=>{ say(h,'...are there two guys FIGHTING in my model?'); }],
     [38.5,h=>{ h.hunt={side:S.f[0].hp>=S.f[1].hp?0:1,t:0,x:W/2,y:220,st:'aim',n:0}; say(h,'GET.   OUT.   OF.   MY.   SHEET.'); }],
     [50,  h=>{ say(h,'select.  delete.  select.  delete.'); }]
@@ -2008,7 +2008,7 @@ function retroSync(menu){
   const mtxt='Mode: '+({bot:'Player vs CPU',practice:'Practice','2p':'2 players',online:bigScreen?'Big screen':'Online'}[mode])+' \u00b7 NetLink: '+(net?'room '+net.code:'local sim');
   if(Q('#st-net').textContent!==mtxt) Q('#st-net').textContent=mtxt;
   const sh=sheetOn(); document.body.classList.toggle('sheetstage',sh);
-  Q('#inkos .titlebar span').textContent=(sh?'Granola Sheets 97 \u2014 DoodleCorp_DCF_v7_FINAL_final(2).xls  [':'InkShop 2.0 \u2014 arena.ink  [')+mtxt.slice(6).split(' \u00b7 ')[0]+']';
+  Q('#inkos .titlebar span').textContent=(sh?'Granola Sheets 97 \u2014 Anthropik_IPO_model_v7_FINAL_final(2).xls  [':'InkShop 2.0 \u2014 arena.ink  [')+mtxt.slice(6).split(' \u00b7 ')[0]+']';
   if(++rTick%8) return;
   // layout: the board and arena size when they change (only between fights), window edges whenever they move
   const board=retroBoard(), w=Math.round(innerWidth/deskSc()), lay=JSON.stringify([w,board]);
@@ -2284,21 +2284,45 @@ const shadowY=f=>{ let y=0; for(const p of ARENA_PLATS) if(f.y>=p.y-1&&f.x>=p.x0
 /* ---------- spreadsheet stage ---------- */
 // The banker's sheet: a formula bar showing what he is typing, column and row headings, faint figures that keep changing,
 // and the cells he has filled in (the platforms) in spreadsheet green.
-const SHEET_MORE=['Tax','Working capital','Discount factor','PV of cash flow','Net debt','Equity value','Shares out','Price target','Upside','Comps','Synergies','Fees'];
-const sheetDels=[], SHEET_ROWS=['Revenue','COGS','Gross profit','EBITDA','D&A','CapEx','Free cash flow','WACC','Enterprise value'];
+// The model on the sheet: an IPO valuation of a made-up AI lab (the name is a joke and the figures are invented), worked out
+// once. Eight years across, the usual lines down, laid out the way bankers do: inputs in blue, totals in bold with a rule above.
+const SHEET_MODEL=(()=>{
+  const yrs=['FY24A','FY25E','FY26E','FY27E','FY28E','FY29E','FY30E','FY31E'], g=[0,3,1.5,1,0.6,0.4,0.4,0.4], n=yrs.length, WACC=0.12, TG=0.04;
+  const rev=[1000]; for(let i=1;i<n;i++) rev.push(rev[i-1]*(1+g[i]));
+  const lin=(a,b)=>rev.map((_,i)=>a+(b-a)*i/(n-1)), mul=(v,p)=>v.map((x,i)=>-x*p[i]), add=(...a)=>a[0].map((_,i)=>a.reduce((t,v)=>t+v[i],0));
+  const cogs=mul(rev,lin(0.62,0.34)), gp=add(rev,cogs), rd=mul(rev,lin(0.70,0.22)), sm=mul(rev,lin(0.22,0.11)), ebitda=add(gp,rd,sm);
+  const da=mul(rev,lin(0.03,0.03)), capex=mul(rev,lin(0.45,0.10)), nwc=mul(rev,lin(0.02,0.02)), fcf=add(ebitda,capex,nwc), df=rev.map((_,i)=>1/Math.pow(1+WACC,i)), pv=fcf.map((x,i)=>x*df[i]);
+  const tv=fcf[n-1]*(1+TG)/(WACC-TG)*df[n-1], ev=pv.reduce((a,b)=>a+b,0)+tv, cash=18000, shares=920;
+  const num=x=>{ const a=Math.round(Math.abs(x)).toLocaleString('en-US'); return x<0?'('+a+')':a; }, pct=x=>(x*100).toFixed(1)+'%', one=(v,f)=>[f(v)];
+  const L=(lb,vals,o)=>Object.assign({lb,vals},o||{});
+  return {yrs,title:'Anthropik, PBC — IPO valuation model (DCF)      $ in millions      DRAFT, do not forward',lines:[
+    L('Revenue',rev.map(num),{bold:1}), L('  % growth',g.map((x,i)=>i?pct(x):'n.a.'),{input:1,it:1}), L('Compute (GPUs)',cogs.map(num)), L('Gross profit',gp.map(num),{bold:1,rule:1}),
+    L('  Gross margin',gp.map((x,i)=>pct(x/rev[i])),{it:1}), L('R&D',rd.map(num)), L('Sales & marketing',sm.map(num)), L('EBITDA',ebitda.map(num),{bold:1,rule:1}),
+    L('  EBITDA margin',ebitda.map((x,i)=>pct(x/rev[i])),{it:1}), L('D&A',da.map(num)), L('CapEx (more GPUs)',capex.map(num)), L('Change in NWC',nwc.map(num)),
+    L('Unlevered FCF',fcf.map(num),{bold:1,rule:1}), L('Discount factor',df.map(x=>x.toFixed(2)),{it:1}), L('PV of FCF',pv.map(num)), L('',[]),
+    L('WACC',one(WACC,pct),{input:1}), L('Terminal growth',one(TG,pct),{input:1}), L('PV of terminal value',one(tv,num)), L('Enterprise value',one(ev,num),{bold:1,rule:1}),
+    L('Net cash',one(cash,num),{input:1}), L('Equity value',one(ev+cash,num),{bold:1}), L('Shares (mm)',one(shares,num),{input:1}), L('Implied price / share',['$'+((ev+cash)/shares).toFixed(2)],{bold:1,rule:1})]};
+})();
+const sheetDels=[];
 function sheetBack(v,now){
   // Inside the app window the sheet reaches up to the top of the canvas area: more rows, with the formula bar up there.
   const h=v.sheet, emb=RETRO, bx=emb?sheetBox():null, ty=emb?Math.min(0,GY+2-(bx.bottom-bx.top)/bx.k):0, hd=emb?0:22, x0=emb?0:-OX, x1=emb?960:VW-OX, top=ty+hd+18, rows=Math.ceil((GY-top)/SHEET_ROW), C=SHEET_COL, R=SHEET_ROW, c0=Math.floor(x0/C), c1=Math.ceil(x1/C), ca=x0-c0*C>C*0.35?c0+1:c0;   // ca: the first column with room for the row names, shown as column A
   L.save(); L.lineCap='butt';
   if(emb){ L.beginPath(); L.rect(-SHEET_GUT,ty,960+SHEET_GUT,GY+3-ty); L.clip(); L.fillStyle='#fff'; L.fillRect(-SHEET_GUT,ty,960+SHEET_GUT,GY+3-ty); }      // inside the app window
-  // faint figures: a few change every couple of seconds, so the model looks worked on
-  L.font='11px Karla,system-ui,sans-serif'; L.textBaseline='middle';
-  for(let r=0;r<rows;r++){ const y=GY-r*R-R/2;
-    for(let c=c0;c<c1;c++){
-      const n=Math.abs(Math.sin(c*12.9898+r*78.233+Math.floor((h.t+c*1.7+r*0.9)/2.5)*4.1)*43758.5453)%1;
-      if(c===ca){ L.fillStyle='#9aa3b2'; L.textAlign='left'; L.fillText((r<9?SHEET_ROWS[8-r]:SHEET_MORE[(r-9)%SHEET_MORE.length])||'',Math.max(x0,c*C)+6,y,C-10); }
-      else if(c>ca&&n<0.62){ L.fillStyle=n<0.08?'#d9a3a3':'#bcc4d0'; L.textAlign='right'; L.fillText(n<0.08?'('+(n*9000|0)+')':r===1?(n*40).toFixed(1)+'%':((n*98000)|0).toLocaleString('en-US'),(c+1)*C-6,y); }
-    } }
+  // the model: title, a row of years, then the lines. After the rage-delete (no cells left) every formula shows an error.
+  { const M=SHEET_MODEL, full=Math.floor((GY-top)/R), broke=h.plats.length===0&&h.t>1, ink=emb?'#1a1a1a':'#7d8798', blue=emb?'#0000d0':'#6f86c9', F=(b,it)=>(it?'italic ':'')+(b?'700 ':'')+'11px Arial,Helvetica,sans-serif';
+    L.globalAlpha=emb?0.78:1;
+    for(let i=0;i<full;i++){
+      const y=GY-(full-1-i)*R-R/2, yt=y-R/2;
+      if(i===0){ L.fillStyle=ink; L.font=F(1); L.textAlign='left'; L.fillText(M.title,ca*C+6,y,C*9.5); continue; }
+      if(i===1){ L.font=F(1); L.fillStyle=ink; L.textAlign='right'; M.yrs.forEach((t,n)=>L.fillText(t,(ca+2+n)*C-6,y)); L.strokeStyle=ink; L.lineWidth=1.2; L.beginPath(); L.moveTo(ca*C+2,yt+R-1); L.lineTo((ca+9)*C-2,yt+R-1); L.stroke(); continue; }
+      const ln=M.lines[i-2]; if(!ln) break;
+      L.font=F(ln.bold,ln.it); L.textAlign='left'; L.fillStyle=ink; L.fillText(ln.lb,ca*C+6,y,C-8);
+      if(ln.rule){ L.strokeStyle=ink; L.lineWidth=1; L.beginPath(); L.moveTo((ca+1)*C+4,yt+1); L.lineTo((ca+1+ln.vals.length)*C-2,yt+1); L.stroke(); }
+      L.textAlign='right';
+      ln.vals.forEach((t,n)=>{ const err=broke&&!ln.input; L.fillStyle=err?'#c0261d':ln.input?blue:t[0]==='('?(emb?'#a01515':'#c59a9a'):ink; L.fillText(err?'#REF!':t,(ca+2+n)*C-6,y,C-8); });
+    }
+    L.globalAlpha=1; }
   // grid
   L.strokeStyle='#e1e6ee'; L.lineWidth=1; L.beginPath();
   for(let c=c0;c<=c1;c++){ L.moveTo(c*C,top); L.lineTo(c*C,GY); }
@@ -2323,8 +2347,8 @@ function sheetBack(v,now){
   if(emb) for(let c=c0;c<=c1;c++){ L.moveTo(c*C,ty); L.lineTo(c*C,top); }
   L.stroke();
   if(emb){ L.fillStyle=band; L.fillRect(-SHEET_GUT,ty,SHEET_GUT,GY+3-ty); L.strokeStyle='#808080'; L.beginPath(); L.moveTo(0,ty); L.lineTo(0,GY); for(let r=0;r<=rows;r++){ L.moveTo(-SHEET_GUT,GY-r*R); L.lineTo(0,GY-r*R); } L.stroke();
-    L.fillStyle='#000'; L.font='11px Tahoma,Arial,sans-serif'; L.textAlign='center'; for(let r=0;r<rows;r++) L.fillText(String(rows-r),-SHEET_GUT/2,GY-r*R-R/2);
-    const nm=h.cell?String.fromCharCode(65+Math.max(0,h.cell[0])%26)+(rows-h.cell[1]):'A1', xn=$('xlname'), xi=$('xlin'), tx=h.msg.slice(0,Math.max(0,Math.floor((h.t-h.said)*34)));
+    { const full=Math.floor((GY-top)/R); L.fillStyle='#000'; L.font='11px Tahoma,Arial,sans-serif'; L.textAlign='center'; for(let r=0;r<full;r++) L.fillText(String(full-r),-SHEET_GUT/2,GY-r*R-R/2); }
+    const nm=h.cell?String.fromCharCode(65+Math.max(0,h.cell[0])%26)+(Math.floor((GY-top)/R)-h.cell[1]):'A1', xn=$('xlname'), xi=$('xlin'), tx=h.msg.slice(0,Math.max(0,Math.floor((h.t-h.said)*34)));
     if(xn&&xn.textContent!==nm) xn.textContent=nm; if(xi&&xi.textContent!==tx){ xi.textContent=tx; xi.classList.toggle('mad',!!(h.hunt||h.all)); } }
   L.fillStyle=emb?'#000':'#6b7486'; L.font=emb?'11px Tahoma,Arial,sans-serif':'600 11px Karla,system-ui,sans-serif'; L.textAlign='center';
   for(let c=ca;c<c1;c++) L.fillText(String.fromCharCode(65+(c-ca)%26),c*C+C/2,ty+hd+9);
@@ -2333,7 +2357,7 @@ function sheetBack(v,now){
   const typed=h.msg.slice(0,Math.max(0,Math.floor((h.t-h.said)*34))), caret=Math.floor(now/400)%2?'|':'';
   L.textAlign='left'; L.fillStyle='#8a93a5'; L.font='italic 600 12px Georgia,serif'; L.fillText('fx',x0+10,ty+11);
   L.fillStyle=h.hunt||h.all?'#b0121f':'#1c2541'; L.font='600 13px Karla,system-ui,sans-serif'; L.fillText(typed+caret,x0+34,ty+11.5);
-  L.textAlign='right'; L.fillStyle='#b4bcc9'; L.font='11px Karla,system-ui,sans-serif'; L.fillText('DoodleCorp_DCF_v7_FINAL_final(2).xlsx  ·  Granola Capital',x1-10,ty+11.5);
+  L.textAlign='right'; L.fillStyle='#b4bcc9'; L.font='11px Karla,system-ui,sans-serif'; L.fillText('Anthropik_IPO_model_v7_FINAL_final(2).xls  ·  Granola Capital',x1-10,ty+11.5);
   }
   if(emb){ L.strokeStyle='#111'; L.lineWidth=3; L.beginPath(); L.moveTo(0,GY+1.5); L.lineTo(960,GY+1.5); L.stroke(); }
   L.restore();
