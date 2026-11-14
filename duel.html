@@ -78,6 +78,7 @@ body.retro .seg button{border:2px solid;border-color:#fff #404040 #404040 #fff;p
 .rbody{flex:1;min-height:0;overflow:auto;padding:8px;margin-top:2px}
 .rbody.white{background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080}
 body.retro .arenawrap{z-index:200;pointer-events:none}
+body.retro.menu .arenawrap{z-index:8}      /* behind this game's windows (10 and up) whenever they are showing */
 body.retro .hud,body.retro .rules{display:none!important}
 body.retro #inkos .task{cursor:default}
 body.retro #inkos #artboard{cursor:crosshair}
@@ -271,6 +272,14 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
 .rules{margin:0;padding:10px 14px;list-style:none;display:grid;gap:4px;font-size:14px;background:var(--card);border:2px solid var(--ink);border-radius:14px}
 .chip{display:inline-block;border-radius:6px;padding:0 6px;color:#fff;font-weight:600;font-size:13px}
 .fire{background:var(--fire)} .water{background:var(--water)} .plant{background:var(--plant)}
+/* Retro desktop: the right column is just the hack list and the glyph sheet (they are the instructions). Health, overdrive
+   and ink are drawn over each fighter's head, and CPU skill sits in the Game setup window. */
+#inkos fieldset.gone{display:none}
+.cpuskill{display:inline-grid;grid-template-columns:auto 110px 30px;align-items:center;gap:6px;font-size:13px;font-weight:600}
+#tips{position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:9000;pointer-events:none;background:#fffbe6;border:2px solid var(--ink);border-radius:12px;box-shadow:4px 4px 0 var(--ink);
+  padding:10px 16px;font:600 15px/1.5 var(--body);color:var(--ink);max-width:min(560px,90vw);transition:opacity .5s}
+#tips b{background:var(--hi);border-radius:4px;padding:0 5px}
+#tips.out{opacity:0}
 [hidden]{display:none!important}
 @media (max-width:700px){ h1{font-size:26px} .controls{margin-left:0} .tc .keys{display:none} }
 @media (pointer:coarse){ .tc .keys{display:none} }
@@ -307,7 +316,7 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
         </div>
       </div>
       <div class="panel">
-        <fieldset><legend>Fighters</legend>
+        <fieldset class="gone"><legend>Fighters</legend>
           <div class="pcard"><div class="nm" style="color:#1d3fbf"><span>P1 · You</span><span id="p1st"></span></div>
             <div class="bar hp"><i id="p1hp"></i><span>HP</span></div><div class="bar ink"><i id="p1ink"></i><span>INK</span></div><div class="bar od" id="p1odb"><i id="p1od"></i><span>OVERDRIVE</span></div>
             <div class="wtext" id="p1w">Weapon: fists</div></div>
@@ -316,7 +325,7 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
             <div class="wtext" id="cpw">Weapon: fists</div></div>
         </fieldset>
         <fieldset><legend>Hack.exe — Q to run</legend><div class="hacks" id="hacks"></div></fieldset>
-        <fieldset><legend>Rig Properties</legend>
+        <fieldset class="gone"><legend>Rig Properties</legend>
           <div class="sl"><span>Jelly</span><input type="range" id="s-jelly" min="0" max="1" step=".01"><span id="v-jelly"></span></div>
           <div class="sl"><span>Stretch</span><input type="range" id="s-stretch" min="0" max="1" step=".01"><span id="v-stretch"></span></div>
           <div class="sl"><span>Flab</span><input type="range" id="s-flab" min="0" max="1" step=".01"><span id="v-flab"></span></div>
@@ -325,7 +334,7 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
           <div class="sl"><span>CPU skill</span><input type="range" id="s-diff" min="0" max="1" step=".01"><span id="v-diff"></span></div>
           <div class="chk"><label><input type="checkbox" id="c-onion"> Onion skin</label><label><input type="checkbox" id="c-rig"> Show rig</label></div>
         </fieldset>
-        <fieldset><legend>AI Read Log</legend><div id="log" class="inset"></div></fieldset>
+        <fieldset class="gone"><legend>AI Read Log</legend><div id="log" class="inset"></div></fieldset>
         <fieldset><legend>Glyph Sheet</legend><div class="glyphs" id="glyphs"></div></fieldset>
       </div>
     </div>
@@ -406,6 +415,7 @@ Window titlebars = platforms
   <section class="loadouts" id="loadouts" hidden></section>
   <canvas id="strip" hidden></canvas>
   <div id="stripbar" hidden><button id="hackPrev" aria-label="Previous hack">◀</button><span id="hackName"></span><button id="hackNext" aria-label="Next hack">▶</button><span id="stripInk"></span></div>
+  <div id="tips" hidden></div>
   <section class="tcs" id="tcs" hidden></section>
   <section class="desks" id="desks"></section>
 
@@ -1756,6 +1766,15 @@ function accept(v){
 
 /* ---------- interface state ---------- */
 let lastPhase='', overlayKey='', loSig='';
+// The first time a fight starts on this device, say the three things nobody can guess. Shown once per tab.
+function showTips(){
+  try{ if(sessionStorage.getItem('dd-tips')) return; sessionStorage.setItem('dd-tips','1'); }catch(e){}
+  const t=$('tips'), lines=padView?['<b>Left thumb</b> moves; slide between the arrows.','<b>A</b> and <b>B</b> are your two drawings. <b>Mine</b> digs through walls.','<b>Q</b> runs a hack when your gold bar is full. Draw shapes on the strip above.']
+    :RETRO?['<b>Drag the mouse</b> on the canvas to draw: a line is a platform, a box is a crate.','<b>J</b> and <b>K</b> use your two drawings. <b>L</b> mines through walls.','<b>Q</b> runs a hack when the gold bar over your head is full.']
+    :['<b>A D</b> run, <b>W</b> jumps (twice), <b>S</b> drops down.','<b>J</b> and <b>K</b> use your two drawings. <b>L</b> mines.','<b>Q</b> runs a hack when your overdrive is full.'];
+  t.innerHTML=lines.join('<br>'); t.hidden=false; t.classList.remove('out');
+  setTimeout(()=>t.classList.add('out'),7000); setTimeout(()=>{ t.hidden=true; },7600);
+}
 // Desktop mode: the window lets clicks through to the desktop while a fight is on, and takes the mouse only while the
 // menu or the sketchbook is showing. The fight pauses whenever the menu is open or another app has the keyboard.
 function deskSync(){
@@ -1836,14 +1855,15 @@ function retroBuild(){
   // his rig sliders drive his animation system, which this game does not use; Time scale and CPU skill are live
   for(const k of ['jelly','stretch','flab','exag']){ const el=document.querySelector('#s-'+k); el.disabled=true; el.parentElement.classList.add('off'); el.parentElement.title='Belongs to the InkShop rig, not wired to this game\u2019s animations yet'; }
   for(const id of ['c-onion','c-rig']){ const el=document.querySelector('#'+id); el.disabled=true; }
+  { const sk=document.querySelector('#s-diff').parentElement; sk.classList.add('cpuskill'); sk.id='cpuSkill'; document.querySelector('header .controls').insertBefore(sk,$('restart')); }
   document.querySelector('#start').onclick=()=>{ if(view&&view.phase!=='draw'&&view.phase!=='over') deskMenu=!deskMenu; };
   $('deskHint').textContent='Esc or Start: this window';
   retroWindow('game','Game setup',document.querySelector('header'),{left:'calc(50% - 60px)',top:'70px',transform:'translateX(-50%)'});
-  retroWindow('sketch','Sketchbook \u2014 draw your two weapons',$('desks'),{left:'calc(50% - 60px)',top:'150px',transform:'translateX(-50%)',width:'min(760px,80vw)'});
+  retroWindow('sketch','Sketchbook \u2014 draw your two weapons',$('desks'),{left:'calc(50% - 60px)',top:'196px',transform:'translateX(-50%)',width:'min(760px,80vw)'});
   retroWindow('net','NetLink \u2014 join',$('overlay'),{left:'calc(50% - 60px)',top:'120px',transform:'translateX(-50%)',minWidth:'360px'},true);
   rwin.net.w.hidden=true;
   // on a big screen, what each player has made (with its stats) is a window too
-  retroWindow('load','Loadouts \u2014 what each player has made',$('loadouts'),{left:'calc(50% - 60px)',top:'150px',transform:'translateX(-50%)',width:'min(760px,80vw)'},true);
+  retroWindow('load','Loadouts \u2014 what each player has made',$('loadouts'),{left:'calc(50% - 60px)',top:'196px',transform:'translateX(-50%)',width:'min(760px,80vw)'},true);
   rwin.load.w.hidden=true;
   for(const w of document.querySelectorAll('#inkos .win.small')) makeDraggable(w,w.querySelector('.titlebar'));
   // his NetLink and notes windows, with this game's real rooms and controls
@@ -1887,6 +1907,7 @@ function retroBoard(){
 // Each frame: his panels show this match; a few times a second the layout and window edges are measured.
 function retroSync(menu){
   const v=view, Q=s=>document.querySelector(s), side=mySide1();
+  $('cpuSkill').hidden=mode!=='bot';
   rwin.game.want=menu; rwin.sketch.want=menu&&side>=0; rwin.net.want=!$('overlay').hidden; rwin.load.want=!$('loadouts').hidden;
   for(const id in rwin){ const o=rwin[id], show=o.want&&!o.min; if(o.w.hidden===show){ o.w.hidden=!show; if(show) o.w.style.zIndex=++rTop; } o.task.hidden=!o.want; o.task.classList.toggle('on',show&&+o.w.style.zIndex===rTop); if(!o.want) o.min=false; }
   rwin.net.w.querySelector('.rname').textContent=net?'NetLink \u2014 room '+net.code:'NetLink \u2014 join';
@@ -1924,6 +1945,7 @@ function syncUI(){
     playing=!drawing&&v.phase!=='over'; document.body.classList.toggle('playing',playing);
     $('desks').hidden=!(drawing||v.practice||deskLike()); $('tcs').hidden=drawing||v.phase==='over'||!local.some(Boolean);
     if(drawing||v.phase==='end'||v.phase==='over') releaseAll();      // nothing stays held from one round into the next
+    if(v.phase==='fight'&&local.some(Boolean)) showTips();
     if(v.phase==='count'&&!deskLike()) document.querySelector('.arenawrap').scrollIntoView({block:'start',behavior:'smooth'});
   }
   for(const d of desk) if(d&&d.sig!==deskSig(d)) updateDesk(d);
@@ -2098,10 +2120,16 @@ function drawFighter(v,i,now,age,dt){
   if(f.slow){ L.fillStyle=PEN.water; for(let n=0;n<3;n++){ const fy=base-74+((now/9+n*31)%62); L.beginPath(); L.arc(x-14+n*14,fy,2.5,0,7); L.fill(); } }
   if(f.hp>0||v.phase==='draw'){ const h=ANIM.xf(s,p[0],p[1]); L.font='18px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=col;
     const tag=local[i]&&!(local[0]&&local[1])?'you':NAME[i], tx=x+h[0]*K*d, ty=base+h[1]*K-20;
-    if(DESK){ L.lineWidth=5; L.strokeStyle='#fff'; L.lineJoin='round'; L.strokeText(tag,tx,ty);
+    if(DESK||RETRO){ L.lineWidth=5; L.strokeStyle='#fff'; L.lineJoin='round'; L.strokeText(tag,tx,ty);
       const bw=64, by=ty-30; L.fillStyle='#fff'; L.strokeStyle='#111'; L.lineWidth=2; L.beginPath(); L.rect(tx-bw/2,by,bw,8); L.fill(); L.stroke();
       L.fillStyle=col; L.fillRect(tx-bw/2+1,by+1,(bw-2)*Math.max(0,f.hp)/100,6);
       for(let n=0;n<WINS;n++){ L.beginPath(); L.arc(tx-bw/2+6+n*12,by-8,4,0,7); L.fillStyle=n<v.wins[i]?col:'#fff'; L.fill(); L.stroke(); }
+      if(f.od!==undefined&&v.phase!=='draw'){            // overdrive (gold, flashing when a hack is ready) and the ink left for drawing shapes
+        const full=f.od>=100, oy=by+10; L.fillStyle='#fff'; L.strokeStyle='#111'; L.lineWidth=1.5; L.beginPath(); L.rect(tx-bw/2,oy,bw,5); L.fill(); L.stroke();
+        L.fillStyle=full?(Math.floor(now/160)%2?'#ffb300':'#ff6a00'):'#f2b600'; L.fillRect(tx-bw/2+1,oy+1,(bw-2)*Math.min(100,f.od)/100,3);
+        if(f.ink2!==undefined){ L.fillStyle='#d7dce6'; L.fillRect(tx-bw/2,oy+7,bw,2.5); L.fillStyle='#1c2541'; L.fillRect(tx-bw/2,oy+7,bw*Math.max(0,Math.min(100,f.ink2))/100,2.5); }
+        if(full){ L.font='700 11px Karla,sans-serif'; L.fillStyle='#ff6a00'; L.lineWidth=3; L.strokeStyle='#fff'; L.strokeText('HACK READY',tx,by-20); L.fillText('HACK READY',tx,by-20); L.font='18px "Gochi Hand",cursive'; }
+      }
       L.fillStyle=col; }
     L.fillText(tag,tx,ty); }
 }
