@@ -97,4 +97,25 @@ function msFromFoeMoveToJump(skill,lead){
   ok('it lets go of the stick between rounds',()=>{ const S=calm(), b1=D.makeNetBot(1,wire(-1,0,{0:1}),()=>0.55); for(let i=0;i<60;i++){ b1(S,1/60); S.step(1/60); } S.phase='end'; b1(S,1/60); return S.inp[1].l===0&&S.inp[1].r===0; });
 }
 
+{ // 2. the evolution strategy, on a toy problem: find 20 numbers; fitness is minus the squared distance to them
+  let ES=null; try{ ES=require('../bot/es.js'); }catch(e){ ok('bot/es.js loads',false,String(e.message).split('\n')[0]); }
+  if(ES){
+    const r=mulberry(3), target=Array.from({length:20},()=>r()*2-1), loss=th=>target.reduce((n,t,i)=>n+(th[i]-t)*(th[i]-t),0);
+    const run=(gens,seed)=>{ let s=ES.esInit(20,seed||11); for(let g=0;g<gens;g++) s=ES.esTell(s,ES.esAsk(s,{pop:64,sigma:0.1}).map(c=>-loss(c)),{lr:0.03,decay:0.005}); return s; };
+    const lossAfter=gens=>loss(run(gens).theta), st=run(3);
+    const tellWith=fn=>ES.esTell(st,ES.esAsk(st,{pop:64,sigma:0.1}).map(c=>fn(-loss(c))),{lr:0.03,decay:0.005});
+    ok('a new state starts at zero, generation 0',()=>(s=>s.gen===0&&s.seed===11&&s.theta instanceof Float32Array&&s.theta.length===20&&s.theta.every(v=>v===0))(ES.esInit(20,11)));
+    ok('ask returns mirrored pairs around theta',()=>(c=>c.length===64&&close(add(c[0],c[1]),scale(st.theta,2),1e-5))(ES.esAsk(st,{pop:64,sigma:0.1})));
+    ok('the same state asks the same candidates',()=>close(ES.esAsk(st,{pop:64,sigma:0.1})[5],ES.esAsk(st,{pop:64,sigma:0.1})[5],0));
+    ok('so does a state rebuilt from a checkpoint\'s theta, gen and seed',()=>close(ES.esAsk({theta:Float32Array.from(JSON.parse(JSON.stringify(Array.from(st.theta)))),gen:st.gen,seed:st.seed},{pop:64,sigma:0.1})[7],ES.esAsk(st,{pop:64,sigma:0.1})[7],0));
+    ok('another generation or another seed asks different ones',()=>{ const a=ES.esAsk(st,{pop:64,sigma:0.1})[0], b=ES.esAsk({theta:st.theta,gen:st.gen+1,seed:st.seed},{pop:64,sigma:0.1})[0], c=ES.esAsk({theta:st.theta,gen:st.gen,seed:st.seed+1},{pop:64,sigma:0.1})[0]; return !close(a,b,1e-3)&&!close(a,c,1e-3); });
+    ok('the noise is as big as asked',()=>{ const c=ES.esAsk(st,{pop:64,sigma:0.1}); let n=0, q=0; for(let k=0;k<64;k+=2) for(let i=0;i<20;i++){ const e=(c[k][i]-st.theta[i])/0.1; q+=e*e; n++; } const sd=Math.sqrt(q/n); return sd>0.9&&sd<1.1; });
+    ok('tell moves on one generation and leaves the old state alone',()=>{ const before=Array.from(st.theta), s2=tellWith(f=>f); return s2.gen===st.gen+1&&s2.seed===st.seed&&close(st.theta,before,0)&&!close(s2.theta,before,1e-6); });
+    ok('150 generations cut the toy loss by 90%',()=>lossAfter(150)<0.1*lossAfter(0),()=>[lossAfter(0),lossAfter(150)]);
+    ok('rank shaping ignores the scale of fitness',()=>close(tellWith(f=>f).theta,tellWith(f=>f*1000).theta,1e-6));
+    ok('with nothing to tell candidates apart, only the weight decay acts',()=>close(tellWith(f=>1).theta,scale(st.theta,1-0.03*0.005),1e-7));
+    ok('a better half pulls theta its way',()=>{ const c=ES.esAsk(st,{pop:64,sigma:0.1}), s2=ES.esTell(st,c.map(v=>v[0]),{lr:0.03,decay:0}); return s2.theta[0]>st.theta[0]; });
+  }
+}
+
 console.log(bad?bad+' failed':'all bot tests pass'); process.exit(bad?1:0);
