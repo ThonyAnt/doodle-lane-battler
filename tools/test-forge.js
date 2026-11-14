@@ -79,4 +79,79 @@ const FS=require('../forgescript.js');
     &&faults("let foe = 1; push(foe, 1);",{foe:{x:1},push(){}})&&faults("push(me, 1);",{me:5,push(w){ if(typeof w!=='object') throw new Error('not a fighter'); }}));
 }
 
+// ---- the rule engine in the match rules ----
+const src=fs.readFileSync(path.join(__dirname,'..','duel.html'),'utf8').replace(/\r\n/g,'\n');
+const D=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,INK,boardCells,MOVES,FORGE_API,FORGE_LIMITS};')();
+const HP0=D.createDuel({practice:true}).f[0].hp;
+const run=(S,sec)=>{ for(let i=0;i<Math.round(sec*60);i++) S.step(1/60); };
+const inp=(S,side,o)=>{ S._i=S._i||[{l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0},{l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0}]; Object.assign(S._i[side],o); S.setInput(side,S._i[side]); };
+const SWORD={kind:'melee',style:'blade',element:'none',name:'Sword'}, BALL={kind:'ranged',style:'hurl',element:'none',name:'Ball'}, SHIELD={kind:'shield',style:'',element:'none',name:'Shield'};
+// A practice sim with Blue holding aSpec in slot 0 and Red holding bSpec in slot 0, standing 60 px apart.
+// Two things are pinned so that the tests measure rules and nothing else: every item gets the Swift trait (left to its
+// name, 'Sword' gets Lucky, which doubles one hit in six, and 'Ball' gets Boomerang), and the pair stands near the
+// right-hand wall, so a rule that shoves Red away cannot push them out of reach of `near`.
+const BLUE_X=720, plain=spec=>Object.assign({traits:['swift'],trait:'swift'},spec);
+function place(S,gap){ const a=S.f[0], b=S.f[1]; Object.assign(a,{x:BLUE_X,y:0,vx:0,vy:0,face:1,ground:true}); Object.assign(b,{x:BLUE_X+gap,y:0,vx:0,vy:0,face:-1,ground:true}); }
+function duo(aSpec,bSpec){ const S=D.createDuel({practice:true}); S.setItem(0,0,plain(aSpec),45); S.setItem(1,0,plain(bSpec),45); S.step(1/60); S.snapshot(); place(S,60); return S; }
+// Blue's attack once, from 60 px: steps until Red loses health, then on until Blue's move has ended, Red is no longer
+// stunned and Blue's item is ready again, so every call is the first move of a combo. Returns what the blow took.
+function blueHits(S){
+  const a=S.f[0], b=S.f[1]; place(S,60); const hp=b.hp; let d=0;
+  inp(S,0,{a:(S._i?S._i[0].a:0)+1});
+  for(let i=0;i<240&&!d;i++){ S.step(1/120); d=hp-b.hp; }
+  for(let i=0;i<360&&(a.act||b.hurt>0||b.stun>0||a.cd[0]>0||S.stop>0);i++) S.step(1/120);
+  run(S,0.3); return d;
+}
+
+{ // 4. rules in the sim: the strike event, cooldown, budgets, the fault breaker
+  const base=blueHits(duo(SWORD,SWORD));
+  ok('the test fighters land one clean blow a call',base>3&&base<12&&Math.abs(blueHits(duo(SWORD,SWORD))-base)<1e-9,base);
+  { const S=duo(SWORD,SWORD); let seen=0; const id=S.addRule({name:'T',blurb:'',a:[0,0],b:[1,0],on:'strike',cooldown:0.5,run:h=>{ seen=h.hit.damage; h.hit.scale(5); }});
+    const d=blueHits(S); ok('a strike rule scales the hit, clamped to 1.4x',id===1&&seen>0&&Math.abs(d/base-1.4)<0.02,{base,d});
+    ok('firing emits a rule event',S.snapshot().ev.some(e=>e.e==='rule'&&e.id===1&&e.side===0)); }
+  { const S=duo(SWORD,SWORD); let runs=0; S.addRule({name:'T',blurb:'',a:[0,1],b:[1,0],on:'strike',cooldown:0.5,run:()=>{ runs++; }}); blueHits(S); ok('a rule for an item that is not held does not run',runs===0); }
+  { const S=duo(SWORD,SWORD); let runs=0; S.addRule({name:'T',blurb:'',a:[0,0],b:[1,0],on:'strike',cooldown:5,run:h=>{ runs++; h.say('X'); }}); blueHits(S); blueHits(S); ok('cooldown holds the rule back',runs===1); }
+  { const S=duo(SWORD,SWORD); let runs=0; S.addRule({name:'T',blurb:'',a:[0,0],b:[1,0],on:'strike',cooldown:0.25,run:()=>{ runs++; }}); blueHits(S); blueHits(S); ok('a run with no effect does not start the cooldown',runs===2); }
+  { const S=duo(SWORD,SWORD); S.addRule({name:'T',blurb:'',a:[0,0],b:[1,0],on:'strike',cooldown:0.25,run:()=>{ throw new Error('x'); }}); for(let i=0;i<5;i++) blueHits(S);
+    ok('three faults switch a rule off and the sim carries on',S.rules[0].off===true&&S.rules[0].faults===3&&S.sane()); }
+  { const S=duo(SWORD,SWORD); S.addRule({name:'T',blurb:'',a:[0,0],b:[1,0],on:'strike',cooldown:0.25,run:h=>{ for(let i=0;i<10;i++) h.hurt(h.foe,8); }}); let extra=0; for(let i=0;i<6;i++) extra+=blueHits(S)-base;
+    ok('hurt is capped per call and by the 24 hp round budget',extra>23&&extra<25,extra); }
+  ok('the capability table lists the four events',Object.keys(D.FORGE_API).join()==='swat,guard,strike,near'&&D.FORGE_LIMITS.hpBudget===24);
+  // beyond the plan
+  const rule=(o,fn)=>Object.assign({name:'T',blurb:'',a:[0,0],b:[1,0],on:'strike',cooldown:0.25,run:fn||(()=>{})},o);
+  { const S=duo(SWORD,SWORD), n=S.rules.length;
+    ok('a rule that is not a rule is refused',[null,{},rule({run:'code'}),rule({on:'toString'}),rule({on:'shoot'}),rule({a:[0,0],b:[0,1]}),rule({a:[2,0]}),rule({a:'blue.0'}),rule({b:[1,2]})].every(r=>S.addRule(r)===0)&&S.rules.length===n);
+    ok('ids count from 1, also after the rules are cleared',S.addRule(rule())===1&&S.addRule(rule())===2&&(S.clearRules(),S.rules.length===0)&&S.addRule(rule())===1&&S.rules[0].id===1);
+    ok('the cooldown is kept between 0.25 and 5 seconds',[[0,0.25],[-3,0.25],[99,5],[1/0,1],['soon',1],[2,2]].every(([c,want])=>{ S.clearRules(); S.addRule(rule({cooldown:c})); return S.rules[0].cooldown===want; })); }
+  { const S=duo(SWORD,SWORD); let host=null; S.addRule(rule({},h=>{ host=h; })); blueHits(S);
+    const shape=(h,api)=>Object.keys(api).every(k=>{ const want=api[k], v=h[k]; return typeof want==='object'?v&&typeof v==='object'&&shape(v,want):want==='mem'?v&&typeof v==='object':want.startsWith('fn')?typeof v==='function':typeof v===({num:'number',bool:'boolean',str:'string'})[want]; });
+    ok('the host of a strike has the values FORGE_API promises',!!host&&['me','foe','mine','theirs','dist','time','mem','Math','chance','hurt','say','hit'].every(k=>k in host)&&shape({me:host.me,foe:host.foe,mine:host.mine,theirs:host.theirs,dist:host.dist,time:host.time,mem:host.mem,Math:host.Math},
+      {me:D.FORGE_API.strike.me,foe:D.FORGE_API.strike.foe,mine:D.FORGE_API.strike.mine,theirs:D.FORGE_API.strike.theirs,dist:'num',time:'num',mem:'mem',Math:D.FORGE_API.strike.Math}),host&&Object.keys(host));
+    ok('and they describe the fight',!!host&&host.me.face===1&&host.foe.x>host.me.x&&Math.abs(host.dist-(host.foe.x-host.me.x))<1&&host.me.attacking===true&&host.foe.hp===HP0&&host.mine.kind==='melee'&&host.mine.style==='blade'&&host.theirs.element==='none'&&Math.abs(host.hit.damage-base)<1e-9,host&&host.me); }
+  { const S=duo(SWORD,SWORD); let runs=0; S.addRule(rule({},()=>{ runs++; }));
+    const a=S.f[0], b=S.f[1]; S.snapshot(); place(S,60); b.vx=1400; b.flung=0.8; b.flungBy=0; run(S,1.5); const slam=runs; place(S,60); a.od=100; S.startUlt(0); run(S,4); const hits=S.snapshot().ev.filter(e=>e.e==='hit'&&e.side===1);
+    ok('a slam and an ultimate are not strikes',slam===0&&runs===0&&hits.some(e=>e.hap==='slam')&&hits.some(e=>e.ult===1),{slam,runs,hits:hits.length}); }
+  { const S=duo(SWORD,SWORD); S.setItem(1,1,plain(BALL),30); let runs=0; S.addRule(rule({},()=>{ runs++; })); S.f[1].held=1; blueHits(S); const other=runs; S.f[1].held=0; blueHits(S);
+    ok('a strike rule needs the foe to hold item b',other===0&&runs===1,{other,runs}); }
+  { const S=duo(SWORD,SWORD); S.addRule(rule({a:[1,0],b:[0,0]},h=>{ h.hit.scale(0.1); })); const d=blueHits(S); S.clearRules(); S.addRule(rule({},h=>{ h.hit.scale(1.4); h.hit.scale(1.4); })); S.addRule(rule({},h=>{ h.hit.scale(1.4); })); const twice=blueHits(S);
+    ok('a rule belongs to one side, and rules cannot stack a blow past 1.4x',Math.abs(d-base)<1e-9&&Math.abs(twice/base-1.4)<0.02,{d,twice}); }
+  { const S=duo(SWORD,SWORD); let said=0; S.addRule(rule({},h=>{ h.hurt(h.me,3); h.hurt(h.foe,0/0); said=1; })); S.snapshot(); for(let i=0;i<4;i++) blueHits(S); const evs=S.snapshot().ev, own=evs.filter(e=>e.e==='hit'&&e.side===0);
+    ok('a faulting run keeps what it had done, stops there, and the breaker says so',said===0&&S.rules[0].off&&own.length===3&&own.every(e=>e.n===3)&&evs.filter(e=>e.e==='rulefault'&&e.id===1).length===1&&S.sane(),own); }
+  { const S=duo(SWORD,SWORD); S.addRule(rule({},h=>{ h.hurt({x:1},8); })); S.addRule(rule({},h=>{ h.say(7); })); S.addRule(rule({},h=>{ h.hit.scale('2'); })); const d=blueHits(S);
+    ok('a wrong kind of argument is a fault and does nothing',Math.abs(d-base)<1e-9&&S.rules.every(r=>r.faults===1&&r.fired===0)); }
+  { // rounds: notes and budgets come back, faults do not
+    const S=D.createDuel(); S.setItem(0,0,plain(SWORD),45); S.setItem(1,0,plain(SWORD),45); const seen=[];
+    S.addRule(rule({cooldown:0.25},h=>{ seen.push(h.mem.n||0); h.mem.n=(h.mem.n||0)+1; h.hurt(h.foe,8); h.hurt(h.foe,8); if(seen.length===1) throw new Error('once'); }));
+    const fight=()=>{ S.setReady(0); S.setReady(1); for(let i=0;i<900&&S.phase!=='fight';i++) S.step(1/60); return S.phase==='fight'; };
+    const one=fight(), d1=[blueHits(S),blueHits(S),blueHits(S)]; S.f[1].hp=0; run(S,4); const drawing=S.phase==='draw'&&S.round===2; const two=fight(), d2=blueHits(S);
+    ok('mem and the budgets start again each round; faults are kept',one&&drawing&&two&&seen.join()==='0,1,2,0'&&Math.abs(d1[0]+d1[1]+d1[2]-3*base-24)<1e-6&&Math.abs(d2-base-16)<1e-6&&S.rules[0].faults===1&&S.rules[0].off===false,{seen,d1,d2}); }
+  { // the three parts together: source, parse, check against the table, compile, install
+    const S=duo(SWORD,SWORD), code="mem.n += 1; if (foe.hp > 20 && mine.kind == 'melee') { hit.scale(1 + mem.n / 10); say('HIT ' + (mem.n > 1 ? 'AGAIN' : 'ONE')); }", p=FS.parse(code);
+    const errs=p.ok?FS.check(p.ast,D.FORGE_API.strike):p.errors; if(!errs.length) S.addRule(rule({cooldown:0.25,run:FS.compile(p.ast)}));
+    const d=[blueHits(S),blueHits(S)], evs=S.snapshot().ev.filter(e=>e.e==='rule');
+    ok('a ForgeScript rule runs in the sim',errs.length===0&&Math.abs(d[0]/base-1.1)<0.01&&Math.abs(d[1]/base-1.2)<0.01&&S.rules[0].faults===0&&evs.length===2&&evs[0].say==='HIT ONE'&&evs[1].say===undefined,{errs,d,evs}); }
+  { const S=duo(SWORD,SWORD); S.f[1].hp=HP0+50; const high=S.sane(); S.f[1].hp=HP0; S.f[0].vx=0/0; const nan=S.sane(); S.f[0].vx=0; S.f[0].x=-500; const out=S.sane(); S.f[0].x=BLUE_X; S.pr.push({id:999,k:'shot',side:0,slot:0,x:100,y:1/0,vx:0,vy:0,ttl:1}); const shot=S.sane(); S.pr.length=0;
+    ok('sane notices health over the top, a number that is not one, and anything far outside',!high&&!nan&&!out&&!shot&&S.sane()); }
+}
+
 console.log(bad?bad+' failed':'all forge tests pass'); process.exit(bad?1:0);

@@ -935,6 +935,30 @@ function elOfColor(hex){ const m=/^#?([0-9a-f]{6})$/i.exec(hex||''); if(!m) retu
   const n=parseInt(m[1],16), r=n>>16, g=(n>>8)&255, b=n&255; return r>g*1.35&&r>b*1.35?'fire':b>r*1.25&&b>=g?'water':g>r*1.2&&g>b*1.2?'plant':'none'; }
 const RECYCLE_SECS=6;      // how long RECYCLE.exe keeps a weapon out of the fight
 const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet stage: cell size, and half the size of the banker's selection
+/* ---------- RuleForge: match rules written for the items in play ----------
+   Before a round the server asks a language model for a few small programs about how the two players' items meet (a
+   racket returns a ball). They are written in ForgeScript (forgescript.js) and reach the sim as plain functions through
+   S.addRule; this block never sees their source. FORGE_API is everything such a program can name, per event: the one
+   source for the checker, for the host the sim builds for a run (see fireRules) and for the prompt.
+   A leaf is 'num', 'bool', 'str', 'mem' or 'fn(argument types)' with an optional ':result'; `who` is the name me or foe.
+     me, foe       the rule's owner (the holder of item a) and the other fighter, as they are when the rule runs: x and y
+                   in px (y is height above the floor), speeds in px/s, face is 1 (right) or -1, hp out of 160
+     mine, theirs  item a and item b; power, range and speed are their three stats, 1 to 9
+     dist, time    px between the two fighters; seconds of fighting so far this round
+     mem           the rule's own notes: numbers, booleans or text under up to 8 names, emptied every round
+     hit           (strike) the blow about to land; scale(f) multiplies its damage
+   FORGE_LIMITS is what the sim allows, whatever the code asks for. */
+const F_FIGHTER={x:'num',y:'num',vx:'num',vy:'num',face:'num',hp:'num',grounded:'bool',attacking:'bool',blocking:'bool',burning:'bool',soaked:'bool',stunned:'bool'};
+const F_ITEM={kind:'str',style:'str',element:'str',power:'num',range:'num',speed:'num'};
+const F_MATH={abs:'fn(num):num',sign:'fn(num):num',floor:'fn(num):num',round:'fn(num):num',sqrt:'fn(num):num',sin:'fn(num):num',cos:'fn(num):num',min:'fn(num,num):num',max:'fn(num,num):num',hypot:'fn(num,num):num'};
+const F_BASE={me:F_FIGHTER,foe:F_FIGHTER,mine:F_ITEM,theirs:F_ITEM,dist:'num',time:'num',mem:'mem',Math:F_MATH,chance:'fn(num):bool',
+  push:'fn(who,num,num)',burn:'fn(who,num)',soak:'fn(who,num)',stun:'fn(who,num)',heal:'fn(who,num)',hurt:'fn(who,num)',say:'fn(str)',spark:'fn(num,num)'};
+const F_SHOT={x:'num',y:'num',vx:'num',vy:'num',speed:'num',damage:'num',element:'str',bomb:'bool',reflect:'fn(num)',destroy:'fn()',slow:'fn(num)',turn:'fn(num)',power:'fn(num)'};
+const FORGE_API={swat:{...F_BASE,shot:F_SHOT},guard:{...F_BASE,shot:F_SHOT},strike:{...F_BASE,hit:{damage:'num',element:'str',scale:'fn(num)'}},near:F_BASE};
+const FORGE_LIMITS={reflect:[0.5,1.5],slow:[0.3,1],turn:[-180,180],shotPower:[0.5,1.5],hitScale:[0.6,1.4],pushX:520,pushY:520,
+  burn:2,soak:2,stun:0.6,heal:8,hurt:8,hpBudget:24,stunBudget:1.5,cooldown:[0.25,5],nearEvery:0.25,nearDist:260,say:18,sayEvery:1.5,faults:3,hold:4};
+// The Math a rule gets: these ten and nothing else of the real one. The two-argument ones take exactly two.
+const FORGE_MATH=Object.freeze({abs:v=>Math.abs(v),sign:v=>Math.sign(v),floor:v=>Math.floor(v),round:v=>Math.round(v),sqrt:v=>Math.sqrt(v),sin:v=>Math.sin(v),cos:v=>Math.cos(v),min:(a,b)=>Math.min(a,b),max:(a,b)=>Math.max(a,b),hypot:(a,b)=>Math.hypot(a,b)});
 function createDuel(opts){
   let acc=0, nextId=1; const STEP=1/120, r1=v=>Math.round(v*10)/10;
   let W=Math.max(600,(opts&&opts.width)||AW), PL=(opts&&opts.plats)||PLATS, BOARD=null, SOL=[];  // arena size; the default is the 960-wide stage
@@ -948,6 +972,68 @@ function createDuel(opts){
     objs:[],fields:[],groups:[null,null],hack:null,effects:[],broken:null,breached:false,cells:[],time:0,stop:0};
   const PICK={name:'Pick',kind:'melee',style:'pick',el:'none',cost:0,st:Object.assign(itemStats('melee','none',10),{reach:54,dmg:5})};
   const itemOf=(side,k)=>S.items[side][k]||PUNCH, EL_BEATS={fire:'plant',plant:'water',water:'fire'};
+  /* ---------- RuleForge: the rules of this match (see FORGE_API) ----------
+     A rule is {name,blurb,a:[side,slot],b:[side,slot],on,cooldown,run}. When the event `on` happens between item a (its
+     holder is "me") and item b, run(host) is called with a host shaped like FORGE_API[on]. run is a compiled ForgeScript
+     program in a match and any function in a test; either way nothing it does is trusted:
+      - every argument must be a finite number (or me/foe, or text) and is clamped to FORGE_LIMITS;
+      - what a rule heals and harms is capped per round (hpBudget), and so is how long it stuns;
+      - anything thrown is a fault, the run is abandoned, and three faults in a match switch the rule off;
+      - a run "fires" if it called at least one effect: only then does the cooldown start and a `rule` event go out.
+     The sim never throws because of a rule. S.rules[i].id is always i+1. */
+  S.rules=[];
+  let ruleT=0;                 // seconds of fighting this round, as rules see it
+  const FL=FORGE_LIMITS, within=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+  S.addRule=r=>{
+    const at=p=>Array.isArray(p)&&(p[0]===0||p[0]===1)&&(p[1]===0||p[1]===1);
+    if(!r||typeof r.run!=='function'||!Object.prototype.hasOwnProperty.call(FORGE_API,r.on)||!at(r.a)||!at(r.b)||r.a[0]===r.b[0]) return 0;
+    const cd=+r.cooldown;
+    S.rules.push({id:S.rules.length+1,name:String(r.name||'').slice(0,22),blurb:String(r.blurb||'').slice(0,70),a:[r.a[0],r.a[1]],b:[r.b[0],r.b[1]],on:r.on,
+      cooldown:Number.isFinite(cd)?within(cd,FL.cooldown[0],FL.cooldown[1]):1,run:r.run,mem:Object.create(null),cd:0,hp:0,stun:0,said:-99,fired:0,faults:0,off:false});
+    return S.rules.length;
+  };
+  S.clearRules=()=>{ S.rules.length=0; };
+  // A new round: every rule forgets what it noted and gets its budgets back. Faults are counted over the whole match.
+  function resetRules(){ ruleT=0; for(const r of S.rules){ r.mem=Object.create(null); r.cd=0; r.hp=0; r.stun=0; r.said=-99; } }
+  function ruleStep(dt){ ruleT+=dt; for(const r of S.rules) if(r.cd>0) r.cd-=dt; }
+  // Is the match still in one piece? Every number on the fighters and the projectiles finite, nobody above full health,
+  // everything within 400 px of the arena. (Health below zero is a knockout, not damage to the sim: a last blow leaves it there.)
+  S.sane=()=>{
+    const fin=o=>{ for(const k in o){ const v=o[k]; if(typeof v==='number'&&!Number.isFinite(v)) return false; } return true; };
+    const inside=o=>o.x>=-400&&o.x<=W+400&&o.y>=-400&&o.y<=(BOARD?Math.max(700,BOARD.top):700)+400;
+    for(const f of S.f) if(!fin(f)||!fin(f.cd)||!fin(f.buf)||!(f.hp<=HP+1e-6)||!inside(f)) return false;
+    for(const p of S.pr) if(!fin(p)||!inside(p)) return false;
+    return true;
+  };
+  const fview=f=>({x:f.x,y:f.y,vx:f.vx,vy:f.vy,face:f.face,hp:Math.max(0,f.hp),grounded:!!f.ground,attacking:!!f.act||f.dash>0,blocking:f.shield>0,burning:f.burn>0,soaked:f.slow>0,stunned:f.hurt>0||f.stun>0||f.trap>0});
+  const iview=it=>({kind:it.kind,style:it.style,element:it.el,power:it.stats.power,range:it.stats.range,speed:it.stats.speed});
+  // The event `on` has happened to me (item slot x.ka) and the foe (slot x.kb): run every rule written for that pair.
+  // x.hit is the blow of a strike. Returns how many rules ran.
+  function fireRules(on,me,foe,x){
+    const A=S.items[me.side][x.ka], B=S.items[foe.side][x.kb]; let ran=0;
+    if(!A||!B) return 0;
+    for(const r of S.rules){
+      if(r.off||r.on!==on||r.cd>1e-6||r.a[0]!==me.side||r.a[1]!==x.ka||r.b[0]!==foe.side||r.b[1]!==x.kb) continue;
+      const mv=fview(me), fv=fview(foe); let fired=false, said='';
+      const bad=msg=>{ throw new Error(msg); };
+      const num=v=>typeof v==='number'&&Number.isFinite(v)?v:bad('not a finite number');
+      const who=w=>w===mv?me:w===fv?foe:bad('not me or foe');
+      const host={me:mv,foe:fv,mine:iview(A),theirs:iview(B),dist:Math.hypot(foe.x-me.x,foe.y-me.y),time:ruleT,mem:r.mem,Math:FORGE_MATH,
+        chance:p=>Math.random()<num(p),
+        hurt:(w,v)=>{ const t=who(w); v=Math.min(within(num(v),0,FL.hurt),FL.hpBudget-r.hp); fired=true; if(v<=0||t.hp<=0) return; t.hp-=v; r.hp+=v;
+          S.events.push({e:'hit',x:Math.round(t.x),y:Math.round(t.y+52),n:Math.max(1,Math.round(v)),el:'none',side:t.side,hap:'thud',dir:'R'}); },
+        say:text=>{ if(typeof text!=='string') bad('not text'); fired=true; said=text.replace(/[\x00-\x1f\x7f]/g,' ').slice(0,FL.say).replace(/[\ud800-\udbff]$/,''); }};
+      if(x.hit) host.hit={damage:x.hit.dmg*x.hit.k,element:x.hit.el,scale:v=>{ v=within(num(v),FL.hitScale[0],FL.hitScale[1]); fired=true; x.hit.k=within(x.hit.k*v,FL.hitScale[0],FL.hitScale[1]); }};
+      ran++;
+      try{ r.run(host); }catch(err){ if(++r.faults>=FL.faults){ r.off=true; S.events.push({e:'rulefault',id:r.id}); } }
+      if(!fired) continue;
+      r.cd=r.cooldown; r.fired++;
+      const ev={e:'rule',id:r.id,side:me.side,x:Math.round(me.x),y:Math.round(me.y+96)};
+      if(said&&ruleT-r.said>=FL.sayEvery-1e-6){ ev.say=said; r.said=ruleT; }      // the call-out is rationed; the rule still fired
+      S.events.push(ev);
+    }
+    return ran;
+  }
   // An ultimate always plays out once it has started: nothing the caster or the foe does can cut it short. While casting, a
   // fighter still takes damage but is not staggered, knocked back, flung, disarmed or stunned out of it, and cannot swap
   // their own weapon or dash away by drawing. Only a knockout ends it early.
@@ -1033,7 +1119,9 @@ function createDuel(opts){
     startMove(f,f.held,m); if(alt!==undefined&&ALT.includes(m)) f.act.v=alt?1:0; return true;
   };
   // fin marks the last hit of a finishing move or a charged shot: it freezes the fight a little longer and the screen flashes.
-  function hurt(t,dmg,el,kx,ky,by,fromX,stun,tr,hap,fin){
+  // slot is the item slot the blow came from (a swing, a dash, a shot or a bomb of that item), or undefined when it is
+  // not an item's doing: a slam, a drawn bolt, a returned shot. Only an item's blow can trigger a strike rule.
+  function hurt(t,dmg,el,kx,ky,by,fromX,stun,tr,hap,fin,slot){
     if(stun===undefined) stun=0.2;
     if(t.bubble){ dmg*=0.35; kx*=0.4; ky*=0.4; t.bubble.hp--; ring(t.x,-(t.y+55),'#2bd'); if(t.bubble.hp<=0) t.bubble=null; }
     if(by){ if(by.overclock>0){ dmg*=1.6; kx*=1.3; } if(by.scale<0.8) dmg*=0.6; }
@@ -1054,6 +1142,8 @@ function createDuel(opts){
       if(EL_BEATS[el]===tel){ dmg*=1.3; tag='sup'; } else if(EL_BEATS[tel]===el){ dmg*=0.8; tag='weak'; }
       if(!blocked&&el==='fire'&&t.slow>0){ dmg*=1.25; t.slow=0; tag='steam'; }
     }
+    // Strike rules: my blow with item a is about to land on a foe holding item b. An ultimate never triggers rules.
+    if(S.rules.length&&by&&by!==t&&tr!=='fleet'&&slot>=0&&by.held===slot){ const h={dmg,el,k:1}; fireRules('strike',by,t,{ka:slot,kb:t.held,hit:h}); dmg*=h.k; }
     if(blocked){
       if(t.shieldTr==='thorns'&&by&&by!==t){ const n=dmg*0.35; by.hp-=n; S.events.push({e:'hit',x:Math.round(by.x),y:Math.round(by.y+52),n:Math.max(1,Math.round(n)),el:'none',side:by.side,hap:'thud',dir:'R'}); }
       dmg*=tr==='pierce'?0.6:0.15; kx*=0.3; ky*=0.3;
@@ -1162,7 +1252,7 @@ function createDuel(opts){
         if(M.mine&&!a.mined){ a.mined=true; mineHit(f); }
         const dx=(e.x-f.x)*f.face, reach=st.reach*(M.reach||1)*sty.reach;
         if(M.quake&&!a.quaked){ a.quaked=true; S.events.push({e:'quake',x:Math.round(f.x+f.face*reach*0.7),y:Math.round(f.y),n:Math.round(reach)}); }
-        if(dx>-14&&dx<reach+14&&Math.abs(e.y-f.y)<(M.tall||72)){ a.done++; hurt(e,st.dmg*M.dmg*sty.dmg,it.el,f.face*M.kb*sty.kb*(0.7+0.3*st.p)*(st.push||1),M.lift,f,f.x,undefined,it.trait,undefined,M.end&&!M.mine&&a.done>=marks.length?1:0); continue; }
+        if(dx>-14&&dx<reach+14&&Math.abs(e.y-f.y)<(M.tall||72)){ a.done++; hurt(e,st.dmg*M.dmg*sty.dmg,it.el,f.face*M.kb*sty.kb*(0.7+0.3*st.p)*(st.push||1),M.lift,f,f.x,undefined,it.trait,undefined,M.end&&!M.mine&&a.done>=marks.length?1:0,M.mine?undefined:k); continue; }
         if(a.t<marks[a.done]+0.07) break;      // the blade stays dangerous for a moment
         a.done++;
       }else{
@@ -1190,7 +1280,7 @@ function createDuel(opts){
     if(f.act) act(f,dt);
     if(f.dash>0){
       f.dash-=dt; f.vy=0;
-      if(!f.dashHit&&Math.abs(e.x-f.x)<36&&Math.abs(e.y-f.y)<70){ f.dashHit=true; hurt(e,f.dashItem.st.dmg,f.dashItem.el,f.face*f.dashItem.st.kb,200,f,f.x,undefined,f.dashItem.trait); }
+      if(!f.dashHit&&Math.abs(e.x-f.x)<36&&Math.abs(e.y-f.y)<70){ f.dashHit=true; hurt(e,f.dashItem.st.dmg,f.dashItem.el,f.face*f.dashItem.st.kb,200,f,f.x,undefined,f.dashItem.trait,undefined,undefined,S.items[f.side].indexOf(f.dashItem)); }
       if(f.dash<=0) f.vx*=0.35;
     }else{
       const stunned=f.hurt>0||f.stun>0||f.trap>0, dir=stunned?0:inp.r-inp.l;
@@ -1267,7 +1357,7 @@ function createDuel(opts){
       }
       if(e.bubble&&p.k!=='bomb'&&Math.hypot(p.x-e.x,p.y-(e.y+55))<e.bubble.r){ p.vx*=-1; p.vy*=-0.5; p.side=e.side; e.bubble.hp--; if(e.bubble.hp<=0) e.bubble=null; ring(p.x,-p.y,'#2bd'); log(e,'shield reflected a projectile'); continue; }
       if(p.k!=='bomb'){
-        if(touch){ hurt(e,p.dmg,p.el,Math.sign(p.vx)*p.kb,p.lift||90,S.f[p.side],p.x-Math.sign(p.vx)*30,p.stun,p.tr,undefined,p.fin); if(p.tr==='boomerang'&&!p.back) turn(); else p.ttl=0; }
+        if(touch){ hurt(e,p.dmg,p.el,Math.sign(p.vx)*p.kb,p.lift||90,S.f[p.side],p.x-Math.sign(p.vx)*30,p.stun,p.tr,undefined,p.fin,p.k==='shot'&&p.os===undefined?p.slot:undefined); if(p.tr==='boomerang'&&!p.back) turn(); else p.ttl=0; }
         else if(p.y<=0){ if(p.tr==='bounce'&&!p.hop){ p.hop=1; p.y=1; p.vy=Math.abs(p.vy)*0.7+170; } else p.ttl=0; }
         if(p.ttl<=0&&p.tr==='boomerang'&&!p.back) turn();
       }else if(p.tr==='bounce'&&!p.hop&&!touch&&!wall&&p.ttl>0&&p.y<=0){ p.hop=1; p.y=1; p.vy=Math.abs(p.vy)*0.55+150; p.vx*=0.8; }
@@ -1276,7 +1366,7 @@ function createDuel(opts){
         for(const g of S.f){
           const d=Math.hypot(g.x-p.x,g.y+45-by), own=g.side===p.side; if(d>=p.radius+20||(own&&p.st==='meteor')) continue;
           const fall=p.st==='meteor'&&d<p.radius*0.75?1:1-0.5*Math.min(1,d/p.radius);
-          hurt(g,p.dmg*fall*(own?0.4:1),p.el,(Math.sign(g.x-p.x)||1)*p.kb*fall,260*fall,own?null:S.f[p.side],p.x,undefined,own?undefined:p.tr,undefined,own?0:p.fin);
+          hurt(g,p.dmg*fall*(own?0.4:1),p.el,(Math.sign(g.x-p.x)||1)*p.kb*fall,260*fall,own?null:S.f[p.side],p.x,undefined,own?undefined:p.tr,undefined,own?0:p.fin,own||p.os!==undefined?undefined:p.slot);
         }
         S.events.push({e:'boom',x:Math.round(p.x),y:Math.round(by),n:Math.round(p.radius),el:p.el}); p.ttl=0;
       }
@@ -1539,7 +1629,7 @@ function createDuel(opts){
     }
     if(S.phase==='fight'&&S.stop>0){ S.stop-=dt; if(S.ult>=0) S.ultT+=dt; return; }   // hit-stop: everything waits, the round clock included
     S.t-=dt;
-    if(S.phase==='draw'){ if((S.ready[0]&&S.ready[1])||S.t<=0){ S.phase='count'; S.t=3; S.stop=0; S.ult=-1; S.f=[fresh(0),fresh(1)]; for(const f of S.f) f.uses=usesFor(f.side); S.pr=[]; resetWorld(); } return; }
+    if(S.phase==='draw'){ if((S.ready[0]&&S.ready[1])||S.t<=0){ S.phase='count'; S.t=3; S.stop=0; S.ult=-1; S.f=[fresh(0),fresh(1)]; for(const f of S.f) f.uses=usesFor(f.side); S.pr=[]; resetWorld(); resetRules(); } return; }
     if(S.phase==='count'){ if(S.t<=0){ S.phase='fight'; S.t=ROUND_TIME; S.events.push({e:'go'}); } return; }
     if(S.phase==='end'){
       if(S.t>0) return;
@@ -1562,6 +1652,7 @@ function createDuel(opts){
         for(const f of S.f){ f.buf[0]=f.buf[1]=0; f.jq=0; f.mbuf=0; }
       }
       S.time+=dt; SOL=solids();
+      if(S.rules.length) ruleStep(dt);
       for(const f of S.f) control(f,dt);
       projectiles(dt,-1); world(dt); if(S.sheet) sheetTick(dt);
     }
