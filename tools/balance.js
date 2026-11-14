@@ -4,27 +4,42 @@
 //   node tools/balance.js items    a sword plus each kind of second item, against a sword alone
 //   node tools/balance.js ults     how much of each ultimate's damage actually lands
 //   node tools/balance.js flow     round length, comebacks, how much the first hit decides
-// Options: --n=200 rounds per pairing, --skill=0.55 bot skill, --file=duel.html, --old=<git ref> to play that version's bot.
+// Options: --n=200 rounds per pairing, --skill=0.55 bot skill, --file=duel.html, --old=<git ref> to play that version's bot,
+//   --seed=N to make the bench repeatable: round i of every pairing is played with seed N+i for the match, and seeds derived
+//   from that for both players (bots and scripted people, made afresh each round). The same command then prints the same
+//   numbers every time, and two versions or settings (--file, --bot, --moves, ...) can be compared on identical rounds
+//   instead of through the noise. Without --seed everything is random, as before. (A version from before seeds existed
+//   ignores them, so --old and old --file versions are only repeatable from the commit that added seeds on.)
+//   Seeded and unseeded numbers are NOT comparable with each other. Without --seed the same two bots play every round of a
+//   pairing, and a bot remembers the shots it has seen by their ids; each round is a new match that numbers its shots from 1
+//   again, so from the second round on the bot reacts to every shot as one it noticed long ago, with no reaction time. That
+//   makes ranged weapons look much weaker than they are in a real match, where ids never repeat (quick: melee beats ranged
+//   about 53% unseeded, about 41% seeded). The seeded numbers are the ones that match a real match.
 // The scripted people are guesses at how people play, and bots are not people: use the numbers to compare, not as truth.
 const fs=require('fs'), path=require('path'), cp=require('child_process');
 const arg=k=>{ const a=process.argv.find(x=>x.startsWith('--'+k+'=')); return a?a.split('=')[1]:undefined; };
 const FILE=arg('file')||path.join(__dirname,'..','duel.html'), N=+(arg('n')||200), SKILL=+(arg('skill')||0.55);
+const SEED=arg('seed')===undefined?undefined:(+arg('seed')>>>0);
+// The bench's own dice for the scripted people (the game's are inside its rules), and a way to derive one seed from another.
+const dice=seed=>{ if(seed===undefined) return Math.random; let a=seed>>>0; return ()=>{ a=(a+0x6D2B79F5)|0; let t=Math.imul(a^(a>>>15),1|a); t=(t+Math.imul(t^(t>>>7),61|t))^t; return ((t^(t>>>14))>>>0)/4294967296; }; };
+const sub=(seed,k)=>seed===undefined?undefined:(Math.imul((seed>>>0)+1,0x9E3779B1)^Math.imul(k+1,0x85EBCA6B))>>>0;
 const load=src=>new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,makeBot,stockItem,STOCK,STYLE,MOVES,ULTS,INK,BOT:typeof BOT!=="undefined"?BOT:{},INK_CURVE:typeof INK_CURVE!=="undefined"?INK_CURVE:{}};')();
 const D=load(fs.readFileSync(FILE,'utf8'));
 const OLD=arg('old')?load(cp.execSync('git show '+arg('old')+':duel.html',{cwd:path.join(__dirname,'..'),maxBuffer:1<<26}).toString()):null;
 const KEY={blade:'sword',spear:'spear',hammer:'hammer',fist:'gloves',dual:'twins',bow:'bow',gun:'gun',akimbo:'pistols',staff:'staff',hurl:'star'}, STYLES=Object.keys(KEY);
 const spec=(key,o)=>Object.assign(D.stockItem(key,'none').spec,{power:5,range:5,speed:5,traits:['swift'],trait:'swift'},o||{});
-const bot=(side,skill,old)=>(old?OLD:D).makeBot(side,()=>skill===undefined?SKILL:skill);
+const bot=(side,skill,old,seed)=>(old?OLD:D).makeBot(side,()=>skill===undefined?SKILL:skill,seed);
 
 // Scripted "people". Each gets (S, side, dt) every tick and presses buttons through S.setInput like a controller would.
-function person(kind){
-  let t=0, n={j:0,a:0,b:0}, flip=0, hop=220+Math.random()*90, every=7+Math.floor(Math.random()*5);     // no two people time things the same
+function person(kind,seed){
+  const rnd=dice(seed);
+  let t=0, n={j:0,a:0,b:0}, flip=0, hop=220+rnd()*90, every=7+Math.floor(rnd()*5);     // no two people time things the same
   return (S,side,dt)=>{
-    if(S.phase!=='fight') return; t-=dt; if(t>0) return; t=0.10+Math.random()*0.07;
+    if(S.phase!=='fight') return; t-=dt; if(t>0) return; t=0.10+rnd()*0.07;
     const f=S.f[side], e=S.f[1-side], dir=Math.sign(e.x-f.x)||1, dist=Math.abs(e.x-f.x), c=S.cnt[side], it=S.items[side][0];
     let l=0,r=0,d=0;
     if(kind==='masher'){ if(dir>0) r=1; else l=1; n.a++; if(++flip%every===0) n.j++; }                       // run at them and mash
-    else if(kind==='jumper'){ if(dir>0) r=1; else l=1; if(f.ground&&dist<hop){ n.j++; hop=220+Math.random()*90; } if(dist<95+Math.random()*30) n.a++; }   // jump in, attack on the way down
+    else if(kind==='jumper'){ if(dir>0) r=1; else l=1; if(f.ground&&dist<hop){ n.j++; hop=220+rnd()*90; } if(dist<95+rnd()*30) n.a++; }   // jump in, attack on the way down
     else if(kind==='kiter'){ const want=it&&it.kind==='ranged'?Math.min(420,it.st.dist*0.8):90;            // keep away and shoot (or poke)
       if(dist<want-60&&f.x>60&&f.x<S.snapW-60){ if(dir>0) l=1; else r=1; } else if(dist>want+40){ if(dir>0) r=1; else l=1; }
       if(f.face===dir&&Math.abs(e.y-f.y)<50&&dist<(it&&it.kind==='ranged'?it.st.dist:110)) n.a++; else if(f.face!==dir){ if(dir>0) r=1; else l=1; }
@@ -32,9 +47,11 @@ function person(kind){
     S.setInput(side,{l,r,d,j:c.j+(n.j>0?1:0),a:c.a+(n.a>0?1:0),b:c.b,m:c.m,q:c.q,h:0,u:c.u}); n.j=n.a=0;
   };
 }
-// One round. a and b are {items:[spec,spec?], play:(S,side,dt)=>void}. Returns {w:0|1|-1, t, hp:[..], firstHit, lead10}.
-function round(a,b,flip,opts){
-  const S=D.createDuel(opts&&opts.stage?{stage:opts.stage}:undefined), P=flip?[b,a]:[a,b];
+// One round. a and b are {items:[spec,spec?], play:(S,side,dt)=>void, fresh:(seed)=>void}. Returns {w:0|1|-1, t, hp:[..], firstHit, lead10}.
+// seed (with --seed): the match's seed; each player is made afresh from a seed derived from it, so the round depends on nothing before it.
+function round(a,b,flip,opts,seed){
+  const o={}; if(opts&&opts.stage) o.stage=opts.stage; if(seed!==undefined){ o.seed=seed; a.fresh(sub(seed,1)); b.fresh(sub(seed,2)); }
+  const S=D.createDuel(o.stage||o.seed!==undefined?o:undefined), P=flip?[b,a]:[a,b];
   S.snapW=960;
   P.forEach((p,s)=>p.items.forEach((it,k)=>it&&S.setItem(s,k,it,(p.costs&&p.costs[k])||p.cost||45)));
   S.setReady(0); S.setReady(1);
@@ -47,9 +64,9 @@ function round(a,b,flip,opts){
   const w=S.wins[0]?0:S.wins[1]?1:-1, un=x=>flip?[x[1],x[0]]:x;
   return {w:w<0?-1:(flip?1-w:w), t, hp:un(hp), first:first<0?-1:(flip?1-first:first), dmgU:un(dmgU), casts:un(casts)};
 }
-function duel(a,b,n,opts){ let wa=0,wb=0,t=0; const rs=[]; for(let i=0;i<(n||N);i++){ const r=round(a,b,i%2,opts); if(r.w===0) wa++; else if(r.w===1) wb++; t+=r.t; rs.push(r); } return {a:Math.round(100*wa/(n||N)),b:Math.round(100*wb/(n||N)),secs:+(t/(n||N)).toFixed(1),rs}; }
-const botP=(items,skill,old,costs)=>{ const bots=[bot(0,skill,old),bot(1,skill,old)]; return {items,costs,play:(S,side,dt)=>bots[side](S,dt)}; };
-const personP=(items,kind)=>{ const ps=[person(kind),person(kind)]; return {items,play:(S,side,dt)=>ps[side](S,side,dt)}; };
+function duel(a,b,n,opts){ let wa=0,wb=0,t=0; const rs=[]; for(let i=0;i<(n||N);i++){ const r=round(a,b,i%2,opts,SEED===undefined?undefined:SEED+i); if(r.w===0) wa++; else if(r.w===1) wb++; t+=r.t; rs.push(r); } return {a:Math.round(100*wa/(n||N)),b:Math.round(100*wb/(n||N)),secs:+(t/(n||N)).toFixed(1),rs}; }
+const botP=(items,skill,old,costs)=>{ let bots=[bot(0,skill,old),bot(1,skill,old)]; return {items,costs,play:(S,side,dt)=>bots[side](S,dt),fresh:seed=>{ bots=[bot(0,skill,old,sub(seed,0)),bot(1,skill,old,sub(seed,1))]; }}; };
+const personP=(items,kind)=>{ let ps=[person(kind),person(kind)]; return {items,play:(S,side,dt)=>ps[side](S,side,dt),fresh:seed=>{ ps=[person(kind,sub(seed,0)),person(kind,sub(seed,1))]; }}; };
 
 if(arg('ink')) Object.assign(D.INK_CURVE,JSON.parse(arg('ink')));     // e.g. --ink='{"exp":0.5}' to try a different ink curve
 if(arg('moves')){ const o=JSON.parse(arg('moves')); for(const m in o) Object.assign(D.MOVES[m],o[m]); }   // e.g. --moves='{"hammer_air":{"dmg":1}}'
@@ -78,7 +95,7 @@ if(cmd==='bot'){
   if(!OLD){ const sk={}; for(const s of [0,0.25,0.55,0.8,1]){ let a=0; for(const st of ['blade','gun','hammer']) a+=duel(botP([spec(KEY[st])],s),personP([spec(KEY[st])],'masher'),Math.round(N/2)).a; sk['skill '+s]={'vs masher':Math.round(a/3)}; } console.log('How the skill setting changes it (sword, gun, hammer averaged)'); console.table(sk); }
 }
 if(cmd==='versus'){ if(!OLD) throw new Error('needs --old=<git ref>'); const out={}; let tot=0;
-  for(const st of STYLES){ const newP=botP([spec(KEY[st])],SKILL), oldBots=[OLD.makeBot(0,()=>SKILL),OLD.makeBot(1,()=>SKILL)], oldP={items:[spec(KEY[st])],play:(S,side,dt)=>oldBots[side](S,dt)}; const r=duel(newP,oldP); out[st]={'new bot wins':r.a,'old bot wins':r.b,secs:r.secs}; tot+=r.a; }
+  for(const st of STYLES){ const newP=botP([spec(KEY[st])],SKILL), oldP=botP([spec(KEY[st])],SKILL,true); const r=duel(newP,oldP); out[st]={'new bot wins':r.a,'old bot wins':r.b,secs:r.secs}; tot+=r.a; }
   console.table(out); console.log('new bot average',Math.round(tot/STYLES.length)+'%'); }
 if(cmd==='styles'){
   const win={}, games={}, table={}; for(const s of STYLES){ win[s]=0; games[s]=0; }
@@ -93,7 +110,8 @@ if(cmd==='items'){            // the same 100 ink either way: all of it on one s
 if(cmd==='moves'){            // which moves do the damage: per use, over bot-against-bot rounds of every style
   const use={}, dmg={};
   for(const a of STYLES) for(const b of STYLES){ const P=[botP([spec(KEY[a])]),botP([spec(KEY[b])])];
-    for(let n=0;n<Math.max(4,Math.round(N/20));n++){ const S=D.createDuel(); S.setItem(0,0,P[0].items[0],45); S.setItem(1,0,P[1].items[0],45); S.setReady(0); S.setReady(1); let t=0, last=[null,null];
+    for(let n=0;n<Math.max(4,Math.round(N/20));n++){ const sd=SEED===undefined?undefined:SEED+n; if(sd!==undefined){ P[0].fresh(sub(sd,1)); P[1].fresh(sub(sd,2)); }
+      const S=D.createDuel(sd===undefined?undefined:{seed:sd}); S.setItem(0,0,P[0].items[0],45); S.setItem(1,0,P[1].items[0],45); S.setReady(0); S.setReady(1); let t=0, last=[null,null];
       while(S.wins[0]+S.wins[1]===0&&t<110){ t+=1/30; P[0].play(S,0,1/30); P[1].play(S,1,1/30); S.step(1/30);
         for(const s of [0,1]){ const x=S.f[s].act; if(x&&x!==last[s]) use[x.m]=(use[x.m]||0)+1; last[s]=x; }
         for(const e of S.events.splice(0)) if(e.e==='hit'&&!e.ult){ const at=S.f[1-e.side], m=at.act?at.act.m:null; if(m) dmg[m]=(dmg[m]||0)+e.n; } } } }

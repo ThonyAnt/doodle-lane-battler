@@ -54,6 +54,14 @@ The fighters can play on top of your real desktop instead of in a browser tab. T
 
 Press **Stage** in the header (or open `/duel?stage=sheet`) to fight inside a banker's spreadsheet while he builds a valuation model. The cells he fills in are the platforms. He drags one across, pastes another, deletes a row, then loses his temper and deletes everything, and the `#REF!` errors rain down. Near the end he notices the two of you and comes after you with the cursor: get out of the selection before he presses Delete. It is the same minute every round, so you can learn it. A room made from that page uses the stage for everyone in it.
 
+## Replays
+
+- **Every knockout is shown again.** When a round ends, the last second before the knockout plays back at a third of the speed under a REPLAY banner, then the next round's drawing begins as usual. The knockout that wins the match is not replayed: the champion screen comes straight up. Add `?ko=0` to the address to switch the replays off (`/duel?ko=0`).
+- **Any room's match can be watched again.** Open `/duel?replay=CODE` with the room's four letters, for example `/duel?replay=ABCD`. The page plays the match back from the room's recording: play and pause, 0.25×, 1× and 4× speed, and a bar to drag to any moment (with the bar selected, the arrow keys step one tick at a time). While a match is on, the link shows it up to the moment you opened it. After a rematch it shows the match that just ended until the new one has started. A recording is kept for 30 minutes after its match is replaced or its room closes, and the server keeps at most 50 of them. A replay made by a different version of the game is refused, since it would play out differently.
+- **The balance bench can be repeated exactly.** `node tools/balance.js quick --seed=7` plays the same rounds every time, so two versions or settings can be compared on identical matches; see the notes at the top of `tools/balance.js`.
+
+A match is exactly repeatable because all its randomness comes from one seed and every command it is given is logged with the tick it arrived on; `node tools/test-replay.js` checks that.
+
 ## Run
 
 Needs Node 18 or newer. No dependencies.

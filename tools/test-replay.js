@@ -278,5 +278,11 @@ await atest('the knockout that wins the match goes straight to the champion scre
 await atest('?ko=0 switches the knockout replay off',async()=>{ const m=await botMatchInPage('?plain=1&ko=0'); return [m.kos.length===2&&m.kos.every(k=>k.past===0),m.kos.map(k=>k.past)]; });
 await atest('it works the same on the retro desktop layout',async()=>{ const m=await botMatchInPage(''), k=m.kos[0]; return [m.kos.length===2&&k.past>=170&&k.past<=185&&m.kos[1].past===0&&m.phase==='over',m.kos.map(x=>x.past)]; });
 
+/* ---------- 6. the seeded bench ---------- */
+{ const bench=(...args)=>cp.execFileSync(process.execPath,[path.join(__dirname,'balance.js'),...args],{encoding:'utf8'});
+  test('a seeded bench prints the same numbers twice',()=>{ const out1=bench('quick','--n=40','--seed=5'), out2=bench('quick','--n=40','--seed=5'); return [out1===out2&&/melee beats ranged \d+%/.test(out1),out1.trim().split('|').slice(1).join('|')]; });
+  test('another seed plays other rounds, and the people the bot meets are seeded too',()=>{ const a=bench('bot','--n=12','--seed=5'), b=bench('bot','--n=12','--seed=5'), c=bench('bot','--n=12','--seed=905'); return a===b&&a!==c; });
+}
+
 console.log(bad?bad+' failed':'all replay tests pass'); process.exit(bad?1:0);
 })();
