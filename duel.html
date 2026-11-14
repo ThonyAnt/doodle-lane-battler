@@ -810,15 +810,24 @@ const STYLE={pick:{reach:1,dmg:1,kb:1},blade:{reach:1,dmg:0.98,kb:1},spear:{reac
 const MUZZLE={bow:[40,72],gun:[48,71],staff:[66,70],hurl:[46,68],akimbo:[48,72]};
 const styleOf=(kind,style)=>kind==='melee'?(MELEE_STYLES.includes(style)?style:'blade'):kind==='ranged'?(RANGED_STYLES.includes(style)?style:'gun'):'';
 const ALT=['blade1','blade2','bow_shot','bow_quick','gun_shot','gun_rapid','spear1','spear2','hammer1','hammer2','fist1','fist3','staff_shot','staff_quick','hurl_shot','hurl_quick'];   // moves with a second animation, name + '_b'
+// Dice. Every random choice in a match comes from a generator that belongs to that match (S.rand, started from S.seed),
+// so the same seed and the same commands give the same match again; each bot and each bot loadout has its own generator.
+// RNG is whose dice the shared helpers rand() and pick() are rolling right now: a match points it at its own generator
+// for as long as it steps or takes a command (`own` in createDuel), a bot for as long as it thinks, and it is put back
+// afterwards, so anything else that uses the helpers (the page's glyph buttons, say) never uses up a match's numbers.
+function mulberry32(seed){ let a=seed>>>0; return ()=>{ a=(a+0x6D2B79F5)|0; let t=Math.imul(a^(a>>>15),1|a); t=(t+Math.imul(t^(t>>>7),61|t))^t; return ((t^(t>>>14))>>>0)/4294967296; }; }
+const seedFrom=seed=>typeof seed==='number'&&Number.isFinite(seed)?seed>>>0:Math.floor(Math.random()*4294967296)>>>0;   // the seed asked for, or a fresh one
+let RNG=()=>Math.random();
 /* ===== InkShop (Alex's prototype) =====
    Everything between BEGIN and END is copied unchanged from prototype/inkshop-duel.html in
    al371160/hackprinceton-brainstorming-alex: his geometry helpers, glyph templates, shape recogniser and hack table.
-   Points are {x,y} with y pointing DOWN, as in his game. Only this wrapper and the export list are ours. */
+   Points are {x,y} with y pointing DOWN, as in his game. Only this wrapper, the export list and the dice (rand and pick
+   roll RNG, not Math.random) are ours. */
 const INK=(()=>{
 /* --- BEGIN verbatim --- */
 const PI=Math.PI,TAU=PI*2,INK_PX=0.085;
-const clamp=(v,a,b)=>v<a?a:v>b?b:v,lerp=(a,b,t)=>a+(b-a)*t,rand=(a=0,b=1)=>a+Math.random()*(b-a);
-const sgn=v=>v<0?-1:1,D=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),pick=a=>a[Math.floor(Math.random()*a.length)];
+const clamp=(v,a,b)=>v<a?a:v>b?b:v,lerp=(a,b,t)=>a+(b-a)*t,rand=(a=0,b=1)=>a+RNG()*(b-a);
+const sgn=v=>v<0?-1:1,D=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),pick=a=>a[Math.floor(RNG()*a.length)];
 function segDist(p,a,b){const vx=b.x-a.x,vy=b.y-a.y,l=vx*vx+vy*vy||1;const t=clamp(((p.x-a.x)*vx+(p.y-a.y)*vy)/l,0,1);return Math.hypot(p.x-a.x-vx*t,p.y-a.y-vy*t)}
 function segX(a,b,c,d){const r={x:b.x-a.x,y:b.y-a.y},s={x:d.x-c.x,y:d.y-c.y};const den=r.x*s.y-r.y*s.x;if(Math.abs(den)<1e-6)return null;
  const t=((c.x-a.x)*s.y-(c.y-a.y)*s.x)/den,u=((c.x-a.x)*r.y-(c.y-a.y)*r.x)/den;if(t<-.08||t>1.08||u<-.08||u>1.08)return null;return{x:a.x+r.x*t,y:a.y+r.y*t,t,u}}
@@ -935,6 +944,7 @@ function elOfColor(hex){ const m=/^#?([0-9a-f]{6})$/i.exec(hex||''); if(!m) retu
   const n=parseInt(m[1],16), r=n>>16, g=(n>>8)&255, b=n&255; return r>g*1.35&&r>b*1.35?'fire':b>r*1.25&&b>=g?'water':g>r*1.2&&g>b*1.2?'plant':'none'; }
 const RECYCLE_SECS=6;      // how long RECYCLE.exe keeps a weapon out of the fight
 const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet stage: cell size, and half the size of the banker's selection
+const COMMANDS=['setItem','tweak','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats'];   // the methods of a match that change it from outside
 function createDuel(opts){
   let acc=0, nextId=1; const STEP=1/120, r1=v=>Math.round(v*10)/10;
   let W=Math.max(600,(opts&&opts.width)||AW), PL=(opts&&opts.plats)||PLATS, BOARD=null, SOL=[];  // arena size; the default is the 960-wide stage
@@ -946,6 +956,9 @@ function createDuel(opts){
   const S={phase:'draw',t:45,round:1,wins:[0,0],ready:[false,false],items:[[null,null],[null,null]],f:[fresh(0),fresh(1)],pr:[],events:[],
     winner:-1,champ:-1,ver:0,practice:!!(opts&&opts.practice),inp:[{l:0,r:0,d:0},{l:0,r:0,d:0}],cnt:[{j:0,a:0,b:0,m:0,q:0,u:0},{j:0,a:0,b:0,m:0,q:0,u:0}],
     objs:[],fields:[],groups:[null,null],hack:null,effects:[],broken:null,breached:false,cells:[],time:0,stop:0};
+  // The match's own dice and clock. seed: where the dice start (given, or picked fresh). rand(): the next number, 0 up to 1.
+  // tickN: how many 1/120 s ticks have been played. Whatever comes in from outside lands between two ticks.
+  S.seed=seedFrom(opts&&opts.seed); S.rand=mulberry32(S.seed); S.tickN=0;
   const PICK={name:'Pick',kind:'melee',style:'pick',el:'none',cost:0,st:Object.assign(itemStats('melee','none',10),{reach:54,dmg:5})};
   const itemOf=(side,k)=>S.items[side][k]||PUNCH, EL_BEATS={fire:'plant',plant:'water',water:'fire'};
   // An ultimate always plays out once it has started: nothing the caster or the foe does can cut it short. While casting, a
@@ -1038,7 +1051,7 @@ function createDuel(opts){
     if(t.bubble){ dmg*=0.35; kx*=0.4; ky*=0.4; t.bubble.hp--; ring(t.x,-(t.y+55),'#2bd'); if(t.bubble.hp<=0) t.bubble=null; }
     if(by){ if(by.overclock>0){ dmg*=1.6; kx*=1.3; } if(by.scale<0.8) dmg*=0.6; }
     const blocked=t.shield>0&&(t.shieldTr==='bubble'||Math.sign(fromX-t.x)===t.face);
-    if(tr==='lucky') dmg*=Math.random()<1/6?2:0.9;        // the damage traits are each worth about 8%
+    if(tr==='lucky') dmg*=S.rand()<1/6?2:0.9;        // the damage traits are each worth about 8%
     if(tr==='blast') dmg*=1.08;
     if(tr==='flurry') dmg*=1.08;
     if(tr==='heavy') kx*=1.6;
@@ -1079,7 +1092,7 @@ function createDuel(opts){
   // Begin a move: the fighter is committed until it ends or chains.
   function startMove(f,k,m){
     const it=m==='mine'?PICK:itemOf(f.side,k), M=MOVES[m], p=it.st.p;
-    f.act={k,m,v:ALT.includes(m)&&Math.random()<0.5?1:0,t:0,dur:M.dur,rate:(f.overclock>0?1/0.7:1)*(it.st.rate||1)/(it.kind==='ranged'?0.75+0.25*p:0.85+0.15*p),done:0,lunged:false};
+    f.act={k,m,v:ALT.includes(m)&&S.rand()<0.5?1:0,t:0,dur:M.dur,rate:(f.overclock>0?1/0.7:1)*(it.st.rate||1)/(it.kind==='ranged'?0.75+0.25*p:0.85+0.15*p),done:0,lunged:false};
     f.buf[k]=0; f.held=k;
     if(M.carry) f.vx=f.face*Math.max(Math.abs(f.vx),M.carry);
     if(M.dive&&!f.ground){ f.vy=-M.dive; f.vx=f.face*Math.max(Math.abs(f.vx),M.dive*0.5); }
@@ -1572,7 +1585,7 @@ function createDuel(opts){
       S.phase='end'; S.t=3.2; S.events.push({e:'ko',side:S.winner});
     }
   }
-  S.step=dt=>{ acc+=Math.min(0.25,dt); while(acc>=STEP){ acc-=STEP; tick(STEP); } };
+  S.step=dt=>{ acc+=Math.min(0.25,dt); while(acc>=STEP){ acc-=STEP; tick(STEP); S.tickN++; } };
   S.snapshot=()=>({phase:S.phase,t:+S.t.toFixed(2),round:S.round,wins:S.wins,ready:S.ready,winner:S.winner,champ:S.champ,ink:[S.inkLeft(0),S.inkLeft(1)],practice:S.practice,hs:S.phase==='fight'&&S.stop>0?1:0,ul:S.phase==='fight'&&S.ult>=0?[S.ult,+S.ultT.toFixed(2)]:null,
     w:W,board:BOARD,sheet:sheetView(),broken:S.broken&&{t:r1(S.broken.t),hole:S.broken.hole},breached:S.breached,cells:S.cells.filter(c=>c.hp<2&&c.side!=='c').map(c=>[c.id,c.hp]),
     objs:S.objs.map(o=>[o.id,r1(o.x),r1(o.y),o.life===Infinity?-1:r1(o.life)]),fields:S.fields.map(q=>({a:q.a,b:q.b,u:q.u,life:r1(q.life),max:q.max,col:q.col})),
@@ -1588,6 +1601,11 @@ function createDuel(opts){
     pr:S.pr.map(p=>({id:p.id,k:p.k,st:p.st,big:p.big,side:p.side,slot:p.slot,x:r1(p.x),y:r1(p.y),vx:Math.round(p.vx),vy:Math.round(p.vy),el:p.el,h:p.hover?1:undefined,a:p.st==='fleet'?+p.ang.toFixed(2):undefined,z:S.ult>=0&&!(p.tr==='fleet'&&p.side===S.ult)?1:undefined})),
     ev:S.events.splice(0)});
   if(S.sheet) sheetReset();
+  // Every way into the match from outside. Each one rolls this match's dice for as long as the call lasts (see RNG).
+  // A new method that changes the match from outside must be added to this list.
+  const own=fn=>function(){ const keep=RNG; RNG=S.rand; try{ return fn.apply(null,arguments); } finally{ RNG=keep; } };
+  for(const name of COMMANDS) S[name]=own(S[name]);
+  S.step=own(S.step);
   return S;
 }
 // A simple opponent: thinks a few times a second and presses the same buttons a player would.
@@ -1595,7 +1613,8 @@ function createDuel(opts){
 // his AI.decide(), AI.onHack() and Drawer: the same rules and odds, and a ghost cursor that really traces each glyph
 // stroke by stroke and submits it through S.stroke, exactly as a player's drawing is. skillOf() is his CPU skill, 0..1.
 const BOT={cdBack:1,jumpBack:0,antiAir:1,predict:1,backPlan:1,leap:0,flee:0,swap:170};   // switches for the bot's habits, so tools/balance.js can try them one at a time
-function makeBot(side,skillOf){
+function makeBot(side,skillOf,seed){
+  const R=mulberry32(seedFrom(seed));      // the bot's own dice: what it decides never uses up the match's numbers
   let think=0, react=null, hadHack=false, now=0, idle=0, seenAct=null, seenAt=0, rolled=false, plan='', planFor=null, flee=false, stuck=0;
   const i={l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0,u:0}, last={a:-9,b:-9,j:-9,u:-9}, seenShot=new Map();
   const {T,toPts,densify,rand,pick,GLYPH_ICON}=INK, COL=['#1d3fbf','#b0121f'][side];
@@ -1606,12 +1625,12 @@ function makeBot(side,skillOf){
       if(!t.down){ const q=st[0], dd=Math.hypot(q.x-this.cur.x,q.y-this.cur.y); if(dd>sp){ this.cur.x+=(q.x-this.cur.x)/dd*sp; this.cur.y+=(q.y-this.cur.y)/dd*sp; return; } this.cur={x:q.x,y:q.y}; t.down=true; t.pi=1; return; }
       let b=sp; while(b>0&&t.pi<st.length){ const p=st[t.pi], dd=Math.hypot(p.x-this.cur.x,p.y-this.cur.y); if(dd<=b){ this.cur={x:p.x,y:p.y}; b-=dd; t.pi++; } else { this.cur.x+=(p.x-this.cur.x)/dd*b; this.cur.y+=(p.y-this.cur.y)/dd*b; b=0; } }
       if(t.pi>=st.length){ if(!S.stroke(side,st,COL)){ this.task=null; return; } t.down=false; t.si++; t.pi=0; t.wait=0.04; if(t.si>=t.strokes.length) this.task=null; } } };
-  const fn=function(S,dt){
+  const play=function(S,dt){
     const d=skillOf?skillOf():0.55;
     if(S.phase!=='fight'){ i.l=i.r=0; S.setInput(side,i); dr.task=null; dr.vis=false; react=null; hadHack=false; return; }
     dr.update(S,dt,d);
     { // his onHack(): notice a hack aimed at us, then (depending on skill) draw its counter glyph after a reaction delay
-      const me=S.f[side], aimed=!!(S.hack&&S.hack.target===side); if(aimed&&!hadHack) react={t:rand(0.2,0.6)*(1.5-d),go:Math.random()<0.3+0.6*d}; hadHack=aimed;
+      const me=S.f[side], aimed=!!(S.hack&&S.hack.target===side); if(aimed&&!hadHack) react={t:rand(0.2,0.6)*(1.5-d),go:R()<0.3+0.6*d}; hadHack=aimed;
       if(react){ react.t-=dt; if(react.t<=0){ const r=react; react=null; if(r.go&&S.hack&&S.hack.target===side){ dr.cancel(); dr.draw(GLYPH_ICON[S.hack.counter]||'null',me.x-me.face*70,-(me.y+150),0.7,1); } } } }
     // ---- fighting ----
     // The bot looks at the fight every tick but acts through a person's limits, all set by the skill d (0 to 1): it notices
@@ -1629,14 +1648,14 @@ function makeBot(side,skillOf){
     let km=-1,kr=-1,kb=-1,ks=-1,kd=-1,kh=-1;
     items.forEach((it,k)=>{ if(!it) return; if(it.kind==='melee'){ if(km<0||reachOf(it)>reachOf(items[km])) km=k; } else if(it.kind==='ranged') kr=k; else if(it.kind==='bomb') kb=k; else if(it.kind==='shield') ks=k; else if(it.kind==='dash') kd=k; else kh=k; });
     if(km<0){ const empty=items.findIndex(it=>!it); if(empty>=0) km=empty; }      // an empty hand is a punch
-    if(Math.random()<dt*(1-d)*0.9) idle=now+0.15+Math.random()*0.35;             // a moment of doing nothing
+    if(R()<dt*(1-d)*0.9) idle=now+0.15+R()*0.35;             // a moment of doing nothing
     // what it has noticed: the foe's current move (a reaction time after it began) and shots heading its way
     if(e.act!==seenAct){ seenAct=e.act; seenAt=now; rolled=false; }
     const saw=e.act&&now-seenAt>=lag?e.act:null;
     let threat=false, tHit=9;
     if(saw){ const M=MOVES[saw.m]; if(M&&M.hits&&saw.done<M.hits.length){ const er=reachOf(S.items[1-side][saw.k],M)+50; tHit=(M.hits[saw.done]-saw.t)/saw.rate; threat=dist<er&&Math.abs(dy)<90&&e.face===-dir&&tHit<0.45; } }
     let shotIn=9, shotId=0;
-    for(const p of S.pr){ if(p.side===side||p.hover) continue; const t0=seenShot.get(p.id); if(t0===undefined){ seenShot.set(p.id,{t:now,roll:Math.random()<sure}); continue; } if(now-t0.t<lag||!t0.roll) continue;
+    for(const p of S.pr){ if(p.side===side||p.hover) continue; const t0=seenShot.get(p.id); if(t0===undefined){ seenShot.set(p.id,{t:now,roll:R()<sure}); continue; } if(now-t0.t<lag||!t0.roll) continue;
       const tt=p.vx?(f.x-p.x)/p.vx:9; if(tt>0&&tt<0.4){ const py=p.y+p.vy*tt-(p.grav||0)*tt*tt/2; if(py>f.y-12&&py<f.y+100&&tt<shotIn){ shotIn=tt; shotId=p.id; } } }
     if(seenShot.size>80) seenShot.clear();
     let mv=0, down=0, pressed=false;           // mv: 1 toward the foe, -1 away
@@ -1649,11 +1668,11 @@ function makeBot(side,skillOf){
         else if(f.ground&&!f.act&&shotIn>0.07){ const p=S.pr.find(q=>q.id===shotId); if(p&&(p.dmg>=5||p.big||(kr<0&&dist>170))) tap('j'); }
       }
       if(threat&&!rolled){ rolled=true; const er=reachOf(S.items[1-side][saw.k],MOVES[saw.m])+50;
-        plan=Math.random()<sure?(ks>=0&&f.cd[ks]<=0&&facing?'block':km>=0&&ready(km)&&myHit<tHit-0.02&&dist<myReach+20&&facing?'beat':BOT.backPlan&&(er-dist)/300<tHit-0.04?'back':'trade'):''; planFor=saw; }
+        plan=R()<sure?(ks>=0&&f.cd[ks]<=0&&facing?'block':km>=0&&ready(km)&&myHit<tHit-0.02&&dist<myReach+20&&facing?'beat':BOT.backPlan&&(er-dist)/300<tHit-0.04?'back':'trade'):''; planFor=saw; }
       if(threat&&planFor===saw&&!f.act){
         if(plan==='block'&&f.shield<=0) pressed=tap(KEYS[ks])||pressed;
         else if(plan==='beat'||(plan==='trade'&&km>=0&&ready(km)&&facing&&dist<myReach+10)) pressed=tap(KEYS[km])||pressed;
-        else if(plan==='back'){ mv=-1; if(tHit<0.14&&f.ground&&Math.random()<0.5) tap('j'); }
+        else if(plan==='back'){ mv=-1; if(tHit<0.14&&f.ground&&R()<0.5) tap('j'); }
       }
       // ---- the snack, when it is safe or badly needed ----
       if(kh>=0&&f.cd[kh]<=0&&f.uses[kh]>0&&!f.act&&!pressed&&(f.hp<HP*0.2||(f.hp<HP*0.4&&dist>210))) pressed=tap(KEYS[kh]);
@@ -1664,15 +1683,15 @@ function makeBot(side,skillOf){
           const it=items[kr], range=it.st.dist, ideal=Math.max(200,Math.min(520,range*0.7)), lined=Math.abs(dy)<42, key=KEYS[kr];
           if(f.act&&f.act.k===kr){ if(MOVES[f.act.m].next&&lined&&dist<range*0.95) tap(key); }          // keep the quick shots coming
           else if(ready(kr)&&facing){
-            if(lined&&dist<range*0.95){ if(d>0.35&&dist>ideal*0.85&&Math.abs(e.vx)<140&&Math.random()<0.12) down=1; pressed=tap(key); }
+            if(lined&&dist<range*0.95){ if(d>0.35&&dist>ideal*0.85&&Math.abs(e.vx)<140&&R()<0.12) down=1; pressed=tap(key); }
             else if(!f.ground&&dy<-30&&dist<range*0.8) pressed=tap(key);                                  // from the air, angled down
           }
           if(BOT.flee&&dist<ideal-110&&foeMelee) flee=true; else if(dist>ideal-30||!foeMelee||!BOT.flee) flee=false;
           if(flee){ if(stuck>0.3){ mv=1; if(f.ground) tap('j'); } else mv=-1; }                             // cornered: go over the top
           else if(dist>ideal+60) mv=1; else if(!facing) mv=1;
-          if(dy>70&&f.ground&&Math.random()<dt*2.5) tap('j');
+          if(dy>70&&f.ground&&R()<dt*2.5) tap('j');
         }else if(km>=0){
-          const it=items[km], key=KEYS[km], aim=1+(Math.random()-0.5)*0.3*(1-d);
+          const it=items[km], key=KEYS[km], aim=1+(R()-0.5)*0.3*(1-d);
           if(f.act&&f.act.k===km&&!MOVES[f.act.m].mine){ if(MOVES[f.act.m].next&&dist<myReach+46) tap(key); }      // keep the combo going
           else if(ready(km)){
             if(!f.ground){ if(facing&&dist<myReach*0.95&&dy<24&&dy>-150) pressed=tap(key); }               // on the way down
@@ -1683,11 +1702,11 @@ function makeBot(side,skillOf){
           const eit=S.items[1-side][e.held], eReach=reachOf(eit)+56;
           if(BOT.cdBack&&!f.act&&f.cd[km]>0.14&&dist<eReach&&!(e.hurt>0||e.stun>0)) mv=-1;                             // weapon recovering: step out of their reach
           else if(!e.ground&&f.ground&&closing>90&&dist<(BOT.jumpBack?240:200)&&dy>30&&(BOT.jumpBack||!ready(km))) mv=-1;   // a jump-in it cannot answer: step out from under it
-          else if(BOT.leap&&f.ground&&ready(km)&&dist>myReach+40&&dist<myReach+190&&Math.abs(dy)<40&&Math.random()<dt*BOT.leap) tap('j');   // sometimes come in from above
+          else if(BOT.leap&&f.ground&&ready(km)&&dist>myReach+40&&dist<myReach+190&&Math.abs(dy)<40&&R()<dt*BOT.leap) tap('j');   // sometimes come in from above
           else if(dist>myReach*0.78) mv=1; else if(!facing) mv=1;
           if(kd>=0&&ready(kd)&&facing&&dist>290&&Math.abs(dy)<60&&!pressed) pressed=tap(KEYS[kd]);          // close the gap
-          if(dy>70&&f.ground&&dist<280&&Math.random()<dt*3.5) tap('j');                                     // go up after them
-          else if(!f.ground&&dy>40&&f.vy<60&&f.jumps<2&&Math.random()<dt*6) tap('j');
+          if(dy>70&&f.ground&&dist<280&&R()<dt*3.5) tap('j');                                     // go up after them
+          else if(!f.ground&&dy>40&&f.vy<60&&f.jumps<2&&R()<dt*6) tap('j');
         }
         if(kb>=0&&ready(kb)&&facing&&!pressed&&dist>125&&dist<430&&Math.abs(dy)<140) pressed=tap(KEYS[kb]);
       }else if(!pressed&&!threat){ if(km>=0&&!shooter&&dist>myReach*0.78) mv=1; }
@@ -1697,23 +1716,24 @@ function makeBot(side,skillOf){
     if(mv<0&&f.act&&MOVES[f.act.m]&&MOVES[f.act.m].shots) mv=0;     // backing off mid-volley would turn it around and fire the wrong way
     i.r=mv*dir>0?1:0; i.l=mv*dir<0?1:0; i.d=down;
     // ---- the slower thoughts: ultimate, hacks and drawing, a few times a second ----
-    think-=dt; if(think>0){ S.setInput(side,i); return; } think=0.35+(0.1-0.35)*d+Math.random()*0.08+0.07;
+    think-=dt; if(think>0){ S.setInput(side,i); return; } think=0.35+(0.1-0.35)*d+R()*0.08+0.07;
     const incoming=shotIn<9;
     // his decide(): hacks when the overdrive bar is full, and glyphs for the situation
     const busy=!!dr.task;
     // a full bar goes on the ultimate about half the time, when there is a drawing to copy and room for it to fly
     const uIt=S.items[side][f.held]||S.items[side][1-f.held], U=ultOf(uIt), uMin=U.min===undefined?110:U.min;   // each ultimate has its own working distance
-    if(e.act&&MOVES[e.act.m].ult&&U.kind!=='quake'&&e.act.u==='quake'&&e.act.t>0.3&&f.ground&&Math.random()<0.7) i.j++;   // jump the shock wave
-    if(f.od>=100&&uIt&&can&&(!f.act||MOVES[f.act.m].shots)&&!threat&&dist>=uMin&&dist<=(U.max||1e9)&&Math.abs(dy)<(U.kind==='quake'?40:160)&&Math.random()<0.3+0.6*d) i.u++;
-    else if(f.od>=100&&!S.hack&&Math.random()<0.2+0.4*d){ const opts=[2,3]; if(S.cells.length&&!S.broken) opts.push(0); if(S.items[1-side][e.held]) opts.push(1,1); if(S.items[side][f.held]) opts.push(4,4); i.h=pick(opts); i.q++; }
-    else if(!busy&&f.ink2>55&&dist>240&&Math.random()<0.14*d) dr.draw('lightning',f.x+dir*80,-(f.y+110),0.8,dir);
-    else if(!busy&&f.ink2>45&&e.act&&dist<130&&Math.random()<0.25*d) dr.draw('wall',f.x+dir*42,-(f.y+46),0.9);
-    else if(!busy&&f.ink2>40&&e.y>f.y+110&&f.ground&&Math.random()<0.25) dr.draw('platform',f.x+dir*60,-(f.y+95),0.7);
-    else if(!busy&&f.ink2>35&&dist>330&&Math.random()<0.1*d) dr.draw('arrow',f.x+dir*60,-(f.y+55),0.95,dir);
+    if(e.act&&MOVES[e.act.m].ult&&U.kind!=='quake'&&e.act.u==='quake'&&e.act.t>0.3&&f.ground&&R()<0.7) i.j++;   // jump the shock wave
+    if(f.od>=100&&uIt&&can&&(!f.act||MOVES[f.act.m].shots)&&!threat&&dist>=uMin&&dist<=(U.max||1e9)&&Math.abs(dy)<(U.kind==='quake'?40:160)&&R()<0.3+0.6*d) i.u++;
+    else if(f.od>=100&&!S.hack&&R()<0.2+0.4*d){ const opts=[2,3]; if(S.cells.length&&!S.broken) opts.push(0); if(S.items[1-side][e.held]) opts.push(1,1); if(S.items[side][f.held]) opts.push(4,4); i.h=pick(opts); i.q++; }
+    else if(!busy&&f.ink2>55&&dist>240&&R()<0.14*d) dr.draw('lightning',f.x+dir*80,-(f.y+110),0.8,dir);
+    else if(!busy&&f.ink2>45&&e.act&&dist<130&&R()<0.25*d) dr.draw('wall',f.x+dir*42,-(f.y+46),0.9);
+    else if(!busy&&f.ink2>40&&e.y>f.y+110&&f.ground&&R()<0.25) dr.draw('platform',f.x+dir*60,-(f.y+95),0.7);
+    else if(!busy&&f.ink2>35&&dist>330&&R()<0.1*d) dr.draw('arrow',f.x+dir*60,-(f.y+55),0.95,dir);
     // stuck against the art board's frame with the foe on the other side: dig
-    if(S.cells.length&&!S.broken&&f.ground&&Math.abs(f.vx)<20&&(i.l||i.r)&&dist>120&&Math.random()<0.6) i.m++;
+    if(S.cells.length&&!S.broken&&f.ground&&Math.abs(f.vx)<20&&(i.l||i.r)&&dist>120&&R()<0.6) i.m++;
     S.setInput(side,i);
   };
+  const fn=function(S,dt){ const keep=RNG; RNG=R; try{ play(S,dt); } finally{ RNG=keep; } };      // rand(), pick() and the jitter of its glyphs roll the bot's dice too
   fn.cursor=()=>dr.vis&&dr.task?dr.cur:null;
   return fn;
 }
@@ -1746,8 +1766,8 @@ function stockItem(key,element){
     power:s.s[0],range:s.s[1],speed:s.s[2],traits:s.t,trait:s.t[0]};
   return {spec,strokes:s.pts.map(pts=>({el:element,pts}))};
 }
-function botLoadout(){
-  const pick=a=>a[Math.floor(Math.random()*a.length)];
+function botLoadout(seed){
+  const R=mulberry32(seedFrom(seed)), pick=a=>a[Math.floor(R()*a.length)];
   const main=pick(['sword','spear','hammer','gloves','twins','bow','gun','pistols','staff','star','bomb']), side=pick(['shield','wings','snack','bomb','sword','spear','gun','star','staff'].filter(k=>k!==main));
   return [[main,46],[side,34]].map(([key,cost])=>Object.assign(stockItem(key,pick(ELS)),{cost}));
 }
