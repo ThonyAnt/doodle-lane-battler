@@ -93,7 +93,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   // Keep a room's match in step with its update: installed while a round is being drawn, so it starts with the round.
   function osSync(room){
     const S=room.sim, want=room.patch?room.patch.key:0;
-    if(S.phase!=='draw'||(S._os||0)===want) return;
+    if(S.phase==='over'||(S._os||0)===want) return;
     OSF.install(S,room.patch||{mods:{},rules:[]}); S._os=want; room.dirty=true;
     broadcast(room,'os',room.patch?{state:'installed',patch:room.patch}:{state:'none'});
   }
@@ -105,10 +105,11 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
     if(/^(reset|uninstall|undo|restore|default|defaults|normal)$/i.test(text)){
       if(room){ room.patch=null; osSync(room); } line({type:'uninstall'}); line({type:'say',text:'Update removed. Factory settings restored from the next round.'}); line({type:'done',ok:true,ms:0}); res.end(); return; }
     const S=room&&room.sim, items=S?S.items.map(a=>a.map(it=>it&&{name:it.name,kind:it.kind})):Array.isArray(body.items)?body.items:[];
-    let up;
+    let up; if(S) S.setWait(true);      // the drawing clock waits for the update
+    const free=()=>{ if(S) S.setWait(false); };
     try{ up=await fetch(OS_URL+'/run',{method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.timeout(250000),
       body:JSON.stringify({request:text,context:{stage:room?room.stage||'desktop':String(body.stage||'desktop'),items,installed:room&&room.patch?room.patch.name:''}})}); }
-    catch(e){ line({type:'error',message:'INK-OS is not answering. Start it with: cd os-agent && node server.mjs'}); line({type:'done',ok:false,ms:0}); res.end(); return; }
+    catch(e){ line({type:'error',message:'INK-OS is not answering. Start it with: cd os-agent && node server.mjs'}); line({type:'done',ok:false,ms:0}); free(); res.end(); return; }
     let buf=''; const dec=new TextDecoder();
     try{ for await(const chunk of up.body){ buf+=dec.decode(chunk,{stream:true}); let k;
       while((k=buf.indexOf('\n'))>=0){ const raw=buf.slice(0,k); buf=buf.slice(k+1); if(!raw.trim()) continue; let ev; try{ ev=JSON.parse(raw); }catch(e){ continue; }
@@ -116,11 +117,11 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
           const g=osGate(ev.patch);
           if(g.error){ line({type:'error',message:'The game refused the update: '+g.error}); continue; }
           if(room){ room.patch=g.patch; osSync(room); }
-          line({type:'install',patch:g.patch,when:room&&room.sim.phase!=='draw'?'next round':'now'}); console.log('duel os: installed',JSON.stringify(g.patch.name),'in',room?room.code:'a page match');
+          line({type:'install',patch:g.patch}); console.log('duel os: installed',JSON.stringify(g.patch.name),'in',room?room.code:'a page match');
         }else line(ev);
       } } }
     catch(e){ line({type:'error',message:'The line to INK-OS dropped.'}); }
-    if(!res.writableEnded) res.end();
+    free(); if(!res.writableEnded) res.end();
   }
 
   const F=Forge({D,ForgeScript:require('./forgescript.js'),ask:KEY?Forge.openai({key:KEY,base:BASE,model:FORGE_MODEL,log:m=>console.error('duel forge:',m)}):undefined,

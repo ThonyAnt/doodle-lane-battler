@@ -51,7 +51,7 @@ Work like this, every time:
 4. When the verdict is PASS, call install_update. It refuses an update that has not passed a play-test, so never call it first.
 5. If after two repair rounds it still fails, simplify: have the engineer cut the part that fails, test once more, and install what works.
 
-Finish with one short line to the player, in the dry voice of an operating system, saying what was installed. No markdown.
+Finish with one short line to the player, in the dry voice of an operating system, saying what was installed. It takes effect at once, so do not say "next round". No markdown.
 
 The request is in /request.md and everything an update can do is in /docs/manual.md. An update can only change the settings and world rules described there. If the player asks for something else (new art, a new weapon, something for one side only), ship the closest thing an update can express, never refuse.`;
 
@@ -110,7 +110,7 @@ async function run(body,emit){
   const installUpdate=tool(async()=>{
     const c=readUpdate(); if(c.errors.length) return 'REFUSED: /update.json has errors:\n- '+c.errors.join('\n- ');
     if(stamp(c.patch)!==tested) return 'REFUSED: this exact /update.json has not passed a play-test. Have the tester run playtest on it first.';
-    result=c.patch; emit({type:'install',patch:c.patch}); return 'Installed "'+c.patch.name+'". It takes effect from the next round.';
+    result=c.patch; emit({type:'install',patch:c.patch}); return 'Installed "'+c.patch.name+'". It is live in the match now.';
   },{name:'install_update',description:'Install /update.json into the running game. Only works for an update that has passed a play-test unchanged.',schema:z.object({})});
 
   // The newer OpenAI models only take tools together with thinking over the Responses API.

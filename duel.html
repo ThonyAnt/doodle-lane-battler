@@ -1010,7 +1010,7 @@ const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet s
 // A recording holds about LOG_ROOM characters of commands (some forty long matches' worth). When it is full it stops:
 // the match goes on, the log is marked full, and it replays up to the tick it stopped at.
 const LOG_ROOM=2e6;
-const LOG_V=1, COMMANDS=['setItem','tweak','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold','setMods','addWorldRule','clearWorld'];
+const LOG_V=1, COMMANDS=['setItem','tweak','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold','setMods','addWorldRule','clearWorld','setWait'];
 const INPUT_KEYS=['l','r','d','j','a','b','m','q','h','u'], viaJSON=v=>JSON.parse(JSON.stringify(v)), round1=v=>Math.round(v*10)/10;
 const packInput=i=>{ const o={}; for(const k of INPUT_KEYS){ const v=i?i[k]:undefined; o[k]=k==='l'||k==='r'||k==='d'?(v?1:0):v===undefined?null:v; } return viaJSON(o); };   // held buttons as 0 or 1, press counts as given, a missing one as null
 const unpackInput=o=>{ const i={}; for(const k of INPUT_KEYS) if(o[k]!==null&&o[k]!==undefined) i[k]=o[k]; return i; };
@@ -1157,7 +1157,9 @@ function createDuel(opts){
      The sim never throws because of a rule. S.rules[i].id is always i+1. */
   S.rules=[]; S.hold=0; S.wrules=[];
   S.mods=MOD;
-  S.setMods=o=>{ for(const k in MODS){ const v=o&&typeof o[k]==='number'&&Number.isFinite(o[k])?o[k]:MODS[k][2]; S.mods[k]=Math.max(MODS[k][0],Math.min(MODS[k][1],v)); } return Object.assign({},S.mods); };
+  S.setMods=o=>{ for(const k in MODS){ const v=o&&typeof o[k]==='number'&&Number.isFinite(o[k])?o[k]:MODS[k][2]; S.mods[k]=Math.max(MODS[k][0],Math.min(MODS[k][1],v)); } for(const f of S.f) f.scaleGoal=S.mods.size; return Object.assign({},S.mods); };      // sizes change at once; starting health counts from the next round
+  // While the machine is writing an update the drawing clock stops at six seconds, so the round does not start without it.
+  S.setWait=on=>{ S.osWait=!!on; };
   let ruleT=0, nearT=0, pushes=null;       // ruleT: seconds of fighting this round, as rules see it; pushes: see hurt()
   const FL=FORGE_LIMITS, RULE_BURN=1.5, RULE_LIFT=300, RULE_KINDS={swat:['melee'],guard:['shield'],strike:['melee','ranged','bomb','dash']}, within=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
   // Rules are written while the round is being set up. If they are not ready when the countdown starts, the server holds
@@ -2014,7 +2016,7 @@ function createDuel(opts){
     }
     if(S.phase==='fight'&&S.stop>0){ S.stop-=dt; if(S.ult>=0) S.ultT+=dt; return; }   // hit-stop: everything waits, the round clock included
     S.t-=dt;
-    if(S.phase==='draw'){ if((S.ready[0]&&S.ready[1])||S.t<=0){ S.phase='count'; S.t=3; S.stop=0; S.ult=-1; S.f=[fresh(0),fresh(1)]; for(const f of S.f) f.uses=usesFor(f.side); S.pr=[]; resetWorld(); resetRules(); } return; }
+    if(S.phase==='draw'){ if(S.osWait&&S.t<6) S.t=6; if((S.ready[0]&&S.ready[1])||S.t<=0){ S.phase='count'; S.t=3; S.stop=0; S.ult=-1; S.f=[fresh(0),fresh(1)]; for(const f of S.f) f.uses=usesFor(f.side); S.pr=[]; resetWorld(); resetRules(); } return; }
     if(S.phase==='count'){ if(S.t<=0){ if(S.hold>0){ S.hold=Math.max(0,S.hold-dt); S.t=0; return; } S.phase='fight'; S.t=ROUND_TIME; S.events.push({e:'go'}); } return; }      // S.hold: see setHold
     if(S.phase==='end'){
       settle(dt);
@@ -2686,7 +2688,7 @@ function osShow(e){
   else if(e.type==='file') osLine('  '+esc(e.agent)+' '+esc(e.did)+' '+esc(e.path),'dim');
   else if(e.type==='check') osLine('  check: '+(e.ok?'OK':esc(e.errors.slice(0,2).join('; '))),e.ok?'ok':'bad');
   else if(e.type==='playtest'){ const w=e.withUpdate, b=e.without; osLine('  play-test: '+w.rounds+' rounds, '+(e.ok?'no problems':esc(e.problems[0]))+'. Rounds last '+w.roundSeconds+' s (normally '+b.roundSeconds+'), in the air '+w.airbornePct+'% (normally '+b.airbornePct+'%)',e.ok?'ok':'bad'); }
-  else if(e.type==='install'){ osLine('UPDATE INSTALLED: '+esc(e.patch.name)+(e.when==='next round'?'  (from the next round)':''),'big'); for(const n of e.patch.notes||[]) osLine('  - '+esc(n),'ok'); if(!net) osPatch=e.patch; }
+  else if(e.type==='install'){ osLine('UPDATE INSTALLED: '+esc(e.patch.name),'big'); for(const n of e.patch.notes||[]) osLine('  - '+esc(n),'ok'); if(!net) osPatch=e.patch; }
   else if(e.type==='uninstall'){ if(!net) osPatch={name:'',notes:[],mods:{},rules:[]}; }
   else if(e.type==='say') osLine('INK-OS&gt; '+esc(e.text),'say');
   else if(e.type==='error') osLine('ERROR: '+esc(e.message),'bad');
@@ -2694,7 +2696,7 @@ function osShow(e){
 }
 async function osRun(text){
   text=String(text||'').trim(); if(osBusy||!text) return;
-  osBusy=true; osPlanEl=null; osLine('C:\\&gt; '+esc(text),'cmd'); $('osIn').value=''; $('osIn').disabled=true; $('osGo').disabled=true;
+  osBusy=true; osPlanEl=null; if(sim) sim.setWait(true); osLine('C:\\&gt; '+esc(text),'cmd'); $('osIn').value=''; $('osIn').disabled=true; $('osGo').disabled=true;
   try{
     const items=view?view.items.map(a=>a.map(it=>it&&{name:it.name,kind:it.kind})):[];
     const r=await fetch('/duel/os',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room:net?net.code:'',text,items,stage:STAGE||'desktop'})});
@@ -2702,17 +2704,17 @@ async function osRun(text){
     for(;;){ const {value,done}=await rd.read(); if(done) break; buf+=dec.decode(value,{stream:true}); let k;
       while((k=buf.indexOf('\n'))>=0){ const raw=buf.slice(0,k); buf=buf.slice(k+1); if(raw.trim()) try{ osShow(JSON.parse(raw)); }catch(err){} } }
   }catch(err){ osLine('ERROR: the machine did not answer','bad'); }
-  osBusy=false; $('osIn').disabled=false; $('osGo').disabled=false; $('osIn').focus();
+  osBusy=false; if(sim) sim.setWait(false); $('osIn').disabled=false; $('osGo').disabled=false; $('osIn').focus();
 }
 $('osForm').onsubmit=e=>{ e.preventDefault(); osRun($('osIn').value); };
 $('osIn').addEventListener('keydown',e=>e.stopPropagation());      // typing to the machine is not playing
 // A room's update, told by the server to every device; and, each frame, an update for a match played in this page.
-function osHear(d){ osToast=d&&d.state==='installed'&&d.patch?{name:d.patch.name,notes:d.patch.notes||[],until:0}:null; }
+function osHear(d){ osToast=d&&d.state==='installed'&&d.patch?{name:d.patch.name,notes:d.patch.notes||[],until:view&&view.phase==='fight'?performance.now()+5200:0}:null; }
 function osTick(now){
-  if(sim&&osPatch&&sim.phase==='draw'&&sim._os!==osPatch){
+  if(sim&&osPatch&&sim.phase!=='over'&&sim._os!==osPatch){
     sim.setMods(osPatch.mods||{}); sim.clearWorld();
     for(const r of osPatch.rules||[]){ const p=ForgeScript.parse(r.code); if(p.ok&&!ForgeScript.check(p.ast,FORGE_API.world).length) sim.addWorldRule({name:r.name,blurb:r.blurb,cooldown:r.cooldown,run:ForgeScript.compile(p.ast),code:r.code}); }
-    sim._os=osPatch; osToast=osPatch.name?{name:osPatch.name,notes:osPatch.notes||[],until:0}:null;
+    sim._os=osPatch; osToast=osPatch.name?{name:osPatch.name,notes:osPatch.notes||[],until:sim.phase==='fight'?now+5200:0}:null;
   }
   const ph=view?view.phase:''; if(ph!==osPhase){ osPhase=ph; if(ph==='count'&&osToast) osToast.until=now+5200; }      // the round opens with what is installed
 }
