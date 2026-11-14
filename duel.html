@@ -2356,8 +2356,10 @@ function playReplay(log,extra,code){
   const byVer=new Map(); for(const a of (extra&&extra.art)||[]) if(a&&Array.isArray(a.strokes)) byVer.set(a.ver,a);
   try{
     // Play it through once, unseen: that says whether it is a whole match, and whether it comes out here as it did on the server.
-    const end=replayDuel(log), whole=end.phase==='over', drift=!!(extra&&extra.hash)&&end.hash()!==extra.hash;
-    rep={log,byVer,clock:replayClock(Math.max(0,end.total)),S:null,shown:-1,drag:false,
+    const end=replayDuel(log,{untilTick:0}); while(end.tickN<end.total&&end.phase!=='over') end.seek(end.tickN+60);
+    const whole=end.phase==='over', last=whole?end.tickN:end.total;      // whatever the room did after the match was over (it may have sat there for minutes) is not shown
+    const drift=!!(extra&&extra.hash)&&end.seek(Infinity).hash()!==extra.hash;
+    rep={log,byVer,clock:replayClock(Math.max(0,last)),S:null,shown:-1,drag:false,
       note:(code?'Room '+code+': ':'')+(extra&&extra.previous?'the room\u2019s last match (a new one is being set up).':whole?'the whole match.':log.full?'the match as far as it was recorded (the recording ran out of room).':'the match so far. It was still going on when this was fetched.')
         +(drift?' Warning: played back in this browser it does not end the way it did on the server, so what you see may not be what happened.':'')};
     $('repBar').max=rep.clock.total; $('repBar').disabled=$('repPlay').disabled=false; $('repMsg').textContent=rep.note;
@@ -3418,7 +3420,8 @@ function frame(now){
   if(rep) replayTick(dt);
   FXI.step(dt);
   if(RETRO){ fpsT+=dt; fpsN++; if(fpsT>0.5){ document.querySelector('#st-fps').textContent=Math.round(fpsN/fpsT)+' fps'; fpsT=0; fpsN=0; } }
-  koView=KO_ON&&!rep&&view&&ko.koMs>=0?koReplayFrame(ko.ring,ko.koMs,now-ko.koMs):null;
+  { const was=koView; koView=KO_ON&&!rep&&view&&ko.koMs>=0?koReplayFrame(ko.ring,ko.koMs,now-ko.koMs):null;
+    if(koView&&!was){ fx=[]; shake=0; ultDmg[0]=ultDmg[1]=null; } }      // the replay starts: the knockout blow's own sparks and numbers do not hang over the picture from a second earlier
   if(view){ syncUI(); render(now); if(padView&&net&&net.side>=0){ const tc=document.querySelector('.tcs'); if(tc) document.body.style.setProperty('--pad',(tc.getBoundingClientRect().height+12)+'px'); $('strip').hidden=$('stripbar').hidden=false; drawStrip(view); } }
   requestAnimationFrame(frame);
 }

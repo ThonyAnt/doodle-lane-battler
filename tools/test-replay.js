@@ -212,6 +212,10 @@ test('a recording stops when it is full, says so, and still replays up to there'
     page.byId('repPlay').onclick(); await page.frames(30); at.push(page.get('rep.shown'));                  // paused: it stays
     page.byId('repPlay').onclick(); page.get('rep.clock.speed=1'); await page.frames(60); at.push(page.get('rep.shown'));      // playing again: a second is 120 ticks
     return [held===1200&&dragging===true&&back&&at.join()==='1230,1230,1350'&&page.get('rep.S.hash()')===hashAtTick(11,1350),{held,dragging,back,at}]; });
+  await atest('a room that sat on its champion screen for a minute does not make the replay a minute longer',async()=>{
+    const b=recorded(11), over=b.tickN; for(let i=0;i<3600;i++) stepOnce(b);
+    const page=fakePage('?replay=ABCD',url=>url.startsWith('/duel/replay')?{log:JSON.parse(JSON.stringify(b.log())),art:b._art,hash:b.hash(),rules:R.rulesOf(page.script)}:{reader:'local guess'}); await page.frames(3);
+    const total=page.get('rep.clock.total'), said=page.byId('repMsg').textContent; return [b.tickN===over+7200&&total>=over-1&&total<=over+60&&/whole match/.test(said)&&!/Warning/.test(said),{over,logged:b.tickN,total,said}]; });
   await atest('the page refuses a replay made under other rules, in words',async()=>{
     const page=fakePage('?replay=ABCD',url=>url.startsWith('/duel/replay')?Object.assign(answer(),{rules:'0badf00d'}):{reader:'local guess'}); await page.frames(3);
     return [page.get('rep')===null&&page.byId('repMsg').textContent==='This replay is from a different version of the game.',page.byId('repMsg').textContent]; });
