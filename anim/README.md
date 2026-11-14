@@ -15,6 +15,7 @@ Fighter animation for `duel.html` is authored as data: keyframed skeleton poses 
 | `fist.js` | Punches and kicks; also used when nothing is drawn. |
 | `staff.js` | Magic staff casts. |
 | `hurl.js` | Thrown weapons (shuriken, knives, rocks). |
+| `ultimate.js` | The ultimate (`fleet`): float up, command the copies forward. |
 
 ## Style target
 
@@ -36,6 +37,7 @@ Alan Becker's stick fights and the Chinese game 火柴人联盟 (League of Stick
 - A clip that follows another in a combo should start from roughly the pose the previous one is in at its cancel time. The game cross-fades about 0.05 s between clips.
 - Non-loop clips should end in a pose close to the set's stance so they blend back cleanly. Loops must have identical first and last keys.
 - Use 6 to 14 keys per clip. Put keys close together around contact.
+- The engine retimes the run-up to the first hit or shot "slow, then fast" (see `punch` in `core.js`), so author the wind-up and strike with honest, even timing and check the result in the strip. Add `punch:0` to a clip to keep its timing exactly as written.
 
 ## Preview
 

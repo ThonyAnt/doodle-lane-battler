@@ -180,7 +180,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       if(body.type==='input'){
         // Requests can arrive out of order, so only the newest one counts.
         const seq=+body.seq||0; let c=null; for(const x of room.clients) if(x.id===id) c=x;
-        if(c&&seq>c.seq){ c.seq=seq; S.setInput(side,{l:!!body.l,r:!!body.r,d:!!body.d,j:+body.j||0,a:+body.a||0,b:+body.b||0,m:+body.m||0,q:+body.q||0,h:Math.max(0,Math.min(4,body.h|0))}); }
+        if(c&&seq>c.seq){ c.seq=seq; S.setInput(side,{l:!!body.l,r:!!body.r,d:!!body.d,j:+body.j||0,a:+body.a||0,b:+body.b||0,m:+body.m||0,q:+body.q||0,u:+body.u||0,h:Math.max(0,Math.min(4,body.h|0))}); }
         send(200,{}); return true;
       }
       if(body.type==='item'){ const [code,out]=await makeItem(room,side,body); send(code,out); return true; }

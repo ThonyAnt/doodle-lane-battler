@@ -26,6 +26,7 @@
 <script src="anim/fist.js"></script>
 <script src="anim/staff.js"></script>
 <script src="anim/hurl.js"></script>
+<script src="anim/ultimate.js"></script>
 <script>
 // Usage:
 //   anim-lab.html                         pick a clip and watch it loop
@@ -33,6 +34,7 @@
 //   anim-lab.html?clip=blade1&strip=8     still frames side by side (used by tools/strip.js for screenshots)
 //     optional: t0, t1 (seconds within the sequence), cols, len (blade length), ghost=0
 const Q=new URLSearchParams(location.search), cv=document.getElementById('c'), g=cv.getContext('2d');
+if(Q.get('punch')==='0') ANIM.punch=false;   // ?punch=0 plays clips with their authored timing, without the slow-then-fast retiming
 const names=Object.keys(ANIM.clips), pick=document.getElementById('pick');
 for(const n of names){ const o=document.createElement('option'); o.value=o.textContent=n; pick.appendChild(o); }
 let seq=(Q.get('clip')||names[0]||'').split(',').filter(n=>ANIM.clips[n]);

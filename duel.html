@@ -187,11 +187,11 @@ body.handheld .tc{--b:clamp(74px,13.5vw,136px);background:none;border:0;padding:
 body.handheld .tc .keys{display:none}
 body.handheld .tc .grp{display:grid;grid-template-columns:var(--b) var(--b);gap:12px;pointer-events:auto;touch-action:none}
 body.handheld .tc .grp:first-child{grid-template-areas:"l r" "d d"}
-body.handheld .tc .grp:last-child{grid-template-areas:"j j" "a b" "m q"}
+body.handheld .tc .grp:last-child{grid-template-areas:"j j" "a b" "m q" "u u"}
 body.handheld .tc [data-k="l"]{grid-area:l} body.handheld .tc [data-k="r"]{grid-area:r} body.handheld .tc [data-k="d"]{grid-area:d}
-body.handheld .tc [data-k="m"]{grid-area:m} body.handheld .tc [data-k="q"]{grid-area:q}
-body.handheld .tc [data-k="m"],body.handheld .tc [data-k="q"]{height:calc(var(--b)*.5);font-size:calc(var(--b)*.22)}
-body.handheld .tc [data-k="m"] small,body.handheld .tc [data-k="q"] small{display:inline;margin-left:6px}
+body.handheld .tc [data-k="m"]{grid-area:m} body.handheld .tc [data-k="q"]{grid-area:q} body.handheld .tc [data-k="u"]{grid-area:u}
+body.handheld .tc [data-k="m"],body.handheld .tc [data-k="q"],body.handheld .tc [data-k="u"]{height:calc(var(--b)*.5);font-size:calc(var(--b)*.22)}
+body.handheld .tc [data-k="m"] small,body.handheld .tc [data-k="q"] small,body.handheld .tc [data-k="u"] small{display:inline;margin-left:6px}
 body.handheld .tc [data-k="a"]{grid-area:a} body.handheld .tc [data-k="b"]{grid-area:b} body.handheld .tc [data-k="j"]{grid-area:j}
 body.handheld .tc button{height:var(--b);min-width:0;font-size:calc(var(--b)*.36);border-width:3px;border-radius:24px;box-shadow:0 4px 0 var(--ink)}
 body.handheld .tc button.on{box-shadow:none;transform:translateY(4px)}
@@ -259,12 +259,13 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
 .stock button{font-size:13px;padding:3px 9px;border-width:1.5px}
 
 .tcs{display:flex;gap:12px;justify-content:space-between;flex-wrap:wrap}
-.tc{flex:1;display:flex;gap:10px;justify-content:space-between;align-items:center;background:var(--card);border:2px solid var(--ink);border-radius:14px;padding:8px 10px;min-width:280px;
+.tc{flex:1;display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:center;background:var(--card);border:2px solid var(--ink);border-radius:14px;padding:8px 10px;min-width:280px;
   user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 .tc .grp{display:flex;gap:8px}
 .tc button{touch-action:none;min-width:54px;min-height:58px;font-size:20px;padding:0 8px;border-radius:14px;position:relative;overflow:hidden;line-height:1.05}
 .tc button small{display:block;font-size:11px;font-weight:600;max-width:92px;line-height:1.1;overflow-wrap:anywhere}
 .tc button.on{background:var(--hi);transform:translateY(2px)}
+.tc button.full{background:var(--hi);box-shadow:0 0 0 3px var(--ink) inset}
 .tc button .cdfill{position:absolute;left:0;right:0;bottom:0;height:calc(var(--cd,0)*100%);background:rgba(28,37,65,.28);pointer-events:none}
 .tc .keys{font-size:12px;color:var(--muted);text-align:center;flex:1;min-width:90px}
 .tc[data-side="0"]{border-color:var(--p1)} .tc[data-side="1"]{border-color:var(--p2)}
@@ -437,6 +438,7 @@ Window titlebars = platforms
 <script src="/anim/fist.js"></script>
 <script src="/anim/staff.js"></script>
 <script src="/anim/hurl.js"></script>
+<script src="/anim/ultimate.js"></script>
 <script>
 /*DUEL-START*/
 // Pure match rules for Doodle Duel. No DOM access in this block: the server runs the same code for online rooms.
@@ -600,8 +602,12 @@ const MOVES={
   hurl_air:   {dur:0.36,shots:[0.10,0.18,0.26],aims:[0.2,0.55,0.9],dmg:0.5,speed:780,stun:0.1,end:1},
   hurl_power: {dur:0.66,shots:[0.42],dmg:1.9,speed:1050,kbMul:2,end:1},
   mine:     {dur:0.32,hits:[0.13],mine:1,dmg:0.5,kb:120,lift:60,lunge:60,end:1},   // the built-in pick: chips walls, floors and drawn shapes
-  throw:    {dur:0.22,end:1}
+  throw:    {dur:0.22,end:1},
+  // The ultimate, paid for with a full overdrive bar: the fighter floats up, copies of the held drawing fan out behind
+  // them one by one, and from `cast` on they fly at the foe in turn. A stunning hit before `cast` breaks it off.
+  fleet:    {dur:1.5,fleet:1,cast:0.62,end:1}
 };
+const FLEET_DMG=30, FLEET_GAP=0.09, FLEET_SPEED=1150;   // damage of the whole volley (shared between the copies), time between launches, flight speed
 // What a melee or ranged drawing is fought with. Each style has its own moves and animation set.
 const RUN_SPEED=330;   // top ground speed in px/s; fighters reach it in about an eighth of a second
 const MELEE_STYLES=['blade','spear','hammer','fist'], RANGED_STYLES=['bow','gun','staff','hurl'];
@@ -745,8 +751,8 @@ function createDuel(opts){
     act:null,shield:0,hurt:0,burn:0,burnDps:0,slow:0,dash:0,dashHit:false,dashItem:null,drop:0,uses:[3,3],held:0,
     ink2:100,od:0,stun:0,trap:0,flung:0,flungBy:-1,overclock:0,scale:1,scaleGoal:1,bubble:null,mcd:0,mbuf:0});
   const S={phase:'draw',t:45,round:1,wins:[0,0],ready:[false,false],items:[[null,null],[null,null]],f:[fresh(0),fresh(1)],pr:[],events:[],
-    winner:-1,champ:-1,ver:0,practice:!!(opts&&opts.practice),inp:[{l:0,r:0,d:0},{l:0,r:0,d:0}],cnt:[{j:0,a:0,b:0,m:0,q:0},{j:0,a:0,b:0,m:0,q:0}],
-    objs:[],fields:[],groups:[null,null],hack:null,effects:[],broken:null,breached:false,cells:[],time:0};
+    winner:-1,champ:-1,ver:0,practice:!!(opts&&opts.practice),inp:[{l:0,r:0,d:0},{l:0,r:0,d:0}],cnt:[{j:0,a:0,b:0,m:0,q:0,u:0},{j:0,a:0,b:0,m:0,q:0,u:0}],
+    objs:[],fields:[],groups:[null,null],hack:null,effects:[],broken:null,breached:false,cells:[],time:0,stop:0};
   const PICK={name:'Pick',kind:'melee',style:'pick',el:'none',cost:0,st:Object.assign(itemStats('melee','none',10),{reach:54,dmg:5})};
   const itemOf=(side,k)=>S.items[side][k]||PUNCH;
   S.inkLeft=side=>Math.round(INK_MAX-S.items[side].reduce((n,it)=>n+(it?it.cost:0),0));
@@ -792,8 +798,22 @@ function createDuel(opts){
     if(i.b!==c.b){ c.b=i.b; f.buf[1]=0.32; }
     if(i.m!==undefined&&i.m!==c.m){ c.m=i.m; f.mbuf=0.3; }                    // the mining tool
     if(i.q!==undefined&&i.q!==c.q){ c.q=i.q; S.startHack(side,i.h|0); }       // run the selected hack
+    if(i.u!==undefined&&i.u!==c.u){ c.u=i.u; S.startUlt(side); }              // the ultimate
   };
-  function hurt(t,dmg,el,kx,ky,by,fromX,stun,tr,hap){
+  // The ultimate: a fleet of copies of the held drawing (or the other one, if that hand is empty). More ink in the
+  // drawing means more copies, but the volley's total damage is fixed, so ink buys spread and spectacle, not damage.
+  S.startUlt=side=>{
+    const f=S.f[side], e=S.f[1-side]; if(S.phase!=='fight'||f.od<100||f.hp<=0||f.stun>0||f.hurt>0||f.trap>0||f.dash>0||(f.act&&f.act.m==='fleet')) return false;
+    const k=S.items[side][f.held]?f.held:S.items[side][1-f.held]?1-f.held:-1; if(k<0) return false;
+    const it=S.items[side][k], n=Math.max(3,Math.min(7,3+Math.floor(it.cost/12)));
+    f.od=0; f.held=k; f.shield=0; f.buf[0]=f.buf[1]=0; if(e.x!==f.x) f.face=Math.sign(e.x-f.x);
+    f.act={k,m:'fleet',v:0,t:0,dur:MOVES.fleet.dur,rate:1,done:0,lunged:false,n};
+    S.stop=Math.max(S.stop,0.3);                                              // the world holds its breath
+    S.events.push({e:'ult',side,x:Math.round(f.x),y:Math.round(f.y),n},{e:'flash',text:'INK FLEET',sub:(side?'Red':'Blue')+' calls up '+n+' × '+it.name,side},{e:'log',side,msg:'✦ INK FLEET — '+n+' copies of '+it.name});
+    return true;
+  };
+  // fin marks the last hit of a finishing move or a charged shot: it freezes the fight a little longer and the screen flashes.
+  function hurt(t,dmg,el,kx,ky,by,fromX,stun,tr,hap,fin){
     if(stun===undefined) stun=0.2;
     if(t.bubble){ dmg*=0.35; kx*=0.4; ky*=0.4; t.bubble.hp--; ring(t.x,-(t.y+55),'#2bd'); if(t.bubble.hp<=0) t.bubble=null; }
     if(by){ if(by.overclock>0){ dmg*=1.6; kx*=1.3; } if(by.scale<0.8) dmg*=0.6; }
@@ -804,7 +824,7 @@ function createDuel(opts){
     if(tr==='heavy') kx*=1.6;
     if(tr==='pull') kx*=-0.85;
     if(tr==='launch') ky=ky>0?ky*1.5:ky===0?240:ky;
-    t.od=Math.min(100,t.od+dmg*0.9); if(by) by.od=Math.min(100,by.od+dmg*1.3);
+    t.od=Math.min(100,t.od+dmg*0.9); if(by&&tr!=='fleet') by.od=Math.min(100,by.od+dmg*1.3);
     if(t.act&&itemOf(t.side,t.act.k).trait==='guard') dmg*=0.92;
     if(blocked){
       if(t.shieldTr==='thorns'&&by&&by!==t){ const n=dmg*0.35; by.hp-=n; S.events.push({e:'hit',x:Math.round(by.x),y:Math.round(by.y+52),n:Math.max(1,Math.round(n)),el:'none',side:by.side}); }
@@ -812,14 +832,19 @@ function createDuel(opts){
     } else if(el==='water') kx*=1.45;
     // A hit with no stun only nudges: it adds to the target's speed instead of replacing it, and does not lift them.
     t.hp-=dmg; if(stun>0) t.vx=kx; else{ t.vx+=kx*0.25; ky=0; } if(ky>0){ t.vy=ky; t.ground=false; } else if(ky<0&&!t.ground) t.vy=ky;
+    // Hit-stop: a hit that staggers freezes the whole fight (both fighters, shots, the clock) for a few frames, longer the
+    // harder it lands. Nothing moves, so it changes how a hit feels and not who wins. w is the hit's weight, 0 to 1.
+    const w=blocked?0:Math.min(1,dmg/20+(fin?0.3:0));
+    if(stun>0&&!blocked) S.stop=Math.max(S.stop,0.03+0.07*w);
     if(!blocked){
-      if(stun>0){ t.hurt=Math.max(t.hurt,stun); t.act=null; t.dash=0; }
+      if(stun>0){ if(t.act&&t.act.m==='fleet'&&t.act.t<MOVES.fleet.cast) t.od=Math.max(t.od,50);   // an ultimate broken off gives half the bar back
+        t.hurt=Math.max(t.hurt,stun); t.act=null; t.dash=0; }
       if(el==='fire'){ t.burn=2; t.burnDps=dmg*0.15; }
       if(el==='water') t.slow=1.8;
       if(el==='plant'&&by&&by.hp>0) by.hp=Math.min(HP,by.hp+dmg*0.3);
     }
     if(tr==='flurry'&&!blocked) for(const dy of [44,66]) S.events.push({e:'hit',x:Math.round(t.x),y:Math.round(t.y+dy),n:Math.max(1,Math.round(dmg/2)),el,side:t.side,hap:hap||'thud',dir:kx<0?'L':'R'});
-    else S.events.push({e:blocked?'block':'hit',x:Math.round(t.x),y:Math.round(t.y+52),n:Math.max(1,Math.round(dmg)),el,side:t.side,hap:hap||'thud',dir:kx<0?'L':'R'});
+    else S.events.push({e:blocked?'block':'hit',x:Math.round(t.x),y:Math.round(t.y+52),n:Math.max(1,Math.round(dmg)),el,side:t.side,hap:hap||'thud',dir:kx<0?'L':'R',w:+w.toFixed(2),fin:fin&&!blocked?1:0});
     if(tr==='blast'&&!blocked) S.events.push({e:'boom',x:Math.round(t.x),y:Math.round(t.y+45),n:26,el,s:1});
   }
   // Begin a move: the fighter is committed until it ends or chains.
@@ -855,6 +880,14 @@ function createDuel(opts){
   function act(f,dt){
     const a=f.act, M=MOVES[a.m], it=a.m==='mine'?PICK:itemOf(f.side,a.k), st=it.st, e=S.f[1-f.side], k=a.k, sty=STYLE[it.style]||STYLE.blade;
     a.t+=dt*a.rate;
+    if(M.fleet){
+      // The copies appear one at a time through the wind-up, spread in a fan above the fighter, and wait there (see projectiles).
+      while(a.done<a.n&&a.t>=0.1+a.done*(M.cast-0.26)/a.n){ const j=a.done++;
+        S.pr.push({id:nextId++,k:'shot',st:'fleet',side:f.side,slot:k,x:f.x,y:f.y+62,vx:0,vy:0,hover:1,own:f,th:(a.n>1?j/(a.n-1)-0.5:0)*2.2,go:M.cast+j*FLEET_GAP,ang:Math.PI/2,
+          dmg:FLEET_DMG/a.n,el:it.el,kb:j===a.n-1?240:60,stun:0.16,tr:'fleet',fin:j===a.n-1?1:0,life:1.3,ttl:9}); }
+      if(a.t>=a.dur){ f.act=null; f.cd[k]=f.cdMax[k]=0.25; }
+      return;
+    }
     if(M.lunge&&!a.lunged&&a.t>=(M.lungeAt||0.04)){ a.lunged=true; if(f.ground) f.vx=f.face*Math.max(Math.abs(f.vx)*0.5,M.lunge); }
     const marks=M.hits||M.shots||[];
     while(a.done<marks.length&&a.t>=marks[a.done]){
@@ -862,7 +895,7 @@ function createDuel(opts){
         if(M.mine&&!a.mined){ a.mined=true; mineHit(f); }
         const dx=(e.x-f.x)*f.face, reach=st.reach*(M.reach||1)*sty.reach;
         if(M.quake&&!a.quaked){ a.quaked=true; S.events.push({e:'quake',x:Math.round(f.x+f.face*reach*0.7),y:Math.round(f.y),n:Math.round(reach)}); }
-        if(dx>-14&&dx<reach+14&&Math.abs(e.y-f.y)<(M.tall||72)){ a.done++; hurt(e,st.dmg*M.dmg*sty.dmg,it.el,f.face*M.kb*sty.kb*(0.7+0.3*st.p)*(st.push||1),M.lift,f,f.x,undefined,it.trait); continue; }
+        if(dx>-14&&dx<reach+14&&Math.abs(e.y-f.y)<(M.tall||72)){ a.done++; hurt(e,st.dmg*M.dmg*sty.dmg,it.el,f.face*M.kb*sty.kb*(0.7+0.3*st.p)*(st.push||1),M.lift,f,f.x,undefined,it.trait,undefined,M.end&&!M.mine&&a.done>=marks.length?1:0); continue; }
         if(a.t<marks[a.done]+0.07) break;      // the blade stays dangerous for a moment
         a.done++;
       }else{
@@ -870,7 +903,7 @@ function createDuel(opts){
         // A shot flies as far as the item's range allows (a charged shot a third further), then fades.
         const sp=M.speed*(st.fly||1), life=Math.min(1.6,(st.dist||900)*(M.kbMul?1.35:1)/sp);
         S.pr.push({id:nextId++,k:'shot',st:it.style,big:M.big||0,side:f.side,slot:k,x:f.x+f.face*mz[0],y:f.y+mz[1],
-          vx:f.face*sp*Math.cos(aim),vy:-sp*Math.sin(aim),grav:M.grav||0,dmg:st.dmg*M.dmg*sty.dmg,el:it.el,kb:st.kb*(M.kbMul||1),stun:M.stun,tr:it.trait,life,ttl:life});
+          vx:f.face*sp*Math.cos(aim),vy:-sp*Math.sin(aim),grav:M.grav||0,dmg:st.dmg*M.dmg*sty.dmg,el:it.el,kb:st.kb*(M.kbMul||1),stun:M.stun,tr:it.trait,fin:M.kbMul?1:0,life,ttl:life});
         if(M.recoil) f.vx-=f.face*M.recoil;
         S.events.push({e:'shot',x:Math.round(f.x+f.face*(mz[0]+(it.style==='gun'?14:4))),y:Math.round(f.y+mz[1]),st:it.style,side:f.side,f:f.face,el:it.el});
       }
@@ -905,7 +938,9 @@ function createDuel(opts){
         for(const k of [0,1]) if(f.buf[k]>0&&f.cd[k]<=0&&!f.act) use(f,k);
         if(f.mbuf>0&&f.mcd<=0&&!f.act){ f.mbuf=0; startMove(f,f.held,'mine'); }
       }
-      f.vy-=1750*dt;
+      // Casting the ultimate, the fighter drifts up and hangs in the air until the volley is nearly out.
+      if(f.act&&f.act.m==='fleet'&&f.act.t<1.25){ f.vx*=Math.max(0,1-8*dt); f.vy=f.act.t<0.4?130*(1-f.act.t/0.4):0; }
+      else f.vy-=1750*dt;
     }
     // Move, then push out of anything solid: art-board cells, drawn walls and blocks, crates and pop-ups.
     const hw=11, hh=88*f.scale, px=f.x, py=f.y; let land=false;
@@ -934,6 +969,20 @@ function createDuel(opts){
   function projectiles(dt){
     for(const p of S.pr){
       const e=S.f[1-p.side];
+      if(p.hover){
+        // A copy from the ultimate, waiting in the fan. ang is where it points (0 = right, positive = up).
+        const o=p.own, a=o.act;
+        if(!a||a.m!=='fleet'||o.hp<=0){ S.events.push({e:'puff',x:Math.round(p.x),yd:Math.round(-p.y),col:'#999',n:5}); p.ttl=0; continue; }   // broken off: it dissolves
+        const tx=o.x+Math.sin(p.th)*122, ty=o.y+64+Math.cos(p.th)*106, q=Math.min(1,dt*14), aim=Math.atan2(e.y+50-p.y,e.x-p.x), rest=Math.PI/2-p.th;
+        p.x+=(tx-p.x)*q; p.y+=(ty-p.y)*q;
+        const u=Math.max(0,Math.min(1,(a.t-(p.go-0.24))/0.18)), turn=((aim-rest+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI; p.ang=rest+turn*u*u*(3-2*u);
+        if(a.t>=p.go){ p.hover=0; p.ang=aim; p.vx=Math.cos(aim)*FLEET_SPEED; p.vy=Math.sin(aim)*FLEET_SPEED; p.ttl=p.life; S.events.push({e:'zip',x:Math.round(p.x),y:Math.round(p.y),side:p.side}); }
+        continue;
+      }
+      if(p.st==='fleet'&&e.hp>0){   // light homing: it can curve a little toward the foe, not chase them down
+        const sp=Math.hypot(p.vx,p.vy)||1, cur=Math.atan2(p.vy,p.vx), d=((Math.atan2(e.y+50-p.y,e.x-p.x)-cur+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI, a2=cur+Math.max(-1.6*dt,Math.min(1.6*dt,d));
+        p.vx=Math.cos(a2)*sp; p.vy=Math.sin(a2)*sp;
+      }
       p.ttl-=dt; p.safe=Math.max(0,(p.safe||0)-dt); p.vy-=(p.grav||0)*dt;
       if(p.tr==='homing'&&p.k==='shot') p.vy+=Math.max(-1500,Math.min(1500,(e.y+50-p.y)*10))*dt;
       p.x+=p.vx*dt; p.y+=p.vy*dt;
@@ -944,7 +993,7 @@ function createDuel(opts){
       if(wall&&p.k!=='bomb'){ if(wall.obj&&wall.obj.dyn){ wall.obj.vx+=p.vx*0.25; wall.obj.vy-=120; } fx('spark',{x:Math.round(p.x),yd:Math.round(-p.y),col:PEN_COL[p.el]||'#fc0'}); p.ttl=0; continue; }
       if(e.bubble&&p.k!=='bomb'&&Math.hypot(p.x-e.x,p.y-(e.y+55))<e.bubble.r){ p.vx*=-1; p.vy*=-0.5; p.side=e.side; e.bubble.hp--; if(e.bubble.hp<=0) e.bubble=null; ring(p.x,-p.y,'#2bd'); log(e,'shield reflected a projectile'); continue; }
       if(p.k!=='bomb'){
-        if(touch){ hurt(e,p.dmg,p.el,Math.sign(p.vx)*p.kb,90,S.f[p.side],p.x-Math.sign(p.vx)*30,p.stun,p.tr); if(p.tr==='boomerang'&&!p.back) turn(); else p.ttl=0; }
+        if(touch){ hurt(e,p.dmg,p.el,Math.sign(p.vx)*p.kb,90,S.f[p.side],p.x-Math.sign(p.vx)*30,p.stun,p.tr,undefined,p.fin); if(p.tr==='boomerang'&&!p.back) turn(); else p.ttl=0; }
         else if(p.y<=0){ if(p.tr==='bounce'&&!p.hop){ p.hop=1; p.y=1; p.vy=Math.abs(p.vy)*0.7+170; } else p.ttl=0; }
         if(p.ttl<=0&&p.tr==='boomerang'&&!p.back) turn();
       }else if(p.tr==='bounce'&&!p.hop&&!touch&&!wall&&p.ttl>0&&p.y<=0){ p.hop=1; p.y=1; p.vy=Math.abs(p.vy)*0.55+150; p.vx*=0.8; }
@@ -1144,8 +1193,9 @@ function createDuel(opts){
       S.phase='fight'; S.t=ROUND_TIME-5;
       for(const f of S.f){ f.hp=Math.max(1,f.hp); f.rest=f.hurt>0||f.burn>0?0:(f.rest||0)+dt; if(f.rest>1.5){ f.hp=HP; f.uses=usesFor(f.side); } }
     }
+    if(S.phase==='fight'&&S.stop>0){ S.stop-=dt; return; }   // hit-stop: everything waits, the round clock included
     S.t-=dt;
-    if(S.phase==='draw'){ if((S.ready[0]&&S.ready[1])||S.t<=0){ S.phase='count'; S.t=3; S.f=[fresh(0),fresh(1)]; for(const f of S.f) f.uses=usesFor(f.side); S.pr=[]; resetWorld(); } return; }
+    if(S.phase==='draw'){ if((S.ready[0]&&S.ready[1])||S.t<=0){ S.phase='count'; S.t=3; S.stop=0; S.f=[fresh(0),fresh(1)]; for(const f of S.f) f.uses=usesFor(f.side); S.pr=[]; resetWorld(); } return; }
     if(S.phase==='count'){ if(S.t<=0){ S.phase='fight'; S.t=ROUND_TIME; S.events.push({e:'go'}); } return; }
     if(S.phase==='end'){
       if(S.t>0) return;
@@ -1164,7 +1214,7 @@ function createDuel(opts){
     }
   }
   S.step=dt=>{ acc+=Math.min(0.25,dt); while(acc>=STEP){ acc-=STEP; tick(STEP); } };
-  S.snapshot=()=>({phase:S.phase,t:+S.t.toFixed(2),round:S.round,wins:S.wins,ready:S.ready,winner:S.winner,champ:S.champ,ink:[S.inkLeft(0),S.inkLeft(1)],practice:S.practice,
+  S.snapshot=()=>({phase:S.phase,t:+S.t.toFixed(2),round:S.round,wins:S.wins,ready:S.ready,winner:S.winner,champ:S.champ,ink:[S.inkLeft(0),S.inkLeft(1)],practice:S.practice,hs:S.phase==='fight'&&S.stop>0?1:0,
     w:W,board:BOARD,broken:S.broken&&{t:r1(S.broken.t),hole:S.broken.hole},breached:S.breached,cells:S.cells.filter(c=>c.hp<2&&c.side!=='c').map(c=>[c.id,c.hp]),
     objs:S.objs.map(o=>[o.id,r1(o.x),r1(o.y),o.life===Infinity?-1:r1(o.life)]),fields:S.fields.map(q=>({a:q.a,b:q.b,u:q.u,life:r1(q.life),max:q.max,col:q.col})),
     hack:S.hack&&{by:S.hack.by,target:S.hack.target,name:S.hack.def.name,desc:S.hack.def.desc,t:+S.hack.t.toFixed(2),max:S.hack.max,counter:S.hack.counter},
@@ -1176,7 +1226,7 @@ function createDuel(opts){
       sh:f.shield>0?1:0,hurt:f.hurt>0?1:0,burn:f.burn>0?1:0,slow:f.slow>0?1:0,dash:f.dash>0?1:0,held:f.held,
       cd:[+(f.cd[0]/f.cdMax[0]).toFixed(2),+(f.cd[1]/f.cdMax[1]).toFixed(2)],uses:f.uses,
       ink2:Math.round(f.ink2),od:Math.round(f.od),stun:f.stun>0?1:0,trap:f.trap>0?1:0,bub:f.bubble?Math.round(f.bubble.r):0,oc:f.overclock>0?1:0,sc:+f.scale.toFixed(2),fl:f.flung>0?1:0})),
-    pr:S.pr.map(p=>({id:p.id,k:p.k,st:p.st,big:p.big,side:p.side,slot:p.slot,x:r1(p.x),y:r1(p.y),vx:Math.round(p.vx),vy:Math.round(p.vy),el:p.el})),
+    pr:S.pr.map(p=>({id:p.id,k:p.k,st:p.st,big:p.big,side:p.side,slot:p.slot,x:r1(p.x),y:r1(p.y),vx:Math.round(p.vx),vy:Math.round(p.vy),el:p.el,h:p.hover?1:undefined,a:p.st==='fleet'?+p.ang.toFixed(2):undefined})),
     ev:S.events.splice(0)});
   return S;
 }
@@ -1185,7 +1235,7 @@ function createDuel(opts){
 // his AI.decide(), AI.onHack() and Drawer: the same rules and odds, and a ghost cursor that really traces each glyph
 // stroke by stroke and submits it through S.stroke, exactly as a player's drawing is. skillOf() is his CPU skill, 0..1.
 function makeBot(side,skillOf){
-  let think=0, react=null, hadHack=false; const i={l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0};
+  let think=0, react=null, hadHack=false; const i={l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0,u:0};
   const {T,toPts,densify,rand,pick,GLYPH_ICON}=INK, COL=['#1d3fbf','#b0121f'][side];
   const dr={task:null,cur:{x:0,y:-200},vis:false,
     draw(name,ax,ay,sc,fx){ if(this.task||!T[name]) return false; this.task={strokes:toPts(T[name],ax,ay,sc||1,fx||1,1.1).map(st=>densify(st,4)),si:0,pi:0,down:false,wait:0.05,name}; this.vis=true; return true; },
@@ -1210,7 +1260,7 @@ function makeBot(side,skillOf){
       if(kind==='melee'){ melee=true; ideal=Math.min(ideal,reach*0.75); press[k]=dist<reach+10&&Math.abs(dy)<64&&facing; }
       else if(kind==='ranged'){ press[k]=Math.abs(dy)<42&&dist<Math.min(640,it.st.dist*0.95)&&facing; far=Math.max(far,it.st.dist); }
       else if(kind==='bomb') press[k]=dist>110&&dist<430&&facing;
-      else if(kind==='shield') press[k]=(incoming||(e.act&&dist<130))&&facing;
+      else if(kind==='shield') press[k]=(incoming||(e.act&&dist<130)||(e.act&&e.act.m==='fleet'&&e.act.t>0.4))&&facing;
       else if(kind==='dash') press[k]=dist>300&&facing&&Math.random()<0.5;
       else press[k]=f.hp<55&&f.uses[k]>0;
     }
@@ -1223,7 +1273,9 @@ function makeBot(side,skillOf){
     i.d=dy<-60&&Math.random()<0.5?1:0;
     // his decide(): hacks when the overdrive bar is full, and glyphs for the situation
     const busy=!!dr.task;
-    if(f.od>=100&&!S.hack&&Math.random()<0.2+0.4*d){ const opts=[2,3]; if(S.cells.length&&!S.broken) opts.push(0); if(S.items[1-side][e.held]) opts.push(1,1); if(S.items[side][f.held]) opts.push(4,4); i.h=pick(opts); i.q++; }
+    // a full bar goes on the ultimate about half the time, when there is a drawing to copy and room for it to fly
+    if(f.od>=100&&(S.items[side][0]||S.items[side][1])&&dist>110&&Math.abs(dy)<160&&Math.random()<0.5*(0.2+0.4*d)) i.u++;
+    else if(f.od>=100&&!S.hack&&Math.random()<0.2+0.4*d){ const opts=[2,3]; if(S.cells.length&&!S.broken) opts.push(0); if(S.items[1-side][e.held]) opts.push(1,1); if(S.items[side][f.held]) opts.push(4,4); i.h=pick(opts); i.q++; }
     else if(!busy&&f.ink2>55&&dist>240&&Math.random()<0.14*d) dr.draw('lightning',f.x+dir*80,-(f.y+110),0.8,dir);
     else if(!busy&&f.ink2>45&&e.act&&dist<130&&Math.random()<0.25*d) dr.draw('wall',f.x+dir*42,-(f.y+46),0.9);
     else if(!busy&&f.ink2>40&&e.y>f.y+110&&f.ground&&Math.random()<0.25) dr.draw('platform',f.x+dir*60,-(f.y+95),0.7);
@@ -1323,9 +1375,11 @@ function fitCanvas(){
   VS=cv.height/440; VW=Math.max(960,cv.width/VS); OX=(VW-960)/2;
 }
 new ResizeObserver(fitCanvas).observe(cv); fitCanvas();
-let mode='bot', sim=null, bot=null, view=null, viewAt=0, net=null, local=[true,false], fx=[], shake=0, serverInfo={}, canRead=location.protocol.startsWith('http');
+let mode='bot', sim=null, bot=null, view=null, viewAt=0, net=null, local=[true,false], fx=[], shake=0, impactUntil=0, impactAt=-9999, serverInfo={}, canRead=location.protocol.startsWith('http');
 const art=[[null,null],[null,null]], artStrokes=[[null,null],[null,null]], desk=[null,null];
-const inp=[0,1].map(()=>({l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0}));
+const inp=[0,1].map(()=>({l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0,u:0}));
+// People who ask their system for less motion get no screen flashes and a much smaller shake.
+const CALM=matchMedia('(prefers-reduced-motion: reduce)').matches, PFLASH=['#b9c6ff','#ffb3b8'];
 // His interface and effects. Built once; the windows only show on the retro desktop, the effects are used everywhere.
 const FXI=makeInkShop(INK,L);
 const wobj=new Map(), wPending=[[],[]], wBolt={}; let wPen=null;
@@ -1522,8 +1576,8 @@ const HINT={melee:'Tap again and again for a combo; down + attack is a special; 
 
 /* ---------- controls ---------- */
 // Player one attacks with J and K. On a shared keyboard player two uses the arrows with , and . (or numpad 1 and 2).
-// L is the mining tool and Q runs the selected hack (1-5 pick one).
-const KEYS1={KeyA:'l',KeyD:'r',KeyW:'j',KeyS:'d',KeyJ:'a',KeyK:'b',KeyL:'m',KeyQ:'q'}, KEYS2={ArrowLeft:'l',ArrowRight:'r',ArrowUp:'j',ArrowDown:'d',Comma:'a',Period:'b',Slash:'m',ShiftRight:'q',Numpad1:'a',Numpad2:'b',Numpad3:'m'}, SOLO={Space:'j',KeyG:'b'};
+// L is the mining tool, Q runs the selected hack (1-5 pick one) and U is the ultimate (M or numpad 0 for player two).
+const KEYS1={KeyA:'l',KeyD:'r',KeyW:'j',KeyS:'d',KeyJ:'a',KeyK:'b',KeyL:'m',KeyQ:'q',KeyU:'u'}, KEYS2={ArrowLeft:'l',ArrowRight:'r',ArrowUp:'j',ArrowDown:'d',Comma:'a',Period:'b',Slash:'m',ShiftRight:'q',Numpad1:'a',Numpad2:'b',Numpad3:'m',KeyM:'u',Numpad0:'u'}, SOLO={Space:'j',KeyG:'b'};
 function press(side,k,down){
   const i=inp[side];
   if('lrd'.includes(k)){ if(i[k]===(down?1:0)) return; i[k]=down?1:0; } else if(down){ i[k]++; if(k==='q') i.h=FXI.hackSel; } else return;
@@ -1555,10 +1609,10 @@ function buildControls(){
   const box=$('tcs'); box.innerHTML=''; releasers=[];
   for(const side of [0,1]){
     if(!local[side]) continue;
-    const keys=mode==='2p'?(side?'← → move · ↑ jump · ↓ down · , and . attack':'A D move · W jump · S down · J and K attack'):'A D or ← → move · W / Space jump · S down · J attack 1 · K attack 2';
+    const keys=mode==='2p'?(side?'← → move · ↑ jump · ↓ down · , and . attack':'A D move · W jump · S down · J and K attack · U ultimate'):'A D or ← → move · W / Space jump · S down · J attack 1 · K attack 2 · U ultimate';
     const el=document.createElement('div'); el.className='tc'; el.dataset.side=side;
     el.innerHTML=`<div class="grp"><button data-k="l" aria-label="Move left">◀</button><button data-k="d" aria-label="Down">▼</button><button data-k="r" aria-label="Move right">▶</button></div><div class="keys">${keys}</div>
-      <div class="grp"><button data-k="a"><span class="cdfill"></span>A<small></small></button><button data-k="b"><span class="cdfill"></span>B<small></small></button><button data-k="j" aria-label="Jump">⤒<small>jump</small></button><button data-k="m" aria-label="Mine">⛏<small>mine</small></button><button data-k="q" aria-label="Run hack"><span class="cdfill"></span>Q<small>hack</small></button></div>`;
+      <div class="grp"><button data-k="a"><span class="cdfill"></span>A<small></small></button><button data-k="b"><span class="cdfill"></span>B<small></small></button><button data-k="j" aria-label="Jump">⤒<small>jump</small></button><button data-k="m" aria-label="Mine">⛏<small>mine</small></button><button data-k="q" aria-label="Run hack"><span class="cdfill"></span>Q<small>hack</small></button><button data-k="u" aria-label="Ultimate"><span class="cdfill"></span>U<small>fleet</small></button></div>`;
     // Movement is one touch zone: a thumb can slide between left, right and down without lifting, and a touch that lands
     // in the gap between two buttons still counts for the nearest one.
     const mv=el.querySelector('.grp'), mb=[...mv.querySelectorAll('button')]; let mp=null;
@@ -1668,8 +1722,16 @@ function accept(v){
     e.t0=performance.now(); fx.push(e);
     if(e.e==='block') shake=Math.max(shake,3);
     if(e.e==='quake') shake=Math.max(shake,9);
-    if(e.e==='hit'||e.e==='boom') shake=Math.max(shake,e.e==='boom'?(e.s?4:8):Math.min(8,3+e.n/4));
     if(e.e==='hit'&&ANIM.rig&&anim[e.side]&&anim[e.side].rig) ANIM.rig.kick(anim[e.side].rig,(e.dir==='L'?-1:1)*(view?view.f[e.side].face:1),e.n);
+    const now=e.t0, soft=CALM?0.3:1;
+    if(e.e==='boom') shake=Math.max(shake,(e.s?4:8)*soft);
+    // A hit shakes the screen by its weight. The last hit of a finisher, a charged shot or a knockout also gets an impact
+    // frame: for a few frames the picture is inverted (on a white stage a plain white flash would not show). Never more
+    // than one in 400 ms.
+    if(e.e==='hit'){ shake=Math.max(shake,(2.5+9*(e.w||0))*soft); if(e.fin&&now-impactAt>400){ impactAt=now; impactUntil=now+70; } }
+    if(e.e==='ko'&&now-impactAt>150){ impactAt=now; impactUntil=now+110; shake=Math.max(shake,14*soft); }
+    if(e.e==='ult'){ shake=Math.max(shake,7*soft); FXI.ring(e.x,-(e.y+60),PCOL[e.side]); FXI.burst(e.x,-(e.y+60),PCOL[e.side],22); }
+    if(e.e==='zip') FXI.spark(e.x,-e.y,PCOL[e.side]);
     if(e.e==='hit'&&navigator.vibrate&&local[e.side]&&navigator.userActivation&&navigator.userActivation.hasBeenActive) navigator.vibrate(30);
   }
   // drawn shapes: follow their positions, forget the ones that are gone
@@ -1867,7 +1929,8 @@ function syncUI(){
       if(!it) return `<div class="loitem empty">${'AB'[k]}: nothing yet</div>`; const a=art[s][k];
       return `<div class="loitem"><div class="top">${a&&a.ver===it.ver?`<img alt="" src="${a.sprite.cv.toDataURL()}">`:''}<div class="nm">${esc(it.name)}<small>${TRAITS[it.tr]?TRAITS[it.tr].label:''} · ${it.cost} ink</small></div></div>${statBars(it)}</div>`; }).join('')}</div>`).join(''); }
   document.querySelectorAll('.tc').forEach(el=>{ const s=+el.dataset.side;
-    { const q=el.querySelector('[data-k="q"]'), od=v.f[s].od||0; if(q){ q.style.setProperty('--cd',1-od/100); const nm=INK.HACKS[FXI.hackSel].name.replace('.exe',''), sm=q.querySelector('small'); if(sm.textContent!==nm) sm.textContent=nm; } }
+    { const q=el.querySelector('[data-k="q"]'), od=v.f[s].od||0; if(q){ q.style.setProperty('--cd',1-od/100); const nm=INK.HACKS[FXI.hackSel].name.replace('.exe',''), sm=q.querySelector('small'); if(sm.textContent!==nm) sm.textContent=nm; }
+      const u=el.querySelector('[data-k="u"]'); if(u){ u.style.setProperty('--cd',1-od/100); u.classList.toggle('full',od>=100&&v.phase==='fight'&&!!(v.items[s][0]||v.items[s][1])); } }
     for(const k of [0,1]){ const b=el.querySelector(`[data-k="${'ab'[k]}"]`), it=v.items[s][k], f=v.f[s];
       b.style.setProperty('--cd',f.cd[k]||0); const label=it?it.name+(it.kind==='heal'?' ×'+f.uses[k]:''):'Punch';
       const sm=b.querySelector('small'); if(sm.textContent!==label) sm.textContent=label; } });
@@ -1936,6 +1999,7 @@ const K=0.6, RUN_PX=193*K;
 })();
 const clipFor=n=>ANIM.clips[n]||ANIM.clips[n.replace(/_b$/,'')]||ANIM.clips.idle;
 const smooth=t=>t*t*(3-2*t);
+const fleetSeen=new Map();
 const anim=[0,1].map(i=>({name:'',t:0,from:null,blend:1,blendDur:0.07,pose:null,g:1,landT:9,skidT:9,spinT:9,lastAct:'',speed:0,hurt:0,hurtName:'hit_react',runName:'run'}));
 let lastRender=0;
 function resetAnim(){ for(const a of anim){ a.name=''; a.pose=null; a.from=null; a.landT=a.skidT=a.spinT=9; a.lastAct=''; a.runName=Math.random()<0.5&&ANIM.clips.run_b?'run_b':'run'; } }
@@ -1957,8 +2021,9 @@ function pickClip(v,i,st,age){
   return ['idle'];
 }
 function drawFighter(v,i,now,age,dt){
-  const f=v.f[i], col=PCOL[i], d=f.face, fight=v.phase==='fight', st=anim[i];
-  const x=f.x+(fight?f.vx*age:0), base=GY-Math.max(0,f.y+(fight&&!f.g?f.vy*age:0));
+  // During hit-stop the fighter who was hit rattles in place and pales.
+  const f=v.f[i], rattle=v.hs&&f.hurt&&v.phase==='fight', col=rattle&&!CALM?PFLASH[i]:PCOL[i], d=f.face, fight=v.phase==='fight', st=anim[i];
+  const x=f.x+(fight?f.vx*age:0)+(rattle?Math.sin(now*0.9)*2.6:0), base=GY-Math.max(0,f.y+(fight&&!f.g?f.vy*age:0));
   const hideItems=net&&v.phase==='draw'&&i!==net.side&&net.side>=0, items=v.items[i];
   const k=f.held, it=hideItems?null:items[k], kind=it?it.kind:'melee';
   // one-off triggers
@@ -1977,7 +2042,7 @@ function drawFighter(v,i,now,age,dt){
     const turned=Math.abs(Math.sin(st.fromRot/2))>0.25||st.fromTurn<0.6;
     st.blendDur=turned?0.11:f.hurt?0.05:f.act?0.05:0.09;
   }
-  st.t=driven!==undefined?driven:st.t+dt;
+  st.t=driven!==undefined?driven:st.t+(v.hs?0:dt);
   const s=ANIM.sample(clip,st.t);
   if(st.blend<1&&st.from){
     // Leaving a move part-way (hit, chained, round over): ease every channel from where the body actually was.
@@ -2108,7 +2173,7 @@ function worldFront(v,now){
 }
 const shadowY=f=>{ let y=0; for(const p of ARENA_PLATS) if(f.y>=p.y-1&&f.x>=p.x0-6&&f.x<=p.x1+6) y=Math.max(y,p.y); return y; };
 function render(now){
-  const v=view, age=net?Math.min(0.08,(now-viewAt)/1000):0, dt=Math.max(0,Math.min(0.05,(now-(lastRender||now))/1000)); lastRender=now;
+  const v=view, age=net&&!v.hs?Math.min(0.08,(now-viewAt)/1000):0, dt=Math.max(0,Math.min(0.05,(now-(lastRender||now))/1000)); lastRender=now;
   fitCanvas(); L.setTransform(1,0,0,1,0,0); L.clearRect(0,0,cv.width,cv.height); L.setTransform(VS,0,0,VS,OX*VS,OY);
   if(!deskLike()){ L.fillStyle='#fff'; L.fillRect(-OX,0,VW,440); }
   shake*=Math.exp(-dt*22); if(shake>0.1) L.translate(Math.sin(now*0.112)*shake,Math.cos(now*0.091)*shake*0.35); else shake=0;
@@ -2121,11 +2186,25 @@ function render(now){
   for(const p of ARENA_PLATS){ L.beginPath(); L.moveTo(p.x0+(terrain?3:0),GY-p.y+(terrain?0:2)); L.lineTo(p.x1-(terrain?3:0),GY-p.y+(terrain?0:2)); L.stroke(); }
   L.globalAlpha=1; L.strokeStyle='#111';
   worldBack(v,now);
+  // the ultimate's wind-up: the stage darkens around the fighter who is casting it (not on the desktop overlay, where it would dim the user's own screen)
+  if(!DESK) for(const f of v.f) if(f.act&&f.act.m==='fleet'&&f.act.t<0.95){ const t=f.act.t, a=Math.min(1,t/0.12)*Math.min(1,(0.95-t)/0.3)*(v.hs?1:0.85), cx=f.x, cy=GY-f.y-70;
+    const g=L.createRadialGradient(cx,cy,40,cx,cy,520); g.addColorStop(0,'rgba(10,12,30,0)'); g.addColorStop(1,'rgba(10,12,30,'+(0.62*a).toFixed(3)+')');
+    L.save(); L.fillStyle=g; if(v.board&&!v.breached&&!v.broken) L.fillRect(v.board.x0,GY-v.board.top,v.board.x1-v.board.x0,v.board.top-v.board.floor); else L.fillRect(-OX-20,-OY/VS-20,VW+40,cv.height/VS+40); L.restore(); }
   // projectiles
   for(const p of v.pr){
     const x=p.x+p.vx*age, y=GY-(p.y+p.vy*age), it=v.items[p.side][p.slot];
     if(p.k==='bolt'){ const path=wBolt[p.id]=wBolt[p.id]||[]; path.push({x:x+(Math.random()-.5)*12,y:y+(Math.random()-.5)*12}); if(path.length>10) path.shift();
       L.save(); L.strokeStyle='#fc0'; L.shadowColor='#ff0'; L.shadowBlur=12; L.lineWidth=3; if(path.length>1) FXI.strokePath(path); L.restore(); continue; }
+    if(p.st==='fleet'){
+      // a copy of the drawing from the ultimate: it pops into place in the fan, glows in its owner's colour, and leaves a streak once it flies
+      const born=fleetSeen.get(p.id)||(fleetSeen.set(p.id,now),now), pop=Math.min(1,(now-born)/140), size=(it?it.sz:50)*1.25*(0.4+0.6*pop*(2-pop));
+      const ang=p.h||!(p.vx||p.vy)?-(p.a||0):Math.atan2(-p.vy,p.vx), axis=it&&((it.kind==='melee'&&it.style!=='fist')||it.style==='staff');
+      L.save(); L.translate(x,y+(p.h?Math.sin(now/170+p.id)*3:0)); L.rotate(ang);
+      if(!p.h){ const g=L.createLinearGradient(-150,0,0,0); g.addColorStop(0,'rgba(255,255,255,0)'); g.addColorStop(1,PCOL[p.side]); L.strokeStyle=g; L.globalAlpha=.55; L.lineCap='round'; L.lineWidth=7; L.beginPath(); L.moveTo(-150,0); L.lineTo(-10,0); L.stroke(); L.globalAlpha=1; }
+      L.shadowColor=PCOL[p.side]; L.shadowBlur=14; L.globalAlpha=0.35+0.65*pop;
+      if(axis){ L.translate(-size/2,0); if(!sprite(p.side,p.slot,size,true)){ L.fillStyle=PCOL[p.side]; L.fillRect(0,-3,size,6); } }
+      else if(!sprite(p.side,p.slot,size)){ L.fillStyle=PCOL[p.side]; L.beginPath(); L.arc(0,0,10,0,7); L.fill(); }
+      L.restore(); continue; }
     if(p.k==='shot'){ const col=p.el==='none'?'#111':PEN[p.el]; L.save(); L.translate(x,y); L.rotate(Math.atan2(-p.vy,p.vx)); L.strokeStyle=col; L.fillStyle=col; L.lineCap='round'; L.lineJoin='round';
       if(p.st==='bow'){ L.lineWidth=3.5; L.beginPath(); L.moveTo(-44,0); L.lineTo(0,0); L.moveTo(-9,-5); L.lineTo(0,0); L.lineTo(-9,5); L.moveTo(-44,0); L.lineTo(-50,-5); L.moveTo(-44,0); L.lineTo(-50,5); L.stroke(); }
       else if(p.st==='staff'){ const r=8+5*(p.big||0); L.globalAlpha=.3; L.beginPath(); L.moveTo(0,-r); L.lineTo(-r*4.5,0); L.lineTo(0,r); L.closePath(); L.fill(); L.globalAlpha=1; L.beginPath(); L.arc(0,0,r,0,7); L.fill(); L.fillStyle='#fff'; L.beginPath(); L.arc(r*0.2,-r*0.2,r*0.45,0,7); L.fill();
@@ -2135,6 +2214,7 @@ function render(now){
       L.restore(); }
     else{ L.save(); L.translate(x,y); L.rotate(now/90*Math.sign(p.vx||1)); if(!it||!sprite(p.side,p.slot,it.sz)){ L.fillStyle=PEN[p.el]; L.beginPath(); L.arc(0,0,10,0,7); L.fill(); } L.restore(); }
   }
+  if(fleetSeen.size>40) for(const id of [...fleetSeen.keys()]) if(!v.pr.some(p=>p.id===id)) fleetSeen.delete(id);
   drawFighter(v,1,now,age,dt); drawFighter(v,0,now,age,dt);
   worldFront(v,now);
   // effects
@@ -2153,6 +2233,9 @@ function render(now){
       L.font='30px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=L.strokeStyle; L.fillText('BOOM',e.x,y-e.n*0.6-a*20); }
   }
   L.globalAlpha=1; L.setTransform(VS,0,0,VS,OX*VS,OY);
+  // impact frame: put white behind everything, then invert it, so the stage goes black and the ink white for a few frames
+  if(now<impactUntil&&!DESK&&!CALM){ L.save(); const b=v.board&&!v.breached&&!v.broken?v.board:null, R=b?[b.x0,GY-b.top,b.x1-b.x0,b.top-b.floor]:[-OX-20,-OY/VS-20,VW+40,cv.height/VS+40];
+    L.fillStyle='#fff'; L.globalCompositeOperation='destination-over'; L.fillRect(R[0],R[1],R[2],R[3]); L.globalCompositeOperation='difference'; L.fillRect(R[0],R[1],R[2],R[3]); L.restore(); }
   // banners
   const banner=(t,size,y,col)=>{ L.font=size+'px "Gochi Hand",cursive'; L.textAlign='center'; L.lineWidth=8; const bx=v.board?(v.board.x0+v.board.x1)/2:ARENA_W/2, by=v.board?y-(v.board.floor+Math.max(0,v.board.top-v.board.floor-330)):y; L.strokeStyle='#fffdf6'; L.strokeText(t,bx,by); L.fillStyle=col||'#1c2541'; L.fillText(t,bx,by); };
   if(v.phase==='draw'&&RETRO&&(local[0]||local[1]||!$('overlay').hidden)){ /* a window is open there: the sketchbook, or the join code, which must stay scannable */ }

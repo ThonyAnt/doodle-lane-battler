@@ -88,6 +88,7 @@
   //   marks  [{t,type}] gameplay moments (hit, shot, step, land). Must match the move spec.
   //   weapon 'blade' | 'spear' | 'hammer' | 'fist' | 'bow' | 'gun' | 'staff' | 'star' | 'none'  (what the lab draws in the front hand)
   //   spline false to interpolate linearly instead of with a smooth curve through the keys
+  //   punch  how strongly the run-up to the first hit or shot is retimed "slow, then fast" (default 1.45; 1 or 0 turns it off). See A.warp.
   A.add=function(name,c){
     if(!c||!c.keys||c.keys.length<2) throw new Error('ANIM.add('+name+'): need at least 2 keys');
     const keys=c.keys.map(k=>{
@@ -97,10 +98,15 @@
     }).sort((a,b)=>a.t-b.t);
     for(const k of keys) if(!EASE[k.ease]) throw new Error('ANIM.add('+name+'): unknown ease '+k.ease);
     const dur=c.dur||keys[keys.length-1].t;
-    A.clips[name]={name,dur,loop:!!c.loop,keys,trail:c.trail||[],marks:c.marks||[],weapon:c.weapon||'none',spline:c.spline!==false,notes:c.notes||''};
+    // Slow, then fast: up to the first hit or shot the clip's clock is bent so the wind-up lingers and the strike itself
+    // takes fewer frames. The pose at the mark, and everything after it, is exactly as authored, so the rules' timings hold.
+    const first=(c.marks||[]).find(m=>m.type==='hit'||m.type==='shot'), punch=c.punch===undefined?1.45:c.punch;
+    A.clips[name]={name,dur,loop:!!c.loop,keys,trail:c.trail||[],marks:c.marks||[],weapon:c.weapon||'none',spline:c.spline!==false,notes:c.notes||'',
+      warp:first&&first.t>=0.08&&punch>1&&!c.loop?{a:first.t,k:punch}:null};
     return A.clips[name];
   };
 
+  A.punch=true;   // set false to play every clip with its authored timing (the lab has a switch)
   const CH=['rot','turn','orbit','grip','pull'];
   function cr(a,b,c,d,u){ const u2=u*u,u3=u2*u; return 0.5*((2*b)+(-a+c)*u+(2*a-5*b+4*c-d)*u2+(-a+3*b-3*c+d)*u3); }
   // Sample a clip at time t (seconds). Returns {p, rot, turn, orbit, grip, pull, t, clip}.
@@ -108,6 +114,7 @@
     if(typeof clip==='string') clip=A.clips[clip];
     const K=clip.keys,n=K.length,dur=clip.dur;
     if(clip.loop) t=((t%dur)+dur)%dur; else t=Math.max(0,Math.min(dur,t));
+    if(clip.warp&&A.punch&&t<clip.warp.a) t=clip.warp.a*Math.pow(t/clip.warp.a,clip.warp.k);
     let i=0; while(i<n-2&&t>K[i+1].t) i++;
     const a=K[i],b=K[i+1],span=b.t-a.t,raw=span>0?Math.max(0,Math.min(1,(t-a.t)/span)):1,u=EASE[b.ease](raw);
     const prev=i>0?K[i-1]:(clip.loop?K[n-2]:a), next=i<n-2?K[i+2]:(clip.loop?K[1]:b);

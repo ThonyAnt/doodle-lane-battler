@@ -68,4 +68,25 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
   const S2=fresh(), a=S2.f[0], b=S2.f[1]; b.x=a.x+300; for(const st of toPts(T.arrow,b.x+58,-(b.y+55),0.95,1,0)) S2.stroke(0,D.INK.densify(st,4),'#111111'); run(S2,1.3);
   ok('an arrow drawn from the foe flings them',b.x>a.x+450,Math.round(b.x-a.x));
 }
+{ // 6. hit-stop
+  const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,{kind:'melee',style:'blade',element:'none',name:'Sword'},50);
+  b.x=a.x+60; inp(S,0,{a:1}); let frozen=0, seen=0, hit=0, was=0, moved=0, at=0;
+  for(let i=0;i<40;i++){ const x=b.x, y=b.y, t=a.act?a.act.t:-1; S.step(1/60); const v=S.snapshot(); if(v.ev.some(e=>e.e==='hit'&&e.w>0)) hit=1;
+    if(was){ seen++; if(b.x===x&&b.y===y&&(a.act?a.act.t:-1)===t) frozen++; } else if(hit&&!v.hs&&(b.x!==x||b.y!==y)) moved=1; was=v.hs; }
+  ok('a sword hit freezes the fight for a few frames, then it carries on',hit&&seen>=2&&seen<=8&&frozen===seen&&moved,{seen,frozen,moved});
+}
+{ // 7. the ultimate
+  const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,{kind:'melee',style:'blade',element:'none',name:'Sword'},60);
+  ok('the ultimate needs a full overdrive bar',S.startUlt(0)===false);
+  ok('and a drawing to copy',(S.f[1].od=100,S.startUlt(1))===false);
+  S.f[1].od=0; a.od=100; const hp=b.hp; inp(S,0,{u:1});
+  ok('a full bar starts the fleet and empties it',a.act&&a.act.m==='fleet'&&a.od===0&&a.act.n===7,a.act&&a.act.n);
+  run(S,0.85); const hov=S.pr.filter(p=>p.st==='fleet'&&p.hover).length;
+  ok('the copies gather above the fighter during the wind-up',hov>=5&&b.hp===hp&&a.y>BOARD.floor,{hov,y:Math.round(a.y)});
+  run(S,2.2);
+  ok('then fly at the foe; the whole volley is worth its fixed damage',Math.abs((hp-b.hp)-30)<0.5&&!S.pr.length&&!a.act,{lost:+(hp-b.hp).toFixed(1)});
+  const S2=fresh(), c=S2.f[0], d=S2.f[1]; S2.setItem(0,0,{kind:'melee',style:'blade',element:'none',name:'Sword'},20); S2.setItem(1,0,{kind:'melee',style:'fist',element:'none',name:'Gloves'},30);
+  c.od=100; d.x=c.x+40; d.face=-1; inp(S2,0,{u:1}); run(S2,0.5); inp(S2,1,{a:1}); run(S2,0.5);
+  ok('a hit during the wind-up breaks it off and gives half the bar back',!c.act&&c.od>=50&&!S2.pr.some(p=>p.st==='fleet'),{od:Math.round(c.od),pr:S2.pr.length});
+}
 console.log(bad?bad+' failed':'all world rules pass'); process.exit(bad?1:0);
