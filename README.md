@@ -80,6 +80,16 @@ What a rule can do is small, and the match clamps it whatever the code asks for 
 
 Not yet tried with the real model: every test runs against the stand-in.
 
+## Trained CPU (optional)
+
+Beside the hand-written bot there is a second CPU that learned to fight by playing: a small neural network (28 numbers in, two hidden layers, 8 buttons out, 1,232 weights) improved by an evolution strategy over about 2.3 million rounds of the real rules (after an earlier run of about four million, before the weapons were re-balanced) against a league (the hand-written bot at three skills, three scripted players, and earlier versions of itself).
+
+- **Use it:** when `bot-weights.json` sits next to `server.js`, the menu shows a `CPU: classic / trained` switch for Player vs Bot rooms. The classic bot is always the default. `POST /duel/room?bot=1&brain=net` asks for it directly.
+- **Measured (400 fresh rounds each, same random loadout both sides):** it beats the hand-written bot at skill 0.55 in 65% of rounds, and the scripted masher, jumper and kiter in 92%, 97% and 98%. That is the best of many checkpoints, which flatters: the newest one scored 58% against the hand-written bot.
+- **How it plays:** it walks in and attacks with both items, about 11 presses a second in all (it is held to 6 presses a second per attack button and 3 jumps). It has learned not to jump at all, does not draw, and has only been watched for a few rounds; nobody has played a full match against it.
+- **Train:** `node bot/train.js --hours=0.5 --workers=8 --out=bot/checkpoints` (resumable; about 2,500 rounds a second on this laptop, so half an hour is plenty: the win rate stopped rising after about 1,000 generations).
+- **Judge and save:** `node bot/eval.js bot/checkpoints --n=400 --save=bot-weights.json`. Weights only suit the rules they were trained in; the server warns when `duel.html` has changed since.
+
 ## Run
 
 Needs Node 18 or newer. No dependencies.

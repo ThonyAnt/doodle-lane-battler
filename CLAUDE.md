@@ -107,6 +107,13 @@ Rules to keep:
 
 Not tested with the real model: every test uses the stand-in. Unknown until someone runs `node tools/forge-live.js` with the key: whether the model writes valid ForgeScript from this prompt, how long it takes, whether the rules are funny, and whether `max_tokens: 700` and `response_format: json_object` suit the model chosen. The `FORGE.EXE` window, the call-outs and the "Forging rules..." banner were written without a browser; their logic is tested in Node, their look is not.
 
+## Trained CPU
+
+- `makeNetBot(side, theta, skillOf)`, `botFeatures`, `netForward` and `NET_SHAPE=[28,24,16,8]` live in the DUEL block after `makeBot`; the weights are passed in. The 28 inputs are listed above `botSee`. It looks every 0.1 s, acts on each look `0.12 + 0.2*(1-skill)` s later, and is held to 6 presses a second per attack button, 3 jumps, 1 ultimate, 1 hack.
+- `bot/es.js` (evolution strategy, mirrored sampling, rank shaping), `bot/arena.js` (headless rounds, league, fitness: win, half the health margin, minus 0.2 for a timeout, minus 0.015 per press a second), `bot/train.js` + `bot/worker.js` (parallel, resumable), `bot/eval.js` (the shipping bar: 55% against the classic bot at 0.55, 60% against each scripted player, over fresh rounds).
+- `bot-weights.json` is the champion (generation 620 of a 15-minute run on these rules, after the weapon re-fit): 65 / 92 / 97 / 98% against classic 0.55 / masher / jumper / kiter over 400 rounds each; the newest checkpoint of the same run scored 58% against the classic bot, so read 65% as the top of a noisy range. In an earlier 24-minute run the win rate against the classic bot levelled off near 62% from generation 1,000 on; more training with these inputs and this network did not help.
+- Not tested: a person playing against it. It never jumps and presses both attack buttons most of the time.
+
 ## Online play
 
 - `POST /room` creates a room with a 4-letter code. `GET /events?room=CODE&id=CLIENT` is a Server-Sent Events stream (`hello`, `players`, `state`, `pending`, `spawn`, `cancel`, `reset`, `gone`). `POST /act` takes `start`, `reset` and `send` (strokes plus a PNG of the pad).
