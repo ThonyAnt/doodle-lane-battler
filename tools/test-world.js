@@ -161,18 +161,18 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
   ok('fire on a soaked fighter bursts into steam and dries them',Math.abs(steam.d/base-1.25)<0.03&&steam.tag==='steam'&&steam.b.slow===0,+steam.d.toFixed(1));
   const g=hit('plant','plant',b=>{ b.slow=2; }); ok('a plant hit on a soaked fighter is tagged overgrown',g.tag==='grow');
 }
-{ // triggers: when a weapon's empowered hit fires (TRIGGERS, S.setCustoms)
+{ // triggers: when a weapon's empowered hit fires (TRIGGERS, S.trigSet)
   const SW={kind:'melee',style:'blade',element:'none',name:'Sword',traits:['swift'],trait:'swift'};
-  const mk=(when,spec)=>{ const S=fresh(); S.setItem(0,0,spec||SW,50); if(when) S.setCustoms(0,0,[{id:'empower',when}]); S.snapshot(); return S; };
+  const mk=(when,spec)=>{ const S=fresh(); S.setItem(0,0,spec||SW,50); if(when) S.trigSet(0,0,[{id:'empower',when}]); S.snapshot(); return S; };
   // one swing at a foe placed in reach: the damage done and how many empowered hits were announced
   const swing=(S,m)=>{ const a=S.f[0], b=S.f[1]; b.x=a.x+60; b.y=a.y; b.vx=b.vy=0; b.hurt=0; a.vx=0; b.hp=HP0; let low=HP0, emp=0; S.play(0,m||'blade1');
     for(let i=0;i<90;i++){ S.step(1/120); low=Math.min(low,b.hp); for(const e of S.snapshot().ev) if(e.e==='emp') emp++; if(!a.act&&i>20) break; } return {d:HP0-low,emp}; };
   const base=swing(mk()).d, near=(v,k)=>Math.abs(v/base-k)<0.03;
   { const S=mk(), junk=[undefined,null,5,'x',[{id:'nope'}],[{id:'empower'}],[{id:'empower',when:'zzz'}],[{id:'empower',when:{when:'__proto__'}}]]; let threw=0, kept=0;
-    for(const j of junk){ try{ const r=S.setCustoms(0,0,j); if(!Array.isArray(r)||r.length) kept++; }catch(err){ threw++; } }
-    const r=S.setCustoms(0,0,[{id:'empower',when:{when:'third',n:99,boost:-4}},{id:'empower',when:'air'}]);
-    ok('setCustoms never throws, drops what it does not know, clamps parameters and keeps one',!threw&&!kept&&r.length===1&&r[0].when.n===5&&r[0].when.boost===1.2&&S.setCustoms(0,1,[])===null&&S.setCustoms(7,0,[])===null,r);
-    S.setItem(0,1,{kind:'shield',element:'none',name:'Shield'},20); ok('a shield cannot carry a trigger',S.setCustoms(0,1,[{id:'empower',when:'third'}]).length===0);
+    for(const j of junk){ try{ const r=S.trigSet(0,0,j); if(!Array.isArray(r)||r.length) kept++; }catch(err){ threw++; } }
+    const r=S.trigSet(0,0,[{id:'empower',when:{when:'third',n:99,boost:-4}},{id:'empower',when:'air'}]);
+    ok('trigSet never throws, drops what it does not know, clamps parameters and keeps one',!threw&&!kept&&r.length===1&&r[0].when.n===5&&r[0].when.boost===1.2&&S.trigSet(0,1,[])===null&&S.trigSet(7,0,[])===null,r);
+    S.setItem(0,1,{kind:'shield',element:'none',name:'Shield'},20); ok('a shield cannot carry a trigger',S.trigSet(0,1,[{id:'empower',when:'third'}]).length===0);
     const tw=S.tweak(0,0,{tune:1}); ok('a tweaked item keeps its trigger',!!tw&&!!tw.customs&&tw.customs[0].when.when==='third'); }
   { const S=mk('third'), h=[1,2,3,4,5,6].map(()=>swing(S)); ok('third strike: hits three and six are empowered',h.map(r=>r.emp).join('')==='001001'&&near(h[2].d,1.8)&&near(h[0].d,1),h.map(r=>+r.d.toFixed(1)));
     const S2=mk('third'); swing(S2); const v1=S2.snapshot().f[0].tg[0]; swing(S2); const v2=S2.snapshot().f[0].tg[0]; ok('and the snapshot counts the pips, then says armed',v1.c===1&&!v1.on&&v2.c===2&&v2.on===1,[v1,v2]); }
@@ -191,7 +191,7 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
     ok('a shot is empowered as it leaves the gun and is marked in the snapshot',shots.map(q=>q.em).join('')==='001'&&emps===1,shots.map(q=>q.em)); }
   { const S=mk('third'), a=S.f[0], b=S.f[1]; b.x=a.x+300; a.od=100; S.startUlt(0); let emp=0, n=0; while((S.ult>=0||a.act)&&n++<1200){ S.step(1/120); for(const e of S.snapshot().ev) if(e.e==='emp') emp++; }
     ok('an ultimate is never empowered and does not count toward a trigger',emp===0&&a.trg[0].n===0,{emp,n:a.trg[0].n}); }
-  { const play=()=>{ const S=D.createDuel({seed:42}); S.setItem(0,0,SW,50); S.setItem(1,0,SW,50); S.setCustoms(0,0,[{id:'empower',when:{when:'third',n:2}}]); S.setCustoms(1,0,[{id:'empower',when:'counter'}]); S.setReady(0); S.setReady(1);
+  { const play=()=>{ const S=D.createDuel({seed:42}); S.setItem(0,0,SW,50); S.setItem(1,0,SW,50); S.trigSet(0,0,[{id:'empower',when:{when:'third',n:2}}]); S.trigSet(1,0,[{id:'empower',when:'counter'}]); S.setReady(0); S.setReady(1);
       let emps=0; for(let i=0;i<60*14;i++){ if(S.phase==='fight'){ const a=S.f[0], b=S.f[1]; S.setInput(0,{l:a.x>b.x+50?1:0,r:a.x<b.x-50?1:0,d:0,j:0,a:Math.floor(i/9),b:0}); S.setInput(1,{l:b.x>a.x+50?1:0,r:b.x<a.x-50?1:0,d:0,j:0,a:Math.floor(i/13),b:0}); } S.step(1/60); for(const e of S.snapshot().ev) if(e.e==='emp') emps++; }
       return {S,emps}; }, A=play(), B=play(), h=A.S.hash(); A.S.f[0].trg[0].n+=1;
     ok('a match with triggers repeats exactly, and their state is in the hash',A.emps>0&&h===B.S.hash()&&A.S.hash()!==h,{emps:A.emps,h}); }
