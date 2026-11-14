@@ -97,6 +97,14 @@ keyboard shortcuts, undo. Then ask of each one: *what would this do to a small b
 Push past the first idea for each element; the second or third is usually the one that surprises. Turn at least four
 or five elements into obstacles so the scene has texture.
 
+Make each piece visibly do its job. After the first playtest of the slideshow the owner's note was that the bullet
+points "don't seem to do much": they were ledges, but nothing on screen said so, and they drifted in slowly. A player
+has to be able to see what a part of the interface is and what it just did to them. Draw the edge they can stand on,
+give a moving piece its streaks, mark the moment it hits, and name it the way the program would (the slideshow shows
+the yellow tooltip "Fly From Left" as that effect fires). Give each piece a different job where you can: the
+slideshow's four bullets arrive by four different effects, one rams, one stomps, one blinks in and out, one pushes
+outward. And keep it brisk: an entrance that takes half a second reads as slow.
+
 Do not use generic game hazards: no spikes, lava, saws or lasers. If an obstacle could appear in any game, it does not
 belong in this one. The test is whether someone who used the program in 1998 would recognise what just hit them.
 
@@ -144,6 +152,7 @@ invent every name, logo and icon.
 - The script runs thirty to sixty seconds, has three acts, and its finale escalates until the round ends.
 - The ground changes every few seconds, in at least three different ways.
 - At least four interface elements are obstacles, and none is a generic game hazard.
+- Each obstacle visibly shows what it is and what it does, and nothing dawdles.
 - The user of the program has a voice, and the biggest joke changes the arena.
 - A new program window was researched and matches the desktop around it; all names and icons are invented.
 - The scene does not favour either starting side, freezes during an ultimate, and works in an online room (see

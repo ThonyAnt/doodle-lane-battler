@@ -572,7 +572,8 @@ Window titlebars = platforms
 // Health was 100 and the round clock 60 s. Between bots a round then lasted about 23 s and a tenth of them were over in 12 s,
 // which is about when overdrive first fills, so a fighter could die before ever using a hack or an ultimate. With 160 health
 // the same bots take about 41 s (a tenth under 22 s). Damage and overdrive gain are untouched; healing scales with health.
-const AW=960, HP=160, INK_MAX=100, MIN_COST=5, INK_PER_PX=1/24, ROUND_TIME=90, WINS=2, PAD_W=480, PAD_H=300;
+// (Raised again from 160 after play: a round was ending before a scene's minute had played out.)
+const AW=960, HP=208, INK_MAX=100, MIN_COST=5, INK_PER_PX=1/24, ROUND_TIME=90, WINS=2, PAD_W=480, PAD_H=300;
 const PLATS=[{x0:130,x1:330,y:118},{x0:630,x1:830,y:118},{x0:380,x1:580,y:226}];
 const KINDS=['melee','ranged','bomb','shield','dash','heal'], ELS=['none','fire','water','plant'];
 // Every item has power, range and speed. The reader (or the shape of the drawing) says how the item leans, and those
@@ -1064,16 +1065,24 @@ const FORGE_MATH=Object.freeze({abs:v=>Math.abs(v),sign:v=>Math.sign(v),floor:v=
 const DECK_H=560, DECK_OF=9;        // how far a slide travels in a Cover Down; the deck's length as the status bar tells it
 const DECK_NO=[1,2,3,7];            // the slide numbers of the four slides the fight sees
 const DECK_BUL=[['Vision',250,470],['Traction (see chart)',190,640],['The ask: $40 million',130,650],['Team',70,420]];      // text, height, right end (they start at x 120)
+const DECK_FX=['Fly From Left','Fly From Top','Flash Once','Stretch Across'];          // the entry effect of each bullet, by the program's own names
 const DECK_BARS=[60,100,150,220,330];                                                       // bar tops; bar i spans x 150+150i to 250+150i
 const DECK_ORG=[[400,560,260,'CEO (me)'],[150,310,170,'VP Vision'],[400,560,170,'VP Synergy'],[650,810,170,'VP Other'],[60,200,80,'Intern'],[290,430,80,'Intern'],[530,670,80,'Intern'],[760,900,80,'Intern']];
 // The ledges of slide s in build state B (how far each bullet has flown in, how tall each bar is, and so on). The floating
 // Speaker Notes window is a ledge on every slide.
-function deckLayout(s,B){
-  const out=[{id:'nw',x0:720,x1:945,y:360,wx:720,k:'notes'}], P=(id,x0,x1,y,k,lb)=>out.push({id,x0,x1,y,wx:x0,k,lb});
+function deckLayout(s,B,t){
+  const out=[{id:'nw',x0:720,x1:945,y:360,wx:720,k:'notes'}], P=(id,x0,x1,y,k,lb,p)=>out.push({id,x0,x1,y,wx:x0,k,lb,p});
   if(s===0){ P('t0',180,780,205,'ph','title'); P('t1',280,680,105,'ph','sub'); }
-  else if(s===1){ P('ah',110,430,330,'head','Agenda'); DECK_BUL.forEach((b,i)=>{ const p=B.bul[i]; if(p>0){ const sh=-(1-p)*(b[2]+60); P('a'+i,120+sh,b[2]+sh,b[1],'bul',b[0]); } }); }
+  else if(s===1){ P('ah',110,430,330,'head','Agenda');
+    // Each bullet arrives by a different entry effect (DECK_FX), and each effect is a different thing to be standing near.
+    DECK_BUL.forEach((b,i)=>{ const p=B.bul[i], x0=120, x1=b[2], y=b[1]; if(!(p>0)) return;
+      if(i===0){ const sh=-(1-p)*(x1+60); P('a0',x0+sh,x1+sh,y,'bul',b[0],p); }                                   // Fly From Left: shoots across
+      else if(i===1){ const u=1-Math.sqrt(1-p); P('a1',x0,x1,y+(1-u*u)*520,'bul',b[0],p); }                       // Fly From Top: drops, gathering speed
+      else if(i===2){ if(p>=0.5) P('a2',x0,x1,y,'bul',b[0],1); }                                                  // Flash Once: there, then not
+      else{ const c=(x0+x1)/2, hw=(x1-x0)/2*p; if(hw>8) P('a3',c-hw,c+hw,y,'bul',b[0],p); } }); }                 // Stretch Across: grows from its middle
   else if(s===2){ B.bars.forEach((y,i)=>{ if(y>6) P('c'+i,150+i*150,250+i*150,y,'bar',i); }); }
-  else DECK_ORG.forEach((o,i)=>{ if(i>3&&B.cut) return; const d=i===1?B.drag:0; P('o'+i,o[0]+30*d,o[1]+30*d,o[2]+90*d,'org',o[3]); });
+  else{ DECK_ORG.forEach((o,i)=>{ if(i>3&&B.cut) return; const d=i===1?B.drag:0; P('o'+i,o[0]+30*d,o[1]+30*d,o[2]+90*d,'org',o[3]); });
+    if(B.wa) for(let i=0;i<7;i++) P('w'+i,80+i*86,158+i*86,340+24*Math.sin((t||0)*2.6+i*0.8),'wa','SYNERGY'[i]); }      // WordArt: seven letters riding a wave
   return out;
 }
 // A slide transition at progress u (0 to 1): is the point (x, height y) showing the NEW slide yet? The names are the
@@ -1841,11 +1850,12 @@ function createDuel(opts){
         the chart collapses, clip art is dropped in, the founder notices the fighters and goes after them with the pen,
         then gives up and hammers the space bar: slides change faster and faster, each with a random transition.
         The acts are a script; inside them, chance decides (which transition, which slide, who the pen picks). -- */
-  const deckFresh=()=>({typed:0,bul:[0,0,0,0],bars:[0,0,0,0,0],drag:0,cut:0,act:0});
-  const deckFull=()=>({typed:2,bul:[1,1,1,1],bars:DECK_BARS.slice(),drag:1,cut:0,act:0});
+  const deckFresh=()=>({typed:0,bul:[0,0,0,0],bars:[0,0,0,0,0],drag:0,cut:0,act:0,pad:0,wa:0});
+  const deckFull=()=>({typed:2,bul:[1,1,1,1],bars:DECK_BARS.slice(),drag:1,cut:0,act:0,pad:1,wa:1});
+  const tip=(h,text)=>{ h.tip=[text,h.t]; };      // the yellow tooltip at the pointer: what the founder just reached for
   const dnote=(h,m,x,y)=>{ h.msg=m; h.said=h.t; if(x!==undefined) h.aim={x,y}; };
   const tween=(h,k,i,to,dur)=>h.tw.push({o:h.B,k,i,from:i===undefined?h.B[k]:h.B[k][i],to,t0:h.t,dur});
-  const deckGo=(h,to,k,dur,B)=>{ h.tr={k,to,B,t0:h.t,dur,u:0,seed:Math.floor(RNG()*997),px:0,hit:[0,0]}; fx('slide',{to,k}); };
+  const deckGo=(h,to,k,dur,B)=>{ h.tr={k,to,B,t0:h.t,dur,u:0,seed:Math.floor(RNG()*997),px:0,hit:[0,0]}; tip(h,'Slide Transition: '+{wipe:'Wipe Right',checker:'Checkerboard Across',cover:'Cover Down',dissolve:'Dissolve'}[k]); fx('slide',{to,k}); };
   const CLIP=[[[0,20],[30,20],[30,50],[0,50]],[[100,20],[70,20],[70,50],[100,50]],[[30,28],[45,22],[58,26],[70,30]],[[30,44],[46,50],[60,46],[70,42]],[[44,24],[42,46]],[[52,25],[50,48]],[[60,27],[58,47]]];
   const MASH=['random transition. apply to all. APPLY TO ALL.','next. next. NEXT.','why is it going backwards','space bar space bar space bar','this is fine. this is a feature.','any questions? no? great.'];
   const DSCRIPT=[
@@ -1853,31 +1863,38 @@ function createDuel(opts){
     [1.4, h=>{ h.B.typed=1; dnote(h,'Spoonr.com. say it with confidence.',480,170); }],
     [2.8, h=>{ h.B.typed=2; h.aim={x:480,y:80}; }],
     [4,   h=>{ deckGo(h,1,'wipe',0.9,deckFresh()); dnote(h,'slide 2. agenda. breathe.',270,300); }],
-    [6,   h=>{ tween(h,'bul',0,1,0.45); h.aim={x:300,y:230}; }],
-    [7.5, h=>{ tween(h,'bul',1,1,0.45); dnote(h,'vision. traction. the ask.',380,170); }],
-    [9,   h=>{ tween(h,'bul',2,1,0.45); h.aim={x:380,y:110}; }],
-    [10.5,h=>{ tween(h,'bul',3,1,0.45); dnote(h,'(do NOT mention the lawsuit)',270,50); }],
+    [6,   h=>{ tween(h,'bul',0,1,0.2); tip(h,DECK_FX[0]); h.aim={x:300,y:230}; }],
+    [7.2, h=>{ tween(h,'bul',1,1,0.3); tip(h,DECK_FX[1]); dnote(h,'vision. traction. the ask.',380,170); }],
+    [7.5, h=>{ fx('quake',{x:380,y:DECK_BUL[1][1],n:150}); fx('puff',{x:380,yd:-DECK_BUL[1][1],col:'#667',n:10}); }],
+    [8.4, h=>{ h.B.bul[2]=1; h.fl=h.t; tip(h,DECK_FX[2]); h.aim={x:380,y:110}; }],
+    [9.3, h=>{ h.B.bul[2]=0; dnote(h,'where did the ask go'); }],
+    [9.6, h=>{ tween(h,'bul',3,1,0.35); tip(h,DECK_FX[3]); h.aim={x:270,y:50}; }],
+    [10.1,h=>{ h.B.bul[2]=1; h.fl=h.t; }],
+    [10.9,h=>{ h.B.bul[2]=0; }],
+    [11.5,h=>{ h.B.bul[2]=1; h.fl=h.t; dnote(h,'(do NOT mention the lawsuit)'); }],
     [13,  h=>{ deckGo(h,2,'checker',0.9,deckFresh()); dnote(h,'everyone loves a chart.',200,40); }],
-    [15,  h=>{ tween(h,'bars',0,DECK_BARS[0],1.1); h.aim={x:200,y:40}; }],
+    [15,  h=>{ tip(h,'Insert Chart'); tween(h,'bars',0,DECK_BARS[0],1.1); h.aim={x:200,y:40}; }],
     [16.2,h=>{ tween(h,'bars',1,DECK_BARS[1],1.1); h.aim={x:350,y:60}; }],
     [17.4,h=>{ tween(h,'bars',2,DECK_BARS[2],1.1); dnote(h,'up and to the right.',500,90); }],
-    [18.6,h=>{ tween(h,'bars',3,DECK_BARS[3],1.1); h.aim={x:650,y:130}; }],
+    [18,  h=>{ h.B.pad=1; tip(h,'AutoShapes: Up Arrow'); h.aim={x:908,y:30}; }],
+    [18.6,h=>{ tween(h,'bars',3,DECK_BARS[3],1.1); }],
     [19.8,h=>{ tween(h,'bars',4,DECK_BARS[4],1.1); h.aim={x:800,y:200}; }],
     [21,  h=>{ tween(h,'bars',4,640,1.7); dnote(h,'year 5: $900 billion. conservative.',800,300); }],
-    [23,  h=>{ h.tw=[]; [34,22,40,16,0].forEach((y,i)=>tween(h,'bars',i,y,0.35)); h.B.act=1; dnote(h,'why does that say ACTUALS. who put actuals in here',500,60); fx('quake',{x:rr(W/2),y:0,n:260}); }],
-    [26,  h=>{ deckGo(h,3,'cover',1.1,Object.assign(deckFull(),{drag:0})); dnote(h,'next slide next slide'); }],
+    [23,  h=>{ tip(h,'Edit Data'); h.tw=[]; [34,22,40,16,0].forEach((y,i)=>tween(h,'bars',i,y,0.35)); h.B.act=1; dnote(h,'why does that say ACTUALS. who put actuals in here',500,60); fx('quake',{x:rr(W/2),y:0,n:260}); }],
+    [26,  h=>{ deckGo(h,3,'cover',1.1,Object.assign(deckFull(),{drag:0,wa:0})); dnote(h,'next slide next slide'); }],
     [28.5,h=>{ dnote(h,'meet the team.',480,240); }],
-    [30,  h=>{ tween(h,'drag',undefined,1,1.4); dnote(h,'promoting VP Vision. morale.',250,200); }],
-    [33,  h=>{ h.B.cut=1; dnote(h,'we are a flat organization. as of right now.',480,60); }],
-    [35,  h=>{ const x=clamp(430+rand(-180,180),80,780); addObj({kind:'crate',solid:true,dyn:true,x,y:-540,w:100,h:70,vx:0,vy:0,local:CLIP.map(st=>st.map(p=>({x:p[0],y:p[1]}))),color:'#1c2541',life:20}); dnote(h,'people trust a handshake.',x+50,120); }],
-    [38,  h=>{ dnote(h,'...is that clip art MOVING? i did not insert stick men'); }],
-    [40,  h=>{ h.pen={side:S.f[0].hp===S.f[1].hp?(RNG()<0.5?0:1):S.f[0].hp>S.f[1].hp?0:1,t:0,n:0,caged:0,x:0,y:0}; dnote(h,'pen tool. PEN TOOL.'); }],
+    [30,  h=>{ tip(h,'Drag and Drop'); tween(h,'drag',undefined,1,1.4); dnote(h,'promoting VP Vision. morale.',250,200); }],
+    [33,  h=>{ tip(h,'Delete'); h.B.cut=1; dnote(h,'we are a flat organization. as of right now.',480,60); }],
+    [35,  h=>{ tip(h,'Insert Clip Art'); const x=clamp(430+rand(-180,180),80,780); addObj({kind:'crate',solid:true,dyn:true,x,y:-540,w:100,h:70,vx:0,vy:0,local:CLIP.map(st=>st.map(p=>({x:p[0],y:p[1]}))),color:'#1c2541',life:20}); dnote(h,'people trust a handshake.',x+50,120); }],
+    [36.5,h=>{ h.B.wa=1; tip(h,'Insert WordArt'); dnote(h,'synergy. in rainbow. investors love rainbow.',380,300); }],
+    [38.5,h=>{ dnote(h,'...is that clip art MOVING? i did not insert stick men'); }],
+    [40,  h=>{ tip(h,'Pen'); h.pen={side:S.f[0].hp===S.f[1].hp?(RNG()<0.5?0:1):S.f[0].hp>S.f[1].hp?0:1,t:0,n:0,caged:0,x:0,y:0}; dnote(h,'pen tool. PEN TOOL.'); }],
     [46,  h=>{ h.pen=null; h.mash={t:2.2,per:3,n:0}; dnote(h,MASH[0]); }]
   ];
   function deckReset(){
-    const h=S.deck={t:0,i:0,s:0,B:deckFresh(),tr:null,tw:[],msg:'',said:0,cur:{x:520,y:300},aim:null,pen:null,mash:null};
+    const h=S.deck={t:0,i:0,s:0,B:deckFresh(),tr:null,tw:[],msg:'',said:0,cur:{x:520,y:300},aim:null,pen:null,mash:null,tip:null,fl:-9,bp:{},bh:{},pc:[0,0]};
     while(h.i<DSCRIPT.length&&DSCRIPT[h.i][0]<=0){ DSCRIPT[h.i][1](h); h.i++; }
-    applyPlats(deckLayout(0,h.B));
+    applyPlats(deckLayout(0,h.B,0));
   }
   // The ledges while a transition runs: the old slide's where it still shows, the new slide's where it shows already.
   function deckMix(T,old,nw){
@@ -1895,17 +1912,31 @@ function createDuel(opts){
     while(h.i<DSCRIPT.length&&h.t>=DSCRIPT[h.i][0]){ DSCRIPT[h.i][1](h); h.i++; }
     for(const w of h.tw){ const u=clamp((h.t-w.t0)/w.dur,0,1), v=w.from+(w.to-w.from)*(1-(1-u)*(1-u)); if(w.i===undefined) w.o[w.k]=v; else w.o[w.k][w.i]=v; w.done=u>=1; }
     h.tw=h.tw.filter(w=>!w.done);
-    let list=deckLayout(h.s,h.B);
+    let list=deckLayout(h.s,h.B,h.t);
     if(h.tr){
-      const T=h.tr; T.u=clamp((h.t-T.t0)/T.dur,0,1); list=deckMix(T,list,deckLayout(T.to,T.B));
+      const T=h.tr; T.u=clamp((h.t-T.t0)/T.dur,0,1); list=deckMix(T,list,deckLayout(T.to,T.B,h.t));
       // Wipe Right: the edge takes along whoever it passes
       if(T.k==='wipe'){ const X=T.u*W; for(const f of S.f) if(f.hp>0&&f.x>T.px&&f.x<=X){ f.vx=Math.max(f.vx,460); if(f.ground){ f.vy=250; f.ground=false; } } T.px=X; }
       // Cover Down: the new slide comes down like a press; whoever is standing under its edge is hit once, anyone in the air is pushed down
       if(T.k==='cover'){ const edge=(1-T.u)*DECK_H; for(const f of S.f){ if(f.hp<=0||f.y>=edge||f.y+92*f.scale<=edge) continue;
           if(!f.ground) f.vy=Math.min(f.vy,-320); else if(!T.hit[f.side]){ T.hit[f.side]=1; hurt(f,6,'none',0,0,null,f.x,0.15,undefined,'slam'); } } }
-      if(T.u>=1){ h.s=T.to; h.B=T.B; h.tr=null; list=deckLayout(h.s,h.B); }
+      if(T.u>=1){ h.s=T.to; h.B=T.B; h.tr=null; list=deckLayout(h.s,h.B,h.t); }
     }
     applyPlats(list);
+    // Bullets act on whoever is in the way as they arrive: the one that flies in rams, the one that drops in stomps, the
+    // one that stretches pushes outward from both ends. Each can catch a fighter once.
+    if(h.s===1&&!h.tr){ const band=(f,y)=>f.y<y+2&&f.y+92*f.scale>y-38;
+      for(const p of list){ if(p.k!=='bul') continue; const q=h.bp[p.id]; h.bp[p.id]={x0:p.x0,x1:p.x1,y:p.y}; if(!q) continue;
+        for(const f of S.f){ if(f.hp<=0||h.bh[p.id+f.side]) continue; let hit=0; const head=f.y+86*f.scale;
+          if(p.id==='a0'&&p.x1>q.x1+0.5&&f.x>q.x1-14&&f.x<=p.x1+14&&band(f,p.y)){ hit=1; hurt(f,4,'none',600,200,null,p.x1-40,0.14,undefined,'slam'); }
+          else if(p.id==='a1'&&p.y<q.y-0.5&&f.x>p.x0-8&&f.x<p.x1+8&&head<=q.y&&head>p.y){ hit=1; hurt(f,5,'none',0,-460,null,f.x,0.16,undefined,'slam'); }
+          else if(p.id==='a3'&&band(f,p.y)){
+            if(p.x0<q.x0-0.5&&f.x>p.x0-14&&f.x<q.x0+14){ hit=1; hurt(f,3,'none',-500,170,null,p.x0+40,0.12,undefined,'thud'); }
+            else if(p.x1>q.x1+0.5&&f.x<p.x1+14&&f.x>q.x1-14){ hit=1; hurt(f,3,'none',500,170,null,p.x1-40,0.12,undefined,'thud'); } }
+          if(hit){ h.bh[p.id+f.side]=1; fx('spark',{x:rr(f.x),yd:rr(-(f.y+50)),col:'#000080'}); } } } }
+    // The AutoShape on the chart slide: an Up Arrow on the floor that throws whoever steps on it into the air.
+    if(h.s===2&&!h.tr&&h.B.pad) for(const f of S.f){ h.pc[f.side]=Math.max(0,h.pc[f.side]-dt);
+      if(f.hp>0&&f.ground&&f.y<3&&f.x>866&&f.x<950&&h.pc[f.side]<=0){ h.pc[f.side]=0.5; f.vy=1000; f.ground=false; f.jumps=1; fx('puff',{x:rr(f.x),yd:0,col:'#3a9',n:8}); } }
     // the pen: it follows a fighter, fences them in with two strokes, crosses them out, and turns to the other one
     if(h.pen){ const q=h.pen, f=S.f[q.side]; q.t+=dt;
       if(q.t<0.9) h.aim={x:f.x,y:f.y+60};
@@ -1922,9 +1953,9 @@ function createDuel(opts){
   }
   function deckView(){
     const h=S.deck; if(!h||h.t===undefined) return null;
-    const r2=v=>Math.round(v*100)/100, B=b=>({typed:b.typed,bul:b.bul.map(r2),bars:b.bars.map(rr),drag:r2(b.drag),cut:b.cut,act:b.act}), T=h.tr;
+    const r2=v=>Math.round(v*100)/100, r3=v=>Math.round(v*1000)/1000, B=b=>({typed:b.typed,bul:b.bul.map(r3),bars:b.bars.map(rr),drag:r2(b.drag),cut:b.cut,act:b.act,pad:b.pad,wa:b.wa}), T=h.tr;
     return {t:r1(h.t),s:h.s,B:B(h.B),tr:T&&{k:T.k,to:T.to,u:+T.u.toFixed(3),seed:T.seed,B:B(T.B)},msg:h.msg,said:r1(h.said),cur:[rr(h.cur.x),rr(h.cur.y)],
-      pen:h.pen&&{side:h.pen.side,on:h.pen.caged,x:rr(h.pen.x),y:rr(h.pen.y)},mash:h.mash?1:0};
+      pen:h.pen&&{side:h.pen.side,on:h.pen.caged,x:rr(h.pen.x),y:rr(h.pen.y)},mash:h.mash?1:0,tip:h.tip&&[h.tip[0],r1(h.tip[1])],fl:r1(h.fl)};
   }
   function tick(dt){
     if(S.phase==='over'){ S.overT=(S.overT||0)+dt; if(S.overT<4) settle(dt); return; }
@@ -3767,18 +3798,30 @@ function deckGeom(){
   return {top,wl:emb?(bx.l0-bx.left)/bx.k:-OX,wr:emb?(bx.r0-bx.left)/bx.k:VW-OX,px:emb?1/bx.k:1,st:top+(emb?14:24)};
 }
 // One slide, in build state B. Every ledge from deckLayout is drawn as the thing it is; fighters stand on its top edge.
-function deckSlide(s,B,g){
-  const px=g.px, P=deckLayout(s,B), Y=y=>GY-y;
+function deckSlide(s,B,g,h){
+  const px=g.px, P=deckLayout(s,B,h.t), Y=y=>GY-y;
   L.fillStyle='#fff'; L.fillRect(0,g.st,960,GY+2-g.st); L.textBaseline='top'; L.textAlign='left'; L.lineJoin='miter';
   if(s===0){
     for(const p of P){ if(p.k!=='ph') continue;
       const big=p.lb==='title', hh=big?76:50, done=B.typed>=(big?1:2), txt=big?(done?'Spoonr.com':'Click to add title'):(done?'The Internet. But for spoons.':'Click to add sub-title');
       L.save(); L.setLineDash([5*px,4*px]); L.lineWidth=px; L.strokeStyle='#808080'; L.strokeRect(p.x0,Y(p.y),p.x1-p.x0,hh); L.restore();
+      L.fillStyle='#000'; L.fillRect(p.x0,Y(p.y),p.x1-p.x0,2.5);                                  // the top edge is the shelf fighters stand on
+      if(B.typed===(big?1:2)&&h.s===0){ L.fillStyle='#fff'; L.strokeStyle='#000'; L.lineWidth=px;      // the box being typed in is selected: sizing handles
+        for(const hx of [p.x0,(p.x0+p.x1)/2,p.x1]) for(const hy of [Y(p.y),Y(p.y)+hh/2,Y(p.y)+hh]){ if(hx===(p.x0+p.x1)/2&&hy===Y(p.y)+hh/2) continue; L.fillRect(hx-4,hy-4,8,8); L.strokeRect(hx-4,hy-4,8,8); } }
       L.font=(done&&big?'bold ':'')+(big?52:28)+'px '+DECK_F; L.textAlign='center'; L.fillStyle=done?'#000':'#808080'; L.fillText(txt,(p.x0+p.x1)/2,Y(p.y)+(big?12:11)); }
   }else if(s===1){
     for(const p of P){
       if(p.k==='head'){ L.font='bold 46px '+DECK_F; L.textAlign='left'; L.fillStyle='#000080'; L.fillText('Agenda',p.x0+10,Y(p.y)+2); L.fillRect(p.x0,Y(p.y)+56,330,3); }
-      if(p.k==='bul'){ L.font='32px '+DECK_F; L.fillStyle='#000'; L.textAlign='left'; L.fillText('\u2022  '+p.lb,p.x0+4,Y(p.y)+1); } }
+      if(p.k==='bul'){ const yy=Y(p.y), i=+p.id.slice(1), full=DECK_BUL[i][2]-120, w=p.x1-p.x0, moving=p.p<1, c=(p.x0+p.x1)/2;
+        if(i===2&&h.t-h.fl<0.22&&!CALM){ L.fillStyle='#ffff66'; L.fillRect(p.x0-14,yy-12,w+28,64); }                 // Flash Once: it flashes as it shows
+        L.fillStyle='#000080'; L.fillRect(p.x0,yy,w,2.5);                                                             // the shelf: the top edge of the line's text box
+        L.save(); L.setLineDash([3*px,3*px]); L.strokeStyle='#a0a8b8'; L.lineWidth=px; L.strokeRect(p.x0,yy,w,40); L.restore();
+        L.save(); if(i===3&&moving){ L.translate(c,0); L.scale(Math.max(0.03,w/full),1); L.translate(-c,0); }          // Stretch Across: the words stretch with it
+        L.font='32px '+DECK_F; L.fillStyle='#000'; L.textAlign='left'; L.fillText('\u2022  '+p.lb,(i===3?c-full/2:p.x0)+4,yy+4); L.restore();
+        if(moving&&!CALM){ L.fillStyle='#606878';
+          if(i===0) for(let k=0;k<6;k++) L.fillRect(p.x0-46-k*40,yy+5+k*6,30+k*8,2.5);                                  // Fly From Left: streaks trailing behind
+          if(i===1) for(let k=0;k<6;k++) L.fillRect(p.x0+30+k*(w-60)/5,yy-44-(k%2)*22,2.5,34);                         // Fly From Top: streaks above
+          if(i===3){ L.font='bold 22px Arial,sans-serif'; L.textAlign='center'; L.fillText('\u25c0',p.x0-16,yy+8); L.fillText('\u25b6',p.x1+16,yy+8); } } } }
   }else if(s===2){
     L.font='bold 30px '+DECK_F; L.fillStyle='#000080'; L.fillText('Revenue ($ millions)',120,Math.max(g.st+12,Y(400)));
     L.font='13px Arial,sans-serif'; L.textAlign='right'; L.lineWidth=px;
@@ -3786,10 +3829,15 @@ function deckSlide(s,B,g){
     L.strokeStyle='#000'; L.lineWidth=2*px; L.beginPath(); L.moveTo(110,Y(340)); L.lineTo(110,GY); L.lineTo(900,GY); L.stroke();
     for(const p of P){ if(p.k!=='bar') continue;
       L.fillStyle=B.act?'#800000':'#000080'; L.fillRect(p.x0,Y(p.y),p.x1-p.x0,p.y); L.strokeStyle='#000'; L.lineWidth=px; L.strokeRect(p.x0,Y(p.y),p.x1-p.x0,p.y);
-      if(p.y>34){ L.fillStyle='#fff'; L.textAlign='center'; L.font='bold 14px Arial,sans-serif'; L.fillText('Yr '+(p.lb+1),(p.x0+p.x1)/2,GY-22); } }
+      if(p.y>34){ L.fillStyle='#fff'; L.textAlign='center'; L.font='bold 14px Arial,sans-serif'; L.fillText('Yr '+(p.lb+1),(p.x0+p.x1)/2,GY-22);
+        L.fillStyle='#fff'; L.font='bold 15px Arial,sans-serif'; L.fillText('$'+Math.round(p.y*3)+'M',(p.x0+p.x1)/2,Y(p.y)+8); } }
+    if(B.pad){ const bx=908, b0=GY, bob=CALM?0:Math.sin(h.t*9)*3;                                                    // AutoShapes: Up Arrow. Step on it and it throws you up
+      L.beginPath(); L.moveTo(bx,b0-72-bob); L.lineTo(bx+42,b0-34-bob); L.lineTo(bx+18,b0-34-bob); L.lineTo(bx+18,b0); L.lineTo(bx-18,b0); L.lineTo(bx-18,b0-34-bob); L.lineTo(bx-42,b0-34-bob); L.closePath();
+      L.fillStyle='#00cc99'; L.fill(); L.strokeStyle='#000'; L.lineWidth=1.5*px; L.stroke();
+      if(!CALM){ L.strokeStyle='#00cc99'; L.lineWidth=3; const u=(h.t*1.6)%1; L.globalAlpha=1-u; L.beginPath(); L.moveTo(bx-24,b0-86-u*46); L.lineTo(bx,b0-106-u*46); L.lineTo(bx+24,b0-86-u*46); L.stroke(); L.globalAlpha=1; } }
     if(B.act){ L.fillStyle='#c00000'; L.font='bold 36px '+DECK_F; L.textAlign='center'; L.fillText('ACTUALS',505,Y(170)); }
   }else{
-    L.font='bold 30px '+DECK_F; L.fillStyle='#000080'; L.fillText('Our Team',40,Math.max(g.st+12,Y(330)));
+    L.font='bold 30px '+DECK_F; L.fillStyle='#000080'; L.fillText('Our Team',40,Math.max(g.st+12,Y(440)));
     const bx={}; for(const p of P) if(p.k==='org') bx[p.id]=p;
     L.strokeStyle='#000'; L.lineWidth=1.5*px;
     const link=(a,b)=>{ const A=bx[a], C=bx[b]; if(!A||!C) return; const ax=(A.x0+A.x1)/2, ay=Y(A.y)+40, cx=(C.x0+C.x1)/2, cy=Y(C.y), my=(ay+cy)/2; L.beginPath(); L.moveTo(ax,ay); L.lineTo(ax,my); L.lineTo(cx,my); L.lineTo(cx,cy); L.stroke(); };
@@ -3797,6 +3845,11 @@ function deckSlide(s,B,g){
     for(const p of P){ if(p.k!=='org') continue;
       L.fillStyle='#808080'; L.fillRect(p.x0+4,Y(p.y)+4,p.x1-p.x0,40); L.fillStyle=p.id==='o0'?'#ffffcc':'#fff'; L.fillRect(p.x0,Y(p.y),p.x1-p.x0,40); L.strokeRect(p.x0,Y(p.y),p.x1-p.x0,40);
       L.fillStyle='#000'; L.font='15px Arial,sans-serif'; L.textAlign='center'; L.fillText(p.lb,(p.x0+p.x1)/2,Y(p.y)+12); }
+    // WordArt: fat slanted letters in a rainbow, each one a ledge riding the wave
+    for(const p of P){ if(p.k!=='wa') continue; const i=+p.id.slice(1), cx=(p.x0+p.x1)/2, yy=Y(p.y), tilt=Math.cos(h.t*2.6+i*0.8)*0.1;
+      L.save(); L.translate(cx,yy); L.rotate(-tilt); L.font='italic 900 78px "Arial Black",Impact,sans-serif'; L.textAlign='center'; L.textBaseline='top';
+      const gr=L.createLinearGradient(0,4,0,70); gr.addColorStop(0,'#ff2a2a'); gr.addColorStop(0.25,'#ffb000'); gr.addColorStop(0.5,'#ffee00'); gr.addColorStop(0.75,'#22bb44'); gr.addColorStop(1,'#2244dd');
+      L.fillStyle='#808080'; L.fillText(p.lb,5,3); L.fillStyle=gr; L.fillText(p.lb,0,-2); L.lineWidth=2; L.strokeStyle='#000'; L.strokeText(p.lb,0,-2); L.restore(); }
   }
 }
 // The floating Speaker Notes window: the founder's thoughts, typed as they have them. Its top is a ledge on every slide.
@@ -3829,12 +3882,14 @@ function deckBack(v,now){
       for(let c=0;c*cw<960;c++) for(let r=0;GY-r*ch>g.st;r++) if(deckCover(T.k,T.u,c*cw+cw/2,r*ch+ch/2,T.seed)===isNew) L.rect(c*cw,GY-(r+1)*ch,cw,ch+(r?0:2)); }
     L.clip(); };
   L.save(); L.beginPath(); L.rect(0,g.st,960,hgt); L.clip();
-  if(!T) deckSlide(h.s,h.B,g);
+  if(!T) deckSlide(h.s,h.B,g,h);
   else{
-    L.save(); clipTo(false); deckSlide(h.s,h.B,g); L.restore();
-    L.save(); clipTo(true); if(T.k==='cover') L.translate(0,-(1-T.u)*DECK_H); deckSlide(T.to,T.B,g); L.restore();
+    L.save(); clipTo(false); deckSlide(h.s,h.B,g,h); L.restore();
+    L.save(); clipTo(true); if(T.k==='cover') L.translate(0,-(1-T.u)*DECK_H); deckSlide(T.to,T.B,g,h); L.restore();
     L.fillStyle='#000';
-    if(T.k==='wipe') L.fillRect(T.u*960-px,g.st,2*px,hgt);
+    if(T.k==='wipe'){ const X=T.u*960; L.fillRect(X-px,g.st,2*px,hgt);
+      if(!CALM){ L.fillStyle='rgba(0,0,128,.45)'; for(let k=0;k<9;k++){ const yy=g.st+20+k*(hgt-40)/8; L.fillRect(X-26-((k*37)%60),yy,22+((k*53)%40),3); }
+        L.fillStyle='#000080'; L.font='bold 20px Arial,sans-serif'; L.textBaseline='middle'; L.textAlign='left'; for(let k=0;k<4;k++) L.fillText('\u25b6',X+4,g.st+60+k*(hgt-120)/3); } }
     if(T.k==='cover'){ const e=GY-(1-T.u)*DECK_H; L.fillRect(0,e,960,2*px); L.fillStyle='rgba(0,0,0,.25)'; L.fillRect(0,e+2*px,960,6); }
   }
   L.restore();
@@ -3849,6 +3904,8 @@ function deckFront(v,now){
     L.beginPath(); L.moveTo(d.x-r,cy-r); L.lineTo(d.x+r,cy+r); L.moveTo(d.x+r,cy-r); L.lineTo(d.x-r,cy+r); L.stroke(); }
   L.globalAlpha=1;
   const cx=h.cur[0], cy=GY-h.cur[1];
+  if(h.tip&&h.t-h.tip[1]<1.9){ L.save(); L.font='13px Tahoma,Arial,sans-serif'; const tw=L.measureText(h.tip[0]).width+12, tx=Math.max(4,Math.min(956-tw,cx+14)), ty=Math.min(GY-24,cy+26);      // the yellow tooltip: what was just used
+    L.fillStyle='#000'; L.fillRect(tx+2,ty+2,tw,20); L.fillStyle='#ffffe1'; L.fillRect(tx,ty,tw,20); L.strokeStyle='#000'; L.lineWidth=1; L.strokeRect(tx+0.5,ty+0.5,tw-1,19); L.fillStyle='#000'; L.textBaseline='middle'; L.textAlign='left'; L.fillText(h.tip[0],tx+6,ty+10.5); L.restore(); }
   if(h.pen){ L.translate(cx,cy); L.rotate(0.6); L.fillStyle='#c1121f'; L.strokeStyle='#000'; L.lineWidth=1.2; L.lineJoin='round';      // the pen, nib at the pointer
     L.beginPath(); L.moveTo(0,0); L.lineTo(6,-13); L.lineTo(6,-54); L.lineTo(-6,-54); L.lineTo(-6,-13); L.closePath(); L.fill(); L.stroke(); L.fillStyle='#000'; L.beginPath(); L.moveTo(0,0); L.lineTo(2.4,-5); L.lineTo(-2.4,-5); L.closePath(); L.fill(); }
   else sheetArrow(cx,cy,2);
