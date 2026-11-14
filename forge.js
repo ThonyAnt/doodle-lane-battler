@@ -6,13 +6,16 @@
 //     ask          (messages, {timeoutMs}) -> Promise<string>: the model; leave it out and the built-in rules are used
 //     now          a clock in ms (Date.now)
 //     retryMs      how long built-in rules given because the model failed are kept before it is asked again (30 s)
+//     onNew        called when rules the model wrote for a new set of items have been kept (to save them: see keep below)
 //   items is [[it|null,it|null],[it|null,it|null]] (Blue's two slots, Red's two), it={name,kind,style,el,trait} and,
 //   if known, the three stats a rule can read: power, range, speed.
 //   A rule as the model writes it: {name,blurb,a:'blue.0',b:'red.1',on,cooldown,code}; see FORGE_API in duel.html.
+//   F.forgeRules(items) is the whole of it: prompt, reply, verifyRule on each rule, one repair call, built-in rules.
+//   require('./forge.js').openai(...) is the model call; .keep(F, file) keeps what the model wrote between runs.
 // A rule's code is text from a language model. It is only ever parsed, checked and interpreted by ForgeScript: nothing
 // here hands text to the JavaScript engine to run.
 'use strict';
-module.exports=function({D,ForgeScript:FS,ask,now,retryMs}){
+module.exports=function({D,ForgeScript:FS,ask,now,retryMs,onNew}){
   now=now||Date.now;
   const API=D.FORGE_API, FL=D.FORGE_LIMITS, MOVES=D.MOVES||{};
   const KINDS=D.KINDS||['melee','ranged','bomb','shield','dash','heal'], ELS=D.ELS||['none','fire','water','plant'];
@@ -355,45 +358,70 @@ module.exports=function({D,ForgeScript:FS,ask,now,retryMs}){
   function forgeRules(items,opts){
     const its=cleanItems(items), none={rules:[],ms:0,calls:0};
     if(!its||!its[0].some(Boolean)||!its[1].some(Boolean)) return Promise.resolve(none);
-    const key=keyOf(its), had=cache.get(key), budget=opts&&Number.isFinite(opts.budgetMs)?opts.budgetMs:TIME.total;
+    const key=keyOf(its), budget=opts&&Number.isFinite(opts.budgetMs)?opts.budgetMs:TIME.total; let had=cache.get(key);
+    if(had&&had.unproven) had=prove(key,had,its);
     if(had&&(had.until===0||had.until>now())) return Promise.resolve({rules:copy(had.rules),ms:0,calls:0,cached:true});
     if(!flying.has(key)){
       const t0=now(), p=make(its,budget).catch(()=>({rules:builtIn(its,fallbackRules(its)),ms:now()-t0,calls:0})).catch(()=>none).then(out=>{
         flying.delete(key);
-        if(out.rules.length) cache.set(key,{rules:copy(out.rules),until:!ask||out.rules.some(r=>r.source!=='built-in')?0:now()+KEEP});
+        const written=out.rules.some(r=>r.source!=='built-in');
+        if(out.rules.length) cache.set(key,{rules:copy(out.rules),until:!ask||written?0:now()+KEEP});
+        if(written&&onNew) try{ onNew(key); }catch(e){}
         return out;
       });
       flying.set(key,p);
     }
-    return flying.get(key).then(out=>({rules:copy(out.rules),ms:out.ms,calls:out.calls}));
+    return flying.get(key).then(out=>({rules:copy(out.rules),ms:out.ms,calls:out.calls,log:(out.log||[]).slice()}));
   }
+  // Rules can be kept between runs (see keep below). dump gives what is worth keeping, {key:[rule]}: the results the
+  // model had a hand in. load takes such a table back. What it reads is not trusted: the first time those items come
+  // up, each rule goes through verifyRule again (prove), and if one fails the lot is dropped and forged afresh.
+  const dump=()=>{ const out={}; for(const [key,e] of cache) if(e.until===0&&e.rules.some(r=>r.source!=='built-in')) out[key]=copy(e.rules); return out; };
+  function load(entries){
+    let n=0; if(!entries||typeof entries!=='object'||Array.isArray(entries)) return 0;
+    for(const key of Object.keys(entries)){
+      const rules=entries[key]; if(cache.has(key)||!Array.isArray(rules)||!rules.length||rules.length>3||!rules.every(r=>r&&typeof r==='object'&&!Array.isArray(r))) continue;
+      cache.set(key,{rules:rules.map(r=>Object.assign({},r)),until:0,unproven:true}); n++;
+    }
+    return n;
+  }
+  function prove(key,had,its){
+    const rules=[];
+    for(const r of had.rules){ const v=verifyRule(r,its); if(!v.ok){ cache.delete(key); return null; } rules.push(Object.assign(v.spec,{source:r.source==='repaired'||r.source==='built-in'?r.source:'ai',checks:v.checks})); }
+    if([0,1].some(side=>rules.filter(r=>sideOf(r)===side).length>2)){ cache.delete(key); return null; }
+    const e={rules,until:0}; cache.set(key,e); return e;
+  }
+  // Are rules for these items already kept (for good)?
+  const known=items=>{ const e=cache.get(keyOf(items)); return !!e&&e.until===0; };
   // Built-in rules as they are handed out: with their checks, like any other. They are installed whatever the checks say.
   const builtIn=(its,rules)=>rules.map(r=>Object.assign({},r,{source:'built-in',checks:verifyRule(r,its).checks}));
   async function make(its,budget){
-    const t0=now(), left=()=>budget-(now()-t0), got=[], failed=[]; let calls=0;
+    const t0=now(), left=()=>budget-(now()-t0), got=[], failed=[], log=[]; let calls=0;      // log: what went wrong on the way, in words
     const count=side=>got.filter(r=>sideOf(r)===side).length+failed.filter(f=>f.side===side).length;
     if(ask){
       const messages=buildPrompt(its), reply=await timed(messages,Math.min(TIME.first,left())); calls++;
-      let note='';
+      let note=''; if(reply===null) log.push('the model gave no answer: it failed, or took too long');
       if(reply!==null){
         const first=parseReply(reply);
         if(first.error) note=first.error; else if(!first.rules.length) note='the reply had no rules in it';
         else for(const raw of first.rules){
           const side=rawSide(raw); if(side>=0&&count(side)>=2) continue;      // a third rule for one player is dropped unread
           const v=verifyRule(raw,its); await breath();
-          if(v.ok) got.push(Object.assign(v.spec,{source:'ai',checks:v.checks})); else failed.push({raw,side,errors:v.errors});
+          if(v.ok) got.push(Object.assign(v.spec,{source:'ai',checks:v.checks})); else{ failed.push({raw,side,errors:v.errors}); log.push('first reply, '+label(raw)+': '+v.errors.join('; ')); }
         }
+        if(note) log.push('first reply: '+note);
       }
+      if(reply!==null&&(note||failed.length)&&left()<TIME.least) log.push('no time left to ask for a repair');
       if(reply!==null&&(note||failed.length)&&left()>=TIME.least){
         const text=note?'Your reply could not be used: '+note+'. Reply again with the same JSON shape.'
           :'These rules failed their checks:\n'+failed.map(f=>'- '+label(f.raw)+': '+f.errors.slice(0,3).join('; ')).join('\n')+'\nFix only these rules. Reply with the same JSON shape.';
         const again=await timed(messages.concat({role:'assistant',content:reply},{role:'user',content:text}),Math.min(TIME.repair,left())); calls++;
-        const second=again===null?{error:'no reply'}:parseReply(again);
+        const second=again===null?{error:'the model gave no answer: it failed, or took too long'}:parseReply(again); if(second.error) log.push('repair: '+second.error);
         for(const raw of second.rules||[]){
           if(got.length>=3||(!note&&!failed.length)) break;
           const side=rawSide(raw), twin=got.some(g=>cleanName(g.name)===label(raw)||(g.code===raw.code&&g.on===raw.on&&sideOf(g)===side));
           if(twin||(side>=0&&got.filter(r=>sideOf(r)===side).length>=2)) continue;      // the model sent a good rule again, or one too many for a player
-          const v=verifyRule(raw,its); await breath(); if(!v.ok) continue;
+          const v=verifyRule(raw,its); await breath(); if(!v.ok){ log.push('repair, '+label(raw)+': '+v.errors.join('; ')); continue; }
           got.push(Object.assign(v.spec,{source:'repaired',checks:v.checks}));
           let i=failed.findIndex(f=>label(f.raw)===label(raw)); if(i<0) i=failed.findIndex(f=>f.side===side);
           failed.splice(Math.max(0,i),1);      // it takes the place of the rule it repairs: the one of its name, or one of the same player
@@ -407,8 +435,28 @@ module.exports=function({D,ForgeScript:FS,ask,now,retryMs}){
       const pick=builtIns(its).find(r=>sideOf(r)===side&&has(side)<2&&!got.some(g=>g.a===r.a&&g.b===r.b&&g.on===r.on));
       if(pick) got.push(...builtIn(its,[pick]));
     }
-    return {rules:got,ms:now()-t0,calls};
+    return {rules:got,ms:now()-t0,calls,log};
   }
 
-  return {keyOf,cleanName,cleanItems,itemsOf,buildPrompt,parseReply,verifyRule,fallbackRules,install,forgeRules,EXAMPLE};
+  return {keyOf,cleanName,cleanItems,itemsOf,buildPrompt,parseReply,verifyRule,fallbackRules,install,forgeRules,dump,load,known,EXAMPLE};
+};
+
+// The model, through OpenAI's chat completions: gives ask(messages,{timeoutMs}) -> Promise of the reply's text.
+// log, if given, is told when a call fails (the forge itself carries on with built-in rules).
+module.exports.openai=({key,base,model,log})=>async function ask(messages,o){
+  try{
+    const r=await fetch(base+'/chat/completions',{method:'POST',signal:AbortSignal.timeout(Math.max(1,Math.round((o&&o.timeoutMs)||6000))),
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify({model,response_format:{type:'json_object'},max_tokens:700,messages})});
+    const body=await r.json();
+    if(!r.ok) throw new Error((body.error&&body.error.message)||('OpenAI HTTP '+r.status));
+    return body.choices[0].message.content;
+  }catch(e){ if(log) log('the model did not answer: '+e.message); throw e; }
+};
+// Keeps the rules the model wrote in a file between runs: reads the file into the forge F now (one that is missing or
+// cannot be read is ignored) and gives back save(), which writes what F has. See dump and load above.
+module.exports.keep=(F,file)=>{
+  const fs=require('fs');
+  try{ const o=JSON.parse(fs.readFileSync(file,'utf8')); if(o&&o.version===1) F.load(o.entries); }catch(e){}
+  return ()=>{ try{ fs.writeFileSync(file+'.tmp',JSON.stringify({version:1,entries:F.dump()})); fs.renameSync(file+'.tmp',file); return true; }catch(e){ return false; } };
 };

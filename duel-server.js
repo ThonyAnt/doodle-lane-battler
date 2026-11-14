@@ -42,18 +42,14 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
      meet. forge.js proves each one in test fights and falls back to built-in rules; what survives is installed in
      the room's match and sent to its devices (event `forge`). The rules are text from a model: they are parsed,
      checked and interpreted by forgescript.js and never handed to the JavaScript engine. FORGE=0 switches it all off. */
-  const FORGE_ON=process.env.FORGE!=='0', FORGE_MODEL=process.env.OPENAI_FORGE_MODEL||MODEL;
-  async function askForge(messages,o){
-    try{
-      const r=await fetch(BASE+'/chat/completions',{method:'POST',signal:AbortSignal.timeout(Math.max(1,Math.round((o&&o.timeoutMs)||6000))),
-        headers:{'Content-Type':'application/json','Authorization':'Bearer '+KEY},
-        body:JSON.stringify({model:FORGE_MODEL,response_format:{type:'json_object'},max_tokens:700,messages})});
-      const body=await r.json();
-      if(!r.ok) throw new Error((body.error&&body.error.message)||('OpenAI HTTP '+r.status));
-      return body.choices[0].message.content;
-    }catch(e){ console.error('duel forge: the model did not answer:',e.message); throw e; }
-  }
-  const F=require('./forge.js')({D,ForgeScript:require('./forgescript.js'),ask:KEY?askForge:undefined});
+  const FORGE_ON=process.env.FORGE!=='0', FORGE_MODEL=process.env.OPENAI_FORGE_MODEL||MODEL, Forge=require('./forge.js');
+  // Rules the model wrote are kept in forge-cache.json (FORGE_CACHE names another file; empty: none), so the same items
+  // need no model the next time, also after a restart. tools/forge-warm.js fills it for the ready-made items.
+  const FORGE_FILE=process.env.FORGE_CACHE===undefined?path.join(__dirname,'forge-cache.json'):process.env.FORGE_CACHE;
+  let saveForge=null;
+  const F=Forge({D,ForgeScript:require('./forgescript.js'),ask:KEY?Forge.openai({key:KEY,base:BASE,model:FORGE_MODEL,log:m=>console.error('duel forge:',m)}):undefined,
+    onNew:()=>{ if(saveForge&&!saveForge()) console.error('duel forge: could not write',FORGE_FILE); }});
+  if(FORGE_ON&&FORGE_FILE) saveForge=Forge.keep(F,FORGE_FILE);
   const forgeSeen=new Map();      // address -> when it last asked POST /duel/forge
   // What a device is told about a room's rules.
   const forgeMsg=fg=>fg.state==='done'?{state:'done',ms:fg.ms,rules:fg.rules}:{state:fg.state};
@@ -74,7 +70,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
         S.clearRules(); const ids=F.install(S,out.rules);
         fg.rules=out.rules.map((r,i)=>({id:ids[i],name:r.name,blurb:r.blurb,a:r.a,b:r.b,on:r.on,cooldown:r.cooldown,code:r.code,source:r.source,checks:r.checks})).filter(r=>r.id>0);
         fg.state='done'; fg.ms=out.ms; S.setHold(0); room.dirty=true; broadcast(room,'forge',forgeMsg(fg));
-        console.log('duel forge',out.ms+'ms',out.calls+' call(s)',fg.rules.map(r=>r.name+' ('+r.source+')').join(', '));
+        console.log('duel forge',out.ms+'ms',out.calls+' call(s)',fg.rules.map(r=>r.name+' ('+r.source+')').join(', ')); for(const line of out.log||[]) console.log('duel forge:',line);
       });
     },400);
   }

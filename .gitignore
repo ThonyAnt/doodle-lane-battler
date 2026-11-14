@@ -3,3 +3,5 @@ node_modules/
 .DS_Store
 motion-review.html
 anim/out/
+forge-cache.json
+forge-cache.json.tmp

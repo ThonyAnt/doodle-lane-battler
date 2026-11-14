@@ -463,6 +463,26 @@ function mk(replies,opts){
     ok('and then the server is as it was: no forge route, the usual three seconds of countdown',page.status===404&&R.blue.seen.fight-t0>2800&&R.blue.seen.fight-t0<3600&&offRun.forge.length===0,{status:page.status,ms:R.blue.seen.fight-t0});
     R.blue.close(); R.red.close(); await srv.stop(); await offFake.close();
   }
+  { // 10. the cache file: rules outlive the server
+    const dir=fs.mkdtempSync(path.join(os.tmpdir(),'forge-test-')), file=path.join(dir,'forge-cache.json'), fk=await fake.start([good,named('Asked Again'),named('Asked Thrice')]), env={OPENAI_BASE_URL:fk.url,FORGE_CACHE:file};
+    const round=async()=>{ const srv=await serve(env), R=await open(); await arm(R,'sword','star'); await until(()=>done(R.blue).length>0,4000); const d=done(R.blue)[0]||{rules:[]}; R.blue.close(); R.red.close(); await sleep(500); await srv.stop(); return d; };
+    const first=await round(), saved=fs.existsSync(file)?fs.readFileSync(file,'utf8'):'', second=await round();
+    ok('rules survive a restart from forge-cache.json',fk.bodies.length===1);
+    ok('they come back as they were written, and proven again',first.rules.length===1&&second.rules.length===1&&second.rules[0].name==='Return Serve'&&second.rules[0].source==='ai'&&second.rules[0].code===first.rules[0].code&&Object.values(second.rules[0].checks).every(Boolean)&&saved.includes('Return Serve')&&!/test|Bearer/.test(saved),second.rules[0]);
+    fs.writeFileSync(file,'{"entries":{"this is not'); const third=await round();
+    ok('a cache file that cannot be read is ignored',fk.bodies.length===2&&third.rules.length===1&&third.rules[0].name==='Asked Again');
+    // a file someone has edited: the rule for these items now reaches for the process, and one of its checks is claimed passed
+    const cached=JSON.parse(fs.readFileSync(file,'utf8')), key=Object.keys(cached.entries)[0]; cached.entries[key][0].code="process.exit(1);"; cached.entries[key][0].checks={shape:true,parse:true,check:true,scenarios:true,stress:true}; fs.writeFileSync(file,JSON.stringify(cached));
+    const fourth=await round();
+    ok('a cached rule is proven again before it is used: one that no longer passes is forged afresh',fk.bodies.length===3&&fourth.rules.length===1&&fourth.rules[0].name==='Asked Thrice'&&!JSON.stringify(fourth).includes('process.exit'),fourth.rules.map(r=>r.name));
+    await fk.close(); fs.rmSync(dir,{recursive:true,force:true});
+    // the two tools that need the real model say so and stop when there is no key
+    for(const tool of ['forge-warm.js','forge-live.js']){
+      const r=cp.spawnSync(process.execPath,[path.join(__dirname,tool)],{env:Object.assign({},process.env,{OPENAI_API_KEY:'',FORGE_CACHE:''}),encoding:'utf8',timeout:15000});
+      ok('tools/'+tool+' stops with a clear message when no key is set',r.status===1&&/OPENAI_API_KEY/.test(r.stderr+r.stdout)&&/\.env/.test(r.stderr+r.stdout)&&(r.stderr+r.stdout).length<600,{status:r.status,out:(r.stderr+r.stdout).slice(0,200)});
+    }
+    ok('the cache file is not for the repository',fs.readFileSync(path.join(__dirname,'..','.gitignore'),'utf8').split(/\r?\n/).includes('forge-cache.json'));
+  }
   { // no key on the server: no model to ask
     const fk=await fake.start([good]), srv=await serve({OPENAI_BASE_URL:fk.url,OPENAI_API_KEY:''}), R=await open();
     await arm(R,'sword','star'); await until(()=>done(R.blue).length>0,3000); const d=done(R.blue)[0];

@@ -54,6 +54,24 @@ The fighters can play on top of your real desktop instead of in a browser tab. T
 
 Press **Stage** in the header (or open `/duel?stage=sheet`) to fight inside a banker's spreadsheet while he builds a valuation model. The cells he fills in are the platforms. He drags one across, pastes another, deletes a row, then loses his temper and deletes everything, and the `#REF!` errors rain down. Near the end he notices the two of you and comes after you with the cursor: get out of the selection before he presses Delete. It is the same minute every round, so you can learn it. A room made from that page uses the stage for everyone in it.
 
+## RuleForge: rules written for the items in play
+
+In Doodle Duel, once both players have an item, the server asks a language model for up to three small rules about how those particular items meet: a tennis racket swats a ball straight back, a torch melts the ice cream. Each rule is a short program in ForgeScript, a tiny language of our own (`forgescript.js`) that the game parses, checks and interprets itself, so nothing the model writes is ever run as JavaScript. Before a rule goes into the match it is tried in staged test fights and in twenty seconds of bot against bot. One that breaks, or never triggers, is sent back to the model once with its errors; if it still fails, a built-in rule takes its place.
+
+The big screen shows the result in a `FORGE.EXE` window: each rule's name, what it does, the two items, its code, and a tick per check passed. In the fight, a rule's shout pops up over the fighter when it triggers. If the model is slow, the countdown waits for it, four seconds at most, and then the round starts with built-in rules.
+
+- **Model:** `OPENAI_FORGE_MODEL` (defaults to `OPENAI_MODEL`). Without a key the built-in rules are used.
+- **Off switch:** `FORGE=0` in the environment or `.env` turns it off on the server. `?forge=0` in the page address turns it off for matches played in that page and for rooms made from it.
+- **Cache:** rules the model wrote are kept in `forge-cache.json` (git-ignored; `FORGE_CACHE` names another file, or none if it is empty), so the same items need no model the next time. Rules read back from the file are proven again before they are used.
+- **Warm it before a demo:** `node tools/forge-warm.js` (needs the key) forges every pair of the ready-made items, 196 pairs, so a demo played with ready-made items needs no network for its rules. It covers the items as they come: no ink colour, first trait, no tuning. `--els=none,fire,water,plant` covers the colours too; `--jobs=8` runs more at once.
+- **Try it against the real model:** `node tools/forge-live.js` forges five sets of items and prints every rule with its code, where it came from (`ai`, `repaired` or `built-in`), how long it took and what the verifier objected to. `--raw` adds the model's replies.
+- **Try it without a key:** `node tools/fake-openai.js` starts a stand-in model that always writes the same two rules. Start the game with `OPENAI_API_KEY=test OPENAI_BASE_URL=http://127.0.0.1:3192 FORGE_CACHE= node server.js`; the empty `FORGE_CACHE` keeps the stand-in's rules out of the cache file.
+- **Tests:** `node tools/test-forge.js` covers the language, the rule engine, the verifier, the pipeline and the server (child servers on port 3191, with the stand-in).
+
+What a rule can do is small, and the match clamps it whatever the code asks for (`FORGE_API` and `FORGE_LIMITS` in `duel.html`): four events (`swat`, `guard`, `strike`, `near`), effects such as `shot.reflect`, `hit.scale`, `push`, `burn` and `heal`, and at most 24 health healed or hurt per rule per round.
+
+Not yet tried with the real model: every test runs against the stand-in.
+
 ## Run
 
 Needs Node 18 or newer. No dependencies.
@@ -83,6 +101,9 @@ The server runs the match; each device only draws and displays, so both players 
 | `OPENAI_API_KEY` | none | Key used by the server to read drawings |
 | `OPENAI_MODEL` | `gpt-4.1-mini` | Vision model that classifies the drawing |
 | `PORT` | `3000` | Port the server listens on |
+| `OPENAI_FORGE_MODEL` | `OPENAI_MODEL` | Model that writes the match rules (RuleForge) |
+| `FORGE` | on | `0` switches RuleForge off |
+| `FORGE_CACHE` | `forge-cache.json` | File the model's rules are kept in; empty for none |
 
 ## Rules
 
@@ -96,9 +117,10 @@ The server runs the match; each device only draws and displays, so both players 
 - `index.html`: the whole game (simulation, bot, drawing pads, rendering).
 - `server.js`: serves the page, reads drawings with OpenAI (the key never reaches the browser), and runs online rooms. It loads the match rules from the marked block in `index.html`, so there is one copy of the rules.
 - `duel.html` and `duel-server.js`: Doodle Duel. Same pattern: the rules sit in a marked block in `duel.html` and the server runs that block for online rooms.
+- `forgescript.js`, `forge.js`: RuleForge. The first is the rule language (parser, checker, interpreter), used by the server and the page; the second asks the model, proves each rule and holds the built-in ones. `tools/test-forge.js` tests both, `tools/fake-openai.js` stands in for the model, `tools/forge-warm.js` and `tools/forge-live.js` need the key.
 - `anim/`: Doodle Duel animation clips (running, and a move set each for blade, spear, hammer, fists, twin blades, bow, gun, twin pistols, magic staff and thrown weapons) and the engine that plays them; see `anim/README.md`. `anim-lab.html` previews clips and `tools/strip.js` renders them to frame strips.
 - `qrcode.js`: QR Code Generator by Kazuhiko Arase (MIT), used for the join code.
 
 ## Status
 
-Online play is tested with two browsers on one machine and a stand-in for the OpenAI endpoint. Not yet tested: the real OpenAI API, real tablets, and play over a slow network. Doodle Duel is tested by simulation, a scripted two-client online match and a desktop browser; drawings were read by the real OpenAI API (`gpt-4.1-mini`, about 1 second each). Balance numbers and the bot's 15% handicap are first guesses.
+Online play is tested with two browsers on one machine and a stand-in for the OpenAI endpoint. Not yet tested: the real OpenAI API, real tablets, and play over a slow network. Doodle Duel is tested by simulation, a scripted two-client online match and a desktop browser; drawings were read by the real OpenAI API (`gpt-4.1-mini`, about 1 second each). Balance numbers and the bot's 15% handicap are first guesses. RuleForge is tested against a stand-in for the model only, and its window and call-outs have not been looked at in a browser.

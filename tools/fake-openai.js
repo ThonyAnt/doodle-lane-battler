@@ -7,7 +7,9 @@
 //   Each text is wrapped as {choices:[{message:{content}}]}, the way the real endpoint answers.
 // Run on its own it plays a model that knows one joke:   node tools/fake-openai.js [port, default 3192]
 //   a rule request gets "Return Serve" for the first melee item against something thrown, and a second rule for the
-//   other player; a drawing gets called a sword. Start the game with OPENAI_API_KEY=test OPENAI_BASE_URL=<the url>.
+//   other player; a drawing gets called a sword. Start the game with
+//   OPENAI_API_KEY=test OPENAI_BASE_URL=<the url> FORGE_CACHE= node server.js
+//   (the empty FORGE_CACHE keeps the stand-in's rules out of forge-cache.json, where the real model's belong).
 const http=require('http');
 
 function start(replies,opts){
@@ -51,5 +53,5 @@ function canned(body){
 module.exports={start,canned};
 if(require.main===module){
   const port=+process.argv[2]||3192;
-  start([],{then:canned,port}).then(f=>console.log('Stand-in model on '+f.url+'\nStart the game with:  OPENAI_API_KEY=test OPENAI_BASE_URL='+f.url+' node server.js'),e=>{ console.error('could not start: '+e.message); process.exit(1); });
+  start([],{then:canned,port}).then(f=>console.log('Stand-in model on '+f.url+'\nStart the game with:  OPENAI_API_KEY=test OPENAI_BASE_URL='+f.url+' FORGE_CACHE= node server.js'),e=>{ console.error('could not start: '+e.message); process.exit(1); });
 }
