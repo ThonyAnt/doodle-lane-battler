@@ -275,6 +275,7 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
 /* Retro desktop: the right column is just the hack list and the glyph sheet (they are the instructions). Health, overdrive
    and ink are drawn over each fighter's head, and CPU skill sits in the Game setup window. */
 #inkos fieldset.gone{display:none}
+body.sheetstage #inkos .timeline,body.sheetstage #inkos #artboard .stagelabel{display:none}
 .cpuskill{display:inline-grid;grid-template-columns:auto 110px 30px;align-items:center;gap:6px;font-size:13px;font-weight:600}
 #tips{position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:9000;pointer-events:none;background:#fffbe6;border:2px solid var(--ink);border-radius:12px;box-shadow:4px 4px 0 var(--ink);
   padding:10px 16px;font:600 15px/1.5 var(--body);color:var(--ink);max-width:min(560px,90vw);transition:opacity .5s}
@@ -1022,7 +1023,7 @@ function createDuel(opts){
     if(!L) return; const idle=S.phase==='draw'||S.phase==='count'||S.practice;
     if(L.plats) S.setPlats(L.plats);
     if(!idle&&S.cells.length) return;                                   // the board is not rebuilt in the middle of a fight
-    if(L.w) W=Math.max(600,L.w);
+    if(L.w&&!S.sheet) W=Math.max(600,L.w);
     const b=S.sheet?null:L.board; BOARD=b&&b.x1-b.x0>300&&b.top-b.floor>180?{x0:rr(b.x0),x1:rr(b.x1),floor:Math.max(0,rr(b.floor)),top:rr(b.top)}:null;
     S.f=[fresh(0),fresh(1)]; S.pr=[]; resetWorld();
   };
@@ -1359,19 +1360,28 @@ const DESK=new URLSearchParams(location.search).has('desk'), DESK_SCALE=1.15, ho
 // sketchbook, health bars and notes are draggable windows, the fighters run along the taskbar, and the windows' title
 // bars are the platforms. It shares the overlay's machinery; only the backdrop and where the window edges come from differ.
 // Tablets and phones keep the plain layout, and ?plain=1 turns it off.
-// ?stage=sheet plays on the spreadsheet stage, which uses the plain layout so the sheet fills the arena.
+// ?stage=sheet plays on the spreadsheet stage. On the retro desktop the sheet is the document open in the app window.
 const STAGE=new URLSearchParams(location.search).get('stage')==='sheet'?'sheet':'';
-const RETRO=!DESK&&!STAGE&&!new URLSearchParams(location.search).has('plain')&&innerWidth>=900&&!matchMedia('(pointer:coarse)').matches, TASK_H=32;
+const RETRO=!DESK&&!new URLSearchParams(location.search).has('plain')&&innerWidth>=900&&!matchMedia('(pointer:coarse)').matches, TASK_H=32;
 const deskLike=()=>DESK||RETRO, floorGap=()=>RETRO?TASK_H:0;
 let ARENA_W=960, ARENA_PLATS=PLATS, deskStage=true, deskEdges=null, deskSent='', deskMenu=false, deskPaused=false, deskLive=null, OY=0;
 if(deskLike()){ document.documentElement.classList.add('deskmode'); document.body.classList.add('deskmode'); }
 if(RETRO){ document.documentElement.classList.add('retro'); document.body.classList.add('retro'); }
 // One game unit in screen pixels: fixed for a match on this computer, and stretched to the screen for the standard stage.
 const deskSc=()=>deskStage?Math.min(1.6,innerWidth/960):DESK_SCALE;
+// Spreadsheet stage on the retro desktop: the 960-wide sheet is fitted into the app window's canvas area (its art board),
+// with the floor on that area's bottom edge. k is screen pixels per game unit. sheetLive follows the match being shown,
+// so a device that joins a spreadsheet room lays it out the same way.
+let sheetLive=false;
+const sheetOn=()=>!!(STAGE||sheetLive), sheetEmb=()=>RETRO&&sheetOn();
+function sheetBox(){
+  const b=document.querySelector('#artboard').getBoundingClientRect(), k=Math.max(0.3,Math.min((b.width-6)/960,(b.height-6)/(GY+2)));
+  return {k,left:b.left+(b.width-960*k)/2,bottom:b.bottom-3,top:b.top+3};
+}
 // Real windows as terrain. The overlay app reports the visible top edges of the other apps' windows in screen pixels;
 // here they become platforms in game units. They replace the stage's fixed platforms.
 function deskTerrain(){
-  if(!deskLike()||!deskEdges) return;
+  if(!deskLike()||!deskEdges||sheetOn()) return;      // on the spreadsheet stage the banker's cells are the only platforms
   if(typeof net!=='undefined'&&net&&!net.watch) return;      // a player in someone else's room uses that room's terrain
   fitCanvas(); const sc=deskSc(), out=[];
   for(const e of deskEdges){
@@ -1394,6 +1404,7 @@ function fitCanvas(){
     if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
     // A local match uses a screen-wide arena at a fixed size. An online room uses the standard 960-wide stage with its
     // platforms, enlarged to fill the screen's width (within reason) and centred.
+    if(sheetEmb()){ const q=sheetBox(); VS=q.k*r; VW=innerWidth/q.k; OX=q.left/q.k; OY=q.bottom*r-(GY+2)*VS; return; }
     const sc=deskSc();
     VS=sc*r; VW=innerWidth/sc; OX=Math.max(0,(VW-ARENA_W)/2); OY=h-(GY+6)*VS-floorGap()*r; return;
   }
@@ -1676,7 +1687,7 @@ function setMode(m){
   if(m==='online'){ local=[false,false]; ARENA_W=960; ARENA_PLATS=PLATS; view=createDuel().snapshot(); buildDesks(); buildControls(); const code=(location.hash||'').slice(1).toUpperCase(); if(/^[A-Z]{4}$/.test(code)) joinRoom(code,watched()===code); return; }
   if(location.hash) history.replaceState(null,'',location.pathname);
   local=m==='2p'?[true,true]:[true,false];
-  if(deskLike()){ ARENA_W=Math.round(innerWidth/DESK_SCALE); ARENA_PLATS=[]; }
+  if(deskLike()&&!STAGE){ ARENA_W=Math.round(innerWidth/DESK_SCALE); ARENA_PLATS=[]; }
   sim=createDuel({practice:m==='practice',width:ARENA_W,plats:ARENA_PLATS,stage:STAGE||undefined});
   if(m==='bot'){ bot=makeBot(1,()=>RETRO?FXI.P.diff:0.55); botLoadout().forEach((b,k)=>{ const it=sim.setItem(1,k,b.spec,b.cost); setArt(1,k,b.strokes,it.ver,it.kind,it.style); }); }
   deskTerrain();
@@ -1760,7 +1771,7 @@ function accept(v){
   const seen=new Set(); for(const [id,x,y,life] of v.objs||[]){ seen.add(id); const o=wobj.get(id); if(o){ o.x=x; o.y=y; o.life=life<0?Infinity:life; } }
   for(const id of wobj.keys()) if(!seen.has(id)) wobj.delete(id);
   if(net&&!net.watch&&v.w){ ARENA_W=v.w; }
-  if(v.sheet) ARENA_PLATS=v.sheet.plats;                 // on the spreadsheet stage the rules own the platforms
+  sheetLive=!!v.sheet; if(v.sheet){ ARENA_PLATS=v.sheet.plats; ARENA_W=960; }      // on the spreadsheet stage the rules own the platforms
   view=v; viewAt=performance.now();
 }
 
@@ -1872,7 +1883,7 @@ function retroBuild(){
   document.querySelector('#noteswin .body').textContent='CONTROLS\nA/D run   W jump   S down\nJ, K  your two drawings\nL     mine (S+L digs down)\nQ run hack \u00b7 1-5 pick hack\nMouse: draw (B R O tools)\nFight tool (F): click=attack\nMine the frame or run\n  BREAKOUT.exe to get out:\n  window titlebars = platforms';
   const tick=()=>{ document.querySelector('#ink-clock').textContent=new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}); }; tick(); setInterval(tick,20000);
   // drawing on the art board with his tools
-  const s2w=(x,y)=>{ const sc=deskSc(); return {x:x/sc-OX,y:(y-(innerHeight-floorGap()-6*sc))/sc}; };
+  const s2w=(x,y)=>{ if(sheetEmb()){ const q=sheetBox(); return {x:(x-q.left)/q.k,y:(y-q.bottom)/q.k}; } const sc=deskSc(); return {x:x/sc-OX,y:(y-(innerHeight-floorGap()-6*sc))/sc}; };
   addEventListener('pointerdown',e=>{
     const side=mySide1(); if(side<0||!view||view.phase!=='fight'||deskMenu) return;
     if(e.target.closest('.rwin,.menubar,.toolbox,.panel,.titlebar,.timeline,.palette,.statusbar,#taskbar,.menu,.win.small,.icon')) return;
@@ -1923,12 +1934,13 @@ function retroSync(menu){
   document.querySelectorAll('#hacks > div').forEach((d,i)=>d.classList.toggle('sel',i===FXI.hackSel));
   const mtxt='Mode: '+({bot:'Player vs CPU',practice:'Practice','2p':'2 players',online:bigScreen?'Big screen':'Online'}[mode])+' \u00b7 NetLink: '+(net?'room '+net.code:'local sim');
   if(Q('#st-net').textContent!==mtxt) Q('#st-net').textContent=mtxt;
-  Q('#inkos .titlebar span').textContent='InkShop 2.0 \u2014 arena.ink  ['+mtxt.slice(6).split(' \u00b7 ')[0]+']';
+  const sh=sheetOn(); document.body.classList.toggle('sheetstage',sh);
+  Q('#inkos .titlebar span').textContent=(sh?'Granola Sheets 97 \u2014 DoodleCorp_DCF_v7_FINAL_final(2).xls  [':'InkShop 2.0 \u2014 arena.ink  [')+mtxt.slice(6).split(' \u00b7 ')[0]+']';
   if(++rTick%8) return;
   // layout: the board and arena size when they change (only between fights), window edges whenever they move
   const board=retroBoard(), w=Math.round(innerWidth/deskSc()), lay=JSON.stringify([w,board]);
   const e=retroEdges(), j=JSON.stringify(e); if(j!==rEdgesSent){ rEdgesSent=j; deskEdges=e; deskTerrain(); }
-  if(lay!==rLayoutSent&&(v.phase==='draw'||v.practice||!v.board)){
+  if(!sh&&lay!==rLayoutSent&&(v.phase==='draw'||v.practice||!v.board)){
     rLayoutSent=lay; ARENA_W=w;
     if(sim) sim.setLayout({w,board,plats:ARENA_PLATS}); else if(net&&net.watch) post({type:'layout',w,board,plats:ARENA_PLATS});
   }
@@ -2199,22 +2211,25 @@ const shadowY=f=>{ let y=0; for(const p of ARENA_PLATS) if(f.y>=p.y-1&&f.x>=p.x0
 /* ---------- spreadsheet stage ---------- */
 // The banker's sheet: a formula bar showing what he is typing, column and row headings, faint figures that keep changing,
 // and the cells he has filled in (the platforms) in spreadsheet green.
+const SHEET_MORE=['Tax','Working capital','Discount factor','PV of cash flow','Net debt','Equity value','Shares out','Price target','Upside','Comps','Synergies','Fees'];
 const sheetDels=[], SHEET_ROWS=['Revenue','COGS','Gross profit','EBITDA','D&A','CapEx','Free cash flow','WACC','Enterprise value'];
 function sheetBack(v,now){
-  const h=v.sheet, x0=-OX, x1=VW-OX, top=40, C=SHEET_COL, R=SHEET_ROW, c0=Math.floor(x0/C), c1=Math.ceil(x1/C), ca=x0-c0*C>C*0.35?c0+1:c0;   // ca: the first column with room for the row names, shown as column A
+  // Inside the app window the sheet reaches up to the top of the canvas area: more rows, with the formula bar up there.
+  const h=v.sheet, emb=RETRO, ty=emb?Math.min(0,GY+2-(sheetBox().bottom-sheetBox().top)/sheetBox().k):0, x0=emb?0:-OX, x1=emb?960:VW-OX, top=ty+40, rows=Math.ceil((GY-top)/SHEET_ROW), C=SHEET_COL, R=SHEET_ROW, c0=Math.floor(x0/C), c1=Math.ceil(x1/C), ca=x0-c0*C>C*0.35?c0+1:c0;   // ca: the first column with room for the row names, shown as column A
   L.save(); L.lineCap='butt';
+  if(emb){ L.beginPath(); L.rect(0,ty,960,GY+3-ty); L.clip(); L.fillStyle='#fff'; L.fillRect(0,ty,960,GY+3-ty); }      // inside the app window
   // faint figures: a few change every couple of seconds, so the model looks worked on
   L.font='11px Karla,system-ui,sans-serif'; L.textBaseline='middle';
-  for(let r=0;r<9;r++){ const y=GY-r*R-R/2;
+  for(let r=0;r<rows;r++){ const y=GY-r*R-R/2;
     for(let c=c0;c<c1;c++){
       const n=Math.abs(Math.sin(c*12.9898+r*78.233+Math.floor((h.t+c*1.7+r*0.9)/2.5)*4.1)*43758.5453)%1;
-      if(c===ca){ L.fillStyle='#9aa3b2'; L.textAlign='left'; L.fillText(SHEET_ROWS[8-r]||'',Math.max(x0,c*C)+6,y,C-10); }
+      if(c===ca){ L.fillStyle='#9aa3b2'; L.textAlign='left'; L.fillText((r<9?SHEET_ROWS[8-r]:SHEET_MORE[(r-9)%SHEET_MORE.length])||'',Math.max(x0,c*C)+6,y,C-10); }
       else if(c>ca&&n<0.62){ L.fillStyle=n<0.08?'#d9a3a3':'#bcc4d0'; L.textAlign='right'; L.fillText(n<0.08?'('+(n*9000|0)+')':r===1?(n*40).toFixed(1)+'%':((n*98000)|0).toLocaleString('en-US'),(c+1)*C-6,y); }
     } }
   // grid
   L.strokeStyle='#e1e6ee'; L.lineWidth=1; L.beginPath();
   for(let c=c0;c<=c1;c++){ L.moveTo(c*C,top); L.lineTo(c*C,GY); }
-  for(let r=1;r<=9;r++){ L.moveTo(x0,GY-r*R); L.lineTo(x1,GY-r*R); }
+  for(let r=1;r<=rows;r++){ L.moveTo(x0,GY-r*R); L.lineTo(x1,GY-r*R); }
   L.stroke();
   if(h.all){ L.fillStyle='rgba(16,124,65,.16)'; L.fillRect(x0,top,x1-x0,GY-top); }
   // the cells he has filled in: these are what the fighters stand on
@@ -2225,14 +2240,15 @@ function sheetBack(v,now){
     L.fillStyle='#0b5c30'; L.font='700 13px Karla,system-ui,sans-serif'; L.textAlign='left'; L.fillText(p.lb||'',p.x0+8,y+R/2,w-14);
   }
   // headings and the formula bar
-  L.fillStyle='#f1f3f6'; L.fillRect(x0,22,x1-x0,18); L.strokeStyle='#cfd6e0'; L.lineWidth=1; L.beginPath(); L.moveTo(x0,40); L.lineTo(x1,40); L.moveTo(x0,22); L.lineTo(x1,22); L.stroke();
+  L.fillStyle='#f1f3f6'; L.fillRect(x0,ty+22,x1-x0,18); L.strokeStyle='#cfd6e0'; L.lineWidth=1; L.beginPath(); L.moveTo(x0,ty+40); L.lineTo(x1,ty+40); L.moveTo(x0,ty+22); L.lineTo(x1,ty+22); L.stroke();
   L.fillStyle='#6b7486'; L.font='600 11px Karla,system-ui,sans-serif'; L.textAlign='center';
-  for(let c=ca;c<c1;c++) L.fillText(String.fromCharCode(65+(c-ca)%26),c*C+C/2,31);
-  L.fillStyle='#fff'; L.fillRect(x0,0,x1-x0,22);
+  for(let c=ca;c<c1;c++) L.fillText(String.fromCharCode(65+(c-ca)%26),c*C+C/2,ty+31);
+  L.fillStyle='#fff'; L.fillRect(x0,ty,x1-x0,22);
   const typed=h.msg.slice(0,Math.max(0,Math.floor((h.t-h.said)*34))), caret=Math.floor(now/400)%2?'|':'';
-  L.textAlign='left'; L.fillStyle='#8a93a5'; L.font='italic 600 12px Georgia,serif'; L.fillText('fx',x0+10,11);
-  L.fillStyle=h.hunt||h.all?'#b0121f':'#1c2541'; L.font='600 13px Karla,system-ui,sans-serif'; L.fillText(typed+caret,x0+34,11.5);
-  L.textAlign='right'; L.fillStyle='#b4bcc9'; L.font='11px Karla,system-ui,sans-serif'; L.fillText('DoodleCorp_DCF_v7_FINAL_final(2).xlsx  ·  Granola Capital',x1-10,11.5);
+  L.textAlign='left'; L.fillStyle='#8a93a5'; L.font='italic 600 12px Georgia,serif'; L.fillText('fx',x0+10,ty+11);
+  L.fillStyle=h.hunt||h.all?'#b0121f':'#1c2541'; L.font='600 13px Karla,system-ui,sans-serif'; L.fillText(typed+caret,x0+34,ty+11.5);
+  L.textAlign='right'; L.fillStyle='#b4bcc9'; L.font='11px Karla,system-ui,sans-serif'; L.fillText('DoodleCorp_DCF_v7_FINAL_final(2).xlsx  ·  Granola Capital',x1-10,ty+11.5);
+  if(emb){ L.strokeStyle='#111'; L.lineWidth=3; L.beginPath(); L.moveTo(0,GY+1.5); L.lineTo(960,GY+1.5); L.stroke(); }
   L.restore();
 }
 // In front of the fighters: the errors raining down, the banker's pointer, and during the hunt his selection and a very large cursor.
@@ -2264,7 +2280,7 @@ function render(now){
   // ground and platforms: plain ink lines, no scenery
   L.strokeStyle='#111'; L.lineCap='round'; L.lineWidth=DESK?3:4; if(RETRO) L.globalAlpha=0; L.beginPath(); L.moveTo(-OX-10,GY+2); L.lineTo(ARENA_W+10+OX,GY+2); L.stroke(); L.globalAlpha=1;
   // corner posts mark where the arena ends when the view is wider than it
-  if(OX>12) for(const px of [0,ARENA_W]){ L.lineWidth=5; L.beginPath(); L.moveTo(px,GY+2); L.lineTo(px,GY-58); L.stroke(); L.lineWidth=3; L.beginPath(); L.moveTo(px,GY-58); L.lineTo(px+(px?-22:22),GY-48); L.lineTo(px,GY-38); L.stroke(); }
+  if(OX>12&&!(RETRO&&v.sheet)) for(const px of [0,ARENA_W]){ L.lineWidth=5; L.beginPath(); L.moveTo(px,GY+2); L.lineTo(px,GY-58); L.stroke(); L.lineWidth=3; L.beginPath(); L.moveTo(px,GY-58); L.lineTo(px+(px?-22:22),GY-48); L.lineTo(px,GY-38); L.stroke(); }
   const terrain=deskLike()&&deskEdges&&!(net&&!net.watch);
   if(terrain){ L.strokeStyle='#ffd84a'; L.globalAlpha=RETRO?0:.85; L.lineWidth=3; }else L.lineWidth=5;
   if(!v.sheet) for(const p of ARENA_PLATS){ L.beginPath(); L.moveTo(p.x0+(terrain?3:0),GY-p.y+(terrain?0:2)); L.lineTo(p.x1-(terrain?3:0),GY-p.y+(terrain?0:2)); L.stroke(); }
