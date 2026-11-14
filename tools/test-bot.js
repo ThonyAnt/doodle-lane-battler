@@ -88,8 +88,8 @@ function msFromFoeMoveToJump(skill,lead){
   ok('it reacts no faster than its delay',()=>Math.min(...[30,31,32,33,34,35,37,41].map(lead=>msFromFoeMoveToJump(0.55,lead)))>=0.12*1000+0.2*0.45*1000-17,()=>[30,31,32,33,34,35,37,41].map(lead=>Math.round(msFromFoeMoveToJump(0.55,lead))));      // theta wired by hand so only the "foe mid-move" feature drives the jump output; the foe starts a move and we time the first jump press
   ok('and no slower than its delay plus one decision',()=>Math.max(...[30,31,32,33,34,35,37,41].map(lead=>msFromFoeMoveToJump(0.55,lead)))<=210+100+34);
   ok('a sharper bot reacts sooner',()=>{ const at=s=>[30,32,34,36].reduce((n,lead)=>n+msFromFoeMoveToJump(s,lead),0)/4; return at(1)>=120-17&&at(1)<at(0.55)&&at(0.55)<at(0); });
-  ok('it presses a button at most 8 times a second',()=>{ const S=calm(), b=D.makeNetBot(1,wire(-1,0,{1:1,2:1,3:1}),()=>0.55); for(let i=0;i<300;i++){ b(S,1/60); S.step(1/60); } const c=S.cnt[1];
-    return c.a>=30&&c.a<=41&&c.b<=41&&c.j<=41; });
+  ok('it presses an attack at most 6 times a second and jumps at most 3',()=>{ const S=calm(), b=D.makeNetBot(1,wire(-1,0,{1:1,2:1,3:1}),()=>0.55); for(let i=0;i<300;i++){ b(S,1/60); S.step(1/60); } const c=S.cnt[1];
+    return c.a>=22&&c.a<=31&&c.b<=31&&c.j>=10&&c.j<=16; });
   ok('the same weights walk towards the foe from either side',()=>{ const S=calm(), th=wire(-1,0,{0:1}), b0=D.makeNetBot(0,th,()=>0.55), b1=D.makeNetBot(1,th,()=>0.55), x0=S.f[0].x, x1=S.f[1].x;
     for(let i=0;i<60;i++){ b0(S,1/60); b1(S,1/60); S.step(1/60); } return S.f[0].x>x0+40&&S.f[1].x<x1-40&&S.inp[0].r===1&&S.inp[1].l===1; });
   ok('and back away from them when the move output is negative',()=>{ const S=calm(), b1=D.makeNetBot(1,wire(-1,0,{0:-1}),()=>0.55), x1=S.f[1].x; for(let i=0;i<60;i++){ b1(S,1/60); S.step(1/60); } return S.f[1].x>x1+40; });
@@ -132,7 +132,7 @@ function msFromFoeMoveToJump(skill,lead){
     ok('and a different one from round to round',()=>loadouts.size>=4,()=>loadouts.size);
     ok('flip seats player A on the other side',()=>sides.join('')==='01010101',()=>sides.join(''));
     ok('the result is told from player A\'s seat, whichever side it sat on',()=>[0,1].every(flip=>{ const r=A.playRound(A.netPlayer(new Float32Array(1232)),A.opponent('masher'),{flip,loadout:[{spec:D.stockItem('sword','none').spec,cost:46}]}); return r.w===1&&r.hpDiff<0&&r.timeout===false&&score(r)<-1; }));
-    ok('a round\'s score is the win, half the health margin and a penalty for running out the clock',()=>Math.abs(score({w:0,hpDiff:80,timeout:false})-1.25)<1e-9&&Math.abs(score({w:1,hpDiff:-160,timeout:false})+1.5)<1e-9&&Math.abs(score({w:-1,hpDiff:0,timeout:true})+0.2)<1e-9&&Math.abs(score({w:0,hpDiff:16,timeout:true})-0.85)<1e-9);
+    ok('a round\'s score is the win, half the health margin, a penalty for running out the clock and a charge for presses',()=>Math.abs(score({w:0,hpDiff:80,timeout:false})-1.25)<1e-9&&Math.abs(score({w:1,hpDiff:-160,timeout:false})+1.5)<1e-9&&Math.abs(score({w:-1,hpDiff:0,timeout:true})+0.2)<1e-9&&Math.abs(score({w:0,hpDiff:16,timeout:true})-0.85)<1e-9&&Math.abs(score({w:0,hpDiff:0,timeout:false,presses:100,t:13})-0.85)<1e-9);
     ok('a bot that never presses loses to the masher and scores below zero',()=>A.fitness(new Float32Array(1232),[A.opponent('masher')],12)<0);
     // 400 rounds where the plan said 40: a single round's score swings by more than 1 either way, so the mean of 40 lands
     // outside 0.25 by luck about one run in five. Same tolerance, more rounds.

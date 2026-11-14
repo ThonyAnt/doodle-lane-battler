@@ -40,8 +40,11 @@ function playRound(a,b,opts){
   const h0=Math.max(0,S.f[0].hp), h1=Math.max(0,S.f[1].hp), ws=S.phase==='end'||S.phase==='over'?S.winner:-1, c=S.cnt[flip];
   return {w:ws<0?-1:(flip?1-ws:ws),hpDiff:flip?h1-h0:h0-h1,t,timeout:h0>0&&h1>0,presses:c.j+c.a+c.b+c.q+c.u};
 }
-// What a round is worth to A: +1 for a win, -1 for a loss, half the health margin, and a penalty for letting the clock run out.
-const score=r=>(r.w===0?1:r.w===1?-1:0)+0.5*r.hpDiff/HP-(r.timeout?0.2:0);
+// What a round is worth to A: +1 for a win, -1 for a loss, half the health margin, a penalty for letting the clock run out,
+// and a small charge for every press a second (the fight starts 3 s in), so that winning by hammering every button at
+// once is worth less than winning with the same result and fewer presses.
+const PRESS_COST=0.015;
+const score=r=>(r.w===0?1:r.w===1?-1:0)+0.5*r.hpDiff/HP-(r.timeout?0.2:0)-PRESS_COST*(r.presses||0)/Math.max(1,(r.t||0)-3);
 
 // Who to fight in each of `rounds` rounds: the league's members in turn (a fresh shuffle each time round, so they are
 // drawn evenly), sides swapped every round, a new random loadout each round. One schedule is shared by every candidate

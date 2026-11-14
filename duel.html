@@ -1770,14 +1770,15 @@ function netForward(theta,x,ws){
 // The eight outputs: 0 move (under 0.33 either way it stands; above, towards the foe; below, away), then a press for each
 // one above zero: 1 jump, 2 item A, 3 item B, 4 hold down, 5 ultimate, 6 run a hack, 7 unused.
 // A person's limits: it looks ten times a second, acts on each look a reaction time later (0.12 s at skill 1, 0.32 s at
-// skill 0), and presses any one button at most 8 times a second. Called like makeBot's result: fn(S, dt) every frame.
+// skill 0), and presses no faster than a person would: an attack button at most 6 times a second, jump at most 3, the
+// ultimate and a hack once. Called like makeBot's result: fn(S, dt) every frame.
 function makeNetBot(side,theta,skillOf){
-  const NI=NET_SHAPE[0], Q=8, LOOK=0.1, PRESSES=8;
+  const NI=NET_SHAPE[0], Q=8, LOOK=0.1, PRESSES={j:3,a:6,b:6,q:1,u:1};
   const seen=new Float32Array(Q*NI), due=new Float64Array(Q), dirs=new Int8Array(Q), x=new Float32Array(NI), ws=NET_SHAPE.slice(1).map(n=>new Float32Array(n));
-  const i={l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0,u:0}, last={};      // last[button]: when its last 8 presses were, as a ring
-  for(const k of ['j','a','b','q','u']) last[k]={t:new Float64Array(PRESSES).fill(-9),n:0};
+  const i={l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0,u:0}, last={};      // last[button]: when its last few presses were, as a ring as long as its limit
+  for(const k in PRESSES) last[k]={t:new Float64Array(PRESSES[k]).fill(-9),n:0};
   let now=0, next=-1, head=0, n=0;         // seen[head..head+n) are looks it has not acted on yet, oldest first
-  const tap=k=>{ const r=last[k]; if(now-r.t[r.n]<1-1e-9) return false; r.t[r.n]=now; r.n=(r.n+1)%PRESSES; i[k]++; return true; };    // the 8th press back must be a second old
+  const tap=k=>{ const r=last[k]; if(now-r.t[r.n]<1-1e-9) return false; r.t[r.n]=now; r.n=(r.n+1)%r.t.length; i[k]++; return true; };    // the press one limit back must be a second old
   const fn=function(S,dt){
     now+=dt;
     if(S.phase!=='fight'){ i.l=i.r=i.d=0; S.setInput(side,i); n=0; next=-1; return; }
