@@ -161,17 +161,17 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
   ok('fire on a soaked fighter bursts into steam and dries them',Math.abs(steam.d/base-1.25)<0.03&&steam.tag==='steam'&&steam.b.slow===0,+steam.d.toFixed(1));
   const g=hit('plant','plant',b=>{ b.slow=2; }); ok('a plant hit on a soaked fighter is tagged overgrown',g.tag==='grow');
 }
-{ // shape: the attack-shape customizations (SHAPES, S.customize)
+{ // shape: the attack-shape customizations (SHAPES, S.shapeSet)
   const {shapeFit,replayDuel}=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {shapeFit,replayDuel};')();
-  const arm=(kind,style,cs,far)=>{ const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,{kind,style,element:'none',name:style},50); const got=S.customize(0,0,cs); a.x=260; a.face=1; b.x=far||940; return {S,a,b,got}; };
+  const arm=(kind,style,cs,far)=>{ const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,{kind,style,element:'none',name:style},50); const got=S.shapeSet(0,0,cs); a.x=260; a.face=1; b.x=far||940; return {S,a,b,got}; };
   const watch=(S,sec,each)=>{ for(let i=0;i<Math.round(sec*60);i++){ S.step(1/60); each(S.snapshot()); } };
   const said=(v,id)=>v.ev.filter(e=>e.e==='shape'&&e.id===id).length;
   ok('shape: a bad list never throws and nothing unknown gets through',[null,undefined,7,'x',{},[null,1,'nope',{id:5},{id:'__proto__'},{id:'split',at:'a',spread:NaN}]].every(v=>{ try{ return shapeFit('ranged',v).every(c=>c.id==='split'&&c.at===0.4&&c.spread===0.24); }catch(e){ return false; } }));
   ok('shape: parameters are pulled inside their limits; blocks for another kind are left out',JSON.stringify(shapeFit('ranged',[{id:'swell',grow:99},'echo']))==='[{"id":"swell","grow":2.5}]'&&shapeFit('melee',['split','echo','echo','shockwave']).map(c=>c.id).join()==='echo,shockwave');
-  { const {S,got}=arm('ranged','gun',['split']); ok('shape: customize sets the list, the snapshot carries it, and a tweak keeps it',got.length===1&&S.snapshot().items[0][0].cu[0].id==='split'&&(S.tweak(0,0,{tune:1}),S.items[0][0].customs[0].id==='split'));
-    S.tweak(0,0,{kind:'melee',style:'blade'}); ok('shape: a tweak to another kind drops what no longer suits',!S.items[0][0].customs&&S.customize(0,1,['echo'])===null);
-    const M=D.createDuel({width:1400,plats:[]}); M.setItem(0,0,{kind:'ranged',style:'gun',element:'none',name:'G'},30); const first=M.customize(0,0,['swell']); M.setReady(0);
-    ok('shape: in a match it can be set while drawing, not once ready',first.length===1&&M.customize(0,0,['split'])===null&&M.items[0][0].customs[0].id==='swell'); }
+  { const {S,got}=arm('ranged','gun',['split']); ok('shape: shapeSet sets the list, the snapshot carries it, and a tweak keeps it',got.length===1&&S.snapshot().items[0][0].cu[0].id==='split'&&(S.tweak(0,0,{tune:1}),S.items[0][0].customs[0].id==='split'));
+    S.tweak(0,0,{kind:'melee',style:'blade'}); ok('shape: a tweak to another kind drops what no longer suits',!S.items[0][0].customs&&S.shapeSet(0,1,['echo'])===null);
+    const M=D.createDuel({width:1400,plats:[]}); M.setItem(0,0,{kind:'ranged',style:'gun',element:'none',name:'G'},30); const first=M.shapeSet(0,0,['swell']); M.setReady(0);
+    ok('shape: in a match it can be set while drawing, not once ready',first.length===1&&M.shapeSet(0,0,['split'])===null&&M.items[0][0].customs[0].id==='swell'); }
   { const {S}=arm('ranged','gun',['split']); S.play(0,'gun_shot'); let most=0, n=0, fan=[]; watch(S,0.8,v=>{ n+=said(v,'split'); if(S.pr.length>most){ most=S.pr.length; fan=S.pr.map(p=>Math.sign(Math.round(p.vy))).sort(); } });
     ok('split: one shot becomes three, fanned up and down',most===3&&n===1&&fan.join()==='-1,0,1',{most,n,fan}); }
   { const {S}=arm('ranged','gun',['spiral']); S.play(0,'gun_shot'); let lo=1e9, hi=-1e9, sp; watch(S,0.6,v=>{ for(const p of S.pr){ lo=Math.min(lo,p.y); hi=Math.max(hi,p.y); } if(v.pr[0]) sp=v.pr[0].sh.sp; });
@@ -197,7 +197,7 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
     ok('shape: an ultimate\'s own shots carry no customization',any===0&&n<900,{n}); }
   { const play=()=>{ const S=D.createDuel({seed:4321,record:true,width:1400,plats:[{x0:500,x1:900,y:90}]});
       S.setItem(0,0,{kind:'ranged',style:'bow',element:'fire',name:'Bow'},40); S.setItem(0,1,{kind:'melee',style:'hammer',element:'none',name:'Hammer'},40); S.setItem(1,0,{kind:'ranged',style:'akimbo',element:'water',name:'Guns'},40); S.setItem(1,1,{kind:'melee',style:'dual',element:'none',name:'Twins'},40);
-      S.customize(0,0,['split','ricochet','spiral']); S.customize(0,1,['echo','shockwave']); S.customize(1,0,['linger','swell','ricochet']); S.customize(1,1,[{id:'echo',delay:0.3}]); S.setReady(0); S.setReady(1);
+      S.shapeSet(0,0,['split','ricochet','spiral']); S.shapeSet(0,1,['echo','shockwave']); S.shapeSet(1,0,['linger','swell','ricochet']); S.shapeSet(1,1,[{id:'echo',delay:0.3}]); S.setReady(0); S.setReady(1);
       const i=[{l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,u:0},{l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,u:0}]; let r=7, shaped=0; const rnd=()=>{ r=(r*1103515245+12345)&0x7fffffff; return r/0x7fffffff; };      // its own little dice, so the two runs press the same buttons
       for(let n=0;n<60*30&&S.phase!=='over';n++){ if(n%9===0) for(const s of [0,1]){ const o=i[s]; o.l=rnd()<0.3?1:0; o.r=rnd()<0.4?1:0; o.d=rnd()<0.2?1:0; if(rnd()<0.5) o.a++; if(rnd()<0.35) o.b++; if(rnd()<0.15) o.j++; S.setInput(s,o); } S.step(1/60); if(S.pr.some(p=>p.sh)) shaped++; }
       return {S,shaped}; };

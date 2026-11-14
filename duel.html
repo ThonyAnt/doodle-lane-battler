@@ -608,7 +608,7 @@ function traitChoices(kind,asked,seed){
   return out.slice(0,2);
 }
 /* ---------- shape: attack-shape customizations (how a swing or a shot travels) ----------
-   An item may carry a list `it.customs=[{id,...params}]`, set with S.customize(side,slot,list). Each block here changes the
+   An item may carry a list `it.customs=[{id,...params}]`, set with S.shapeSet(side,slot,list). Each block here changes the
    path of the item's shots or swings and has a tell drawn by the page (shapeUnder / shapeDraw / shapeFx). `cost` is a first
    guess at a point price; `params` are [least, most, default] and anything outside is pulled in. The rules that act on them
    are grouped in createDuel under "shape" (shapeFire, shapeSwing, shapeStep). */
@@ -1005,7 +1005,7 @@ const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet s
 // A recording holds about LOG_ROOM characters of commands (some forty long matches' worth). When it is full it stops:
 // the match goes on, the log is marked full, and it replays up to the tick it stopped at.
 const LOG_ROOM=2e6;
-const LOG_V=1, COMMANDS=['setItem','tweak','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold','customize'];
+const LOG_V=1, COMMANDS=['setItem','tweak','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold','shapeSet'];
 const INPUT_KEYS=['l','r','d','j','a','b','m','q','h','u'], viaJSON=v=>JSON.parse(JSON.stringify(v)), round1=v=>Math.round(v*10)/10;
 const packInput=i=>{ const o={}; for(const k of INPUT_KEYS){ const v=i?i[k]:undefined; o[k]=k==='l'||k==='r'||k==='d'?(v?1:0):v===undefined?null:v; } return viaJSON(o); };   // held buttons as 0 or 1, press counts as given, a missing one as null
 const unpackInput=o=>{ const i={}; for(const k of INPUT_KEYS) if(o[k]!==null&&o[k]!==undefined) i[k]=o[k]; return i; };
@@ -1524,7 +1524,7 @@ function createDuel(opts){
      own shots, and they carry no p.sh. No dice are rolled here. */
   // Give an item its customizations: the draw phase before you are ready, or any time in practice (as S.tweak). The list is
   // cut down to what suits the item (shapeFit); returns what it now carries, or null if nothing could be changed.
-  S.customize=(side,k,list)=>{
+  S.shapeSet=(side,k,list)=>{
     const it=(side===0||side===1)&&(k===0||k===1)?S.items[side][k]:null; if(!it||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
     const fit=shapeFit(it.kind,list); if(fit.length) it.customs=fit; else delete it.customs;
     return fit;
@@ -4191,7 +4191,7 @@ function shapeFx(e,a,y){
 function labShape(){
   const box=$('labShapes'); if(!box||!sim) return; const kind=MELEE_STYLES.includes(lab.style)?'melee':'ranged';
   if(lab.shape&&!SHAPES[lab.shape].kinds.includes(kind)) lab.shape='';
-  sim.customize(0,0,lab.shape?[{id:lab.shape}]:[]);
+  sim.shapeSet(0,0,lab.shape?[{id:lab.shape}]:[]);
   box.querySelectorAll('button').forEach(b=>{ b.disabled=!SHAPES[b.dataset.c].kinds.includes(kind); b.classList.toggle('on',b.dataset.c===lab.shape); });
   $('labShapeText').textContent=lab.shape?SHAPES[lab.shape].text+' ('+SHAPES[lab.shape].cost+' points)':'';
 }
