@@ -20,6 +20,10 @@ Big screen: a room's screen is the device that pressed Player vs Bot or Player v
 
 Keys: A/D move, W jump, S down, J and K use your two drawings. Tap a blade repeatedly for a 3-hit combo; attack while running, in the air, or holding down for other moves. Bows and guns keep firing as you tap, and down + attack is a charged shot. Draw two of the same weapon (twin swords, a pair of pistols) and the fighter holds one in each hand, striking or firing with alternate hands. Second player on one screen: arrows, with , and . to attack. Touch buttons appear under the arena on tablets.
 
+### Arena customizations (prebuilt, not yet chosen by a model)
+
+A weapon can carry one block that changes the stage for a few seconds when its holder lands the combo's last hit or a charged shot (bombs and dashes on a hit, shields and heals on use), at most once every 9 seconds: **gust** (wind across the stage), **moon** (light gravity), **night** (dark but for a light round each fighter, the holder's much bigger), **rain** (soaks anyone not under cover, puts out burns), **quake** (jolts that hop whoever is standing; jump them) and **shrink ring** (walls close in, then go back). Only one runs at a time; a new one replaces it. Everything it draws is in its holder's colour, a plate in the corner says whose weapon did it and how long is left, and a star at the hand shows when the block is ready. Try them on the move tester (`/moves`): "Arena block" puts one on the weapon, "Set off now" starts one.
+
 ## InkShop: the merged game
 
 On a computer, `/duel` is Alex's InkShop prototype (repo `al371160/hackprinceton-brainstorming-alex`) running on this game's engine. His interface, shape recogniser, hack table and effects are in the page as he wrote them; his mechanics run in this game's server-side rules, so they work for tablet rooms too.

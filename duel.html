@@ -1077,6 +1077,38 @@ const ULTS={
   akimbo:{name:'CROSSFIRE',move:'ult_akimbo',kind:'fire',min:60}
 };
 const ultOf=it=>(it&&ULTS[it.style])||ULTS.blade;
+/* ---------- arena customizations: a weapon that changes the stage itself for a few seconds ----------
+   An item may carry one: it.customs=[{id,secs}], set with S.arenaSet(side,slot,list) (draw phase or practice). Its holder
+   sets it off on purpose: a melee finisher or a charged shot that lands unblocked, a bomb or dash that hits, or a shield
+   or heal being used. Then that weapon's arena block cools down for ARENA_CD seconds. Only one arena effect runs at a
+   time: a new one replaces the one running, unless that one is younger than ARENA_HOLD seconds, in which case the new
+   one is refused and its cooldown is not spent. Everything waits while an ultimate plays, and a casting fighter is never
+   moved. cost is the block's price in budget points at its default length (a first guess, not tuned): what hits both
+   fighters alike is cheap, what favours its holder is dear; arenaCost scales it with the length asked for.
+     gust   wind across the whole stage, away from where the holder stood: carries fighters, bends shots, shoves crates
+     moon   light gravity for everyone: jumps go high, falls are slow, lobbed things float
+     night  the stage goes dark but for a lit circle round each fighter, the holder's much the bigger (display only)
+     rain   soaks (the slow status) anyone with nothing over their head, and puts out burns
+     quake  the floor jolts at intervals; whoever is standing on anything is hopped up and staggered. Jump the jolt.
+     ring   walls slide in from both ends to a narrow pen round where the fight is, hold, and slide back */
+const ARENAS={
+  gust: {name:'GUST',cost:4,secs:5,span:[3,7],push:110,air:180,shot:700},        // px/s a fighter is carried on the ground and in the air; px/s² on shots
+  moon: {name:'MOON',cost:2,secs:6,span:[4,8],lift:0.5},                        // the share of gravity taken away
+  night:{name:'NIGHT',cost:3,secs:5,span:[3,7],lit:[230,84]},                    // radius of the light round the holder, and round the foe
+  rain: {name:'RAIN',cost:2,secs:6,span:[4,8],soak:0.35},                        // seconds of slow left on a fighter who steps under cover
+  quake:{name:'QUAKE',cost:3,secs:5.2,span:[4,7],first:1,every:1.3,warn:0.5,hop:470,stagger:0.28},
+  ring: {name:'SHRINK RING',cost:4,secs:6,span:[4,8],half:190,close:1.2,open:1}  // half the width of the pen; seconds to close and to open
+};
+const ARENA_CD=9, ARENA_HOLD=1.2, ARENA_FADE=0.4;      // ARENA_FADE: seconds an effect takes to come in and to go out
+const arenaDef=id=>typeof id==='string'&&Object.prototype.hasOwnProperty.call(ARENAS,id)?ARENAS[id]:null;
+// Whatever is handed in, the list that comes out is safe: at most one block, a known id, a length inside its span.
+function arenaCustoms(list){
+  const out=[]; if(!Array.isArray(list)) return out;
+  for(const c of list){ const A=c&&typeof c==='object'?arenaDef(c.id):null; if(!A) continue;
+    const s=typeof c.secs==='number'&&Number.isFinite(c.secs)?c.secs:A.secs; out.push({id:c.id,secs:Math.max(A.span[0],Math.min(A.span[1],Math.round(s*10)/10))}); break; }
+  return out;
+}
+const arenaCost=c=>{ const A=arenaDef(c&&c.id); return A?Math.round(A.cost*c.secs/A.secs*2)/2:0; };
 // Pacing of an ultimate. It is announced while everything holds still (ULT_INTRO), the casting move then plays slower than
 // it was animated (ULT_RATE; the clip and its marks are untouched), every blow that lands holds the picture for a beat
 // (ULT_BEAT) so the blows read one by one, and the last one holds it much longer (ULT_FINAL) under the screen flash.
@@ -1253,7 +1285,7 @@ const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet s
 // A recording holds about LOG_ROOM characters of commands (some forty long matches' worth). When it is full it stops:
 // the match goes on, the log is marked full, and it replays up to the tick it stopped at.
 const LOG_ROOM=2e6;
-const LOG_V=1, COMMANDS=['setItem','tweak','setCustoms','targetSet','leaveSet','costSet','summonSet','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold','trigSet','shapeSet'];
+const LOG_V=1, COMMANDS=['setItem','tweak','setCustoms','targetSet','leaveSet','costSet','summonSet','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold','trigSet','shapeSet','arenaSet','startArena'];
 const INPUT_KEYS=['l','r','d','j','a','b','m','q','h','u'], viaJSON=v=>JSON.parse(JSON.stringify(v)), round1=v=>Math.round(v*10)/10;
 const packInput=i=>{ const o={}; for(const k of INPUT_KEYS){ const v=i?i[k]:undefined; o[k]=k==='l'||k==='r'||k==='d'?(v?1:0):v===undefined?null:v; } return viaJSON(o); };   // held buttons as 0 or 1, press counts as given, a missing one as null
 const unpackInput=o=>{ const i={}; for(const k of INPUT_KEYS) if(o[k]!==null&&o[k]!==undefined) i[k]=o[k]; return i; };
@@ -2042,6 +2074,7 @@ function createDuel(opts){
     if(H){ H.dmg=dmg; H.stun=stun; if(by&&by!==t&&slot>=0) cfire('landed',by,slot,H); cfire('took',t,t.held,H); }      // wielder customizations
     trigAfter(t,by,blocked);      // trigger: counters open, first blood is drawn
     if(pushes){ const q=pushes; pushes=null; for(const go of q) go(); }
+    if(by&&by!==t&&slot>=0&&!blocked&&tr!=='fleet') arenaHit(by,slot,fin);      // arena: a finisher or charged shot that lands sets off the weapon's arena block
   }
   // Begin a move: the fighter is committed until it ends or chains.
   function startMove(f,k,m){
@@ -2061,6 +2094,7 @@ function createDuel(opts){
   }
   function use(f,k){
     const it=itemOf(f.side,k), st=it.st; f.buf[k]=0; f.held=k; cfire('use',f,k,{kind:it.kind});      // wielder customizations
+    arenaUse(f,k);      // arena: a shield or a heal sets its block off when used
     const cool=s=>{ f.cd[k]=f.cdMax[k]=s; };
     if(it.kind==='melee'||it.kind==='ranged') startMove(f,k,firstMove(f,it));
     else if(it.kind==='bomb'){
@@ -2552,7 +2586,7 @@ function createDuel(opts){
   function resetWorld(){
     if(S.bins) for(const b of S.bins.slice()) unbin(b);
     S.bins=[]; summonReset();
-    S.objs=[]; S.lv=[]; S.fields=[]; S.groups=[null,null]; S.hack=null; S.effects=[]; S.broken=null; S.breached=false; S.cells=boardCells(BOARD); fx('clear',{});
+    S.objs=[]; S.lv=[]; S.fields=[]; S.groups=[null,null]; S.hack=null; S.effects=[]; S.broken=null; S.breached=false; S.arena=null; S.cells=boardCells(BOARD); fx('clear',{});
     if(S.sheet) sheetReset();
     if(!BOARD) return;
     const b=BOARD, w=b.x1-b.x0, fl=-b.floor;
@@ -2948,6 +2982,95 @@ function createDuel(opts){
     return {t:r1(h.t),msg:h.msg,said:r1(h.said),all:h.all,cur:[rr(h.cur.x),rr(h.cur.y)],drag:h.move?h.move.id:'',cell:h.aim&&!h.hunt?[Math.floor(h.aim.x/SHEET_COL),Math.floor(h.aim.y/SHEET_ROW)]:null,plats:SP.map(p=>({id:p.id,x0:rr(p.x0),x1:rr(p.x1),y:p.y,wx:rr(p.wx),lb:p.lb})),
       rain:h.rain.map(r=>[rr(r.x),rr(r.y)]),hunt:h.hunt&&{x:rr(h.hunt.x),y:rr(h.hunt.y),st:h.hunt.st,side:h.hunt.side}};
   }
+  /* ---------- arena customizations (see ARENAS): the rules of each effect ----------
+     S.arena is the effect running now, or null: {id,side,slot,t,max,dir,x,y,lo,hi,...}. side and slot say whose weapon set
+     it off, x,y where that weapon was, lo..hi the ends of the stage at that moment. Cooldowns live on the fighter as
+     f.acd=[s,s], made the first time one of their weapons sets an effect off. Nothing here rolls dice. */
+  S.arena=null;
+  const arenaSpan=()=>BOARD&&!S.broken&&!S.breached?[BOARD.x0,BOARD.x1]:[0,W];
+  const arenaOf=it=>(it&&Array.isArray(it.customs)&&it.customs.find(c=>arenaDef(c.id)))||null;
+  // Give an item its arena block (or none: an empty list). Like S.tweak: while drawing, or any time in practice. Returns
+  // the list as kept, each entry with its point cost, or null if it cannot be changed now. Never throws.
+  S.arenaSet=(side,k,list)=>{
+    if((side!==0&&side!==1)||(k!==0&&k!==1)) return null;
+    const it=S.items[side][k]; if(!it||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
+    it.customs=arenaCustoms(list); return it.customs.map(c=>Object.assign({cost:arenaCost(c)},c));
+  };
+  // For the move tester page (/moves): set an effect off outright, as if by the held weapon. Practice only.
+  S.startArena=(side,id,secs)=>{
+    if(!S.practice||(side!==0&&side!==1)) return false; const c=arenaCustoms([{id,secs}])[0]; return c?arenaStart(S.f[side],S.f[side].held,c,true):false;
+  };
+  function arenaStart(f,k,c,force){
+    if(S.phase!=='fight'||S.ult>=0||f.hp<=0) return false;
+    const old=S.arena;
+    if(old&&!force&&old.t<ARENA_HOLD){ floatT(f.x,-(f.y+120),'stage busy',f.side); return false; }      // too soon after the last one: refused, cooldown kept
+    if(old) arenaEnd(1);
+    const A=ARENAS[c.id], e=S.f[1-f.side], sp=arenaSpan(), a={id:c.id,side:f.side,slot:k,t:0,max:c.secs,dir:Math.sign(e.x-f.x)||f.face,x:rr(f.x+f.face*20),y:rr(f.y+62),lo:sp[0],hi:sp[1]};
+    if(c.id==='quake'){ a.next=A.first; a.n=0; }
+    if(c.id==='ring'){ a.half=Math.max(120,Math.min(A.half,(sp[1]-sp[0])/2-50)); a.cx=clamp((f.x+e.x)/2,sp[0]+a.half,sp[1]-a.half); a.l=sp[0]; a.r=sp[1]; }
+    S.arena=a; (f.acd=f.acd||[0,0])[k]=ARENA_CD;
+    fx('arena',{id:c.id,side:f.side,slot:k,x:a.x,y:a.y,secs:c.secs}); log(f,'✦ '+A.name+' — '+itemOf(f.side,k).name);
+    return true;
+  }
+  function arenaEnd(cut){ const a=S.arena; if(!a) return; S.arena=null; fx('arenaend',{id:a.id,side:a.side,cut:cut?1:0}); }
+  // The holder's own doing, from hurt() and use(): is this the blow (or the use) that sets the weapon's block off?
+  function arenaTry(f,k){ const c=arenaOf(S.items[f.side][k]); if(!c||(f.acd&&f.acd[k]>0)) return false; return arenaStart(f,k,c); }
+  function arenaHit(by,slot,fin){ const it=S.items[by.side][slot]; if(it&&(fin||it.kind==='bomb'||it.kind==='dash')) arenaTry(by,slot); }
+  function arenaUse(f,k){ const it=S.items[f.side][k]; if(it&&(it.kind==='shield'||(it.kind==='heal'&&f.uses[k]>0))) arenaTry(f,k); }
+  // The wind carries a fighter sideways, but never into anything solid or out of the arena.
+  function arenaShove(f,dx){
+    const nx=clamp(f.x+dx,18,W-18), top=f.y+88*f.scale; for(const o of SOL) if(nx+11>o.x0&&nx-11<o.x1&&top>o.y0&&f.y<o.y1-4) return;
+    f.x=nx;
+  }
+  // Is there something over this fighter's head: a ledge, a drawn platform, a crate or a wall? (The art board's frame does not count.)
+  function arenaCover(f){
+    const top=f.y+70*f.scale;
+    for(const p of oneWays()) if(p.y>=top&&f.x>=p.x0-4&&f.x<=p.x1+4) return true;
+    for(const o of SOL) if(o.obj&&o.y0>=top&&f.x>=o.x0-4&&f.x<=o.x1+4) return true;
+    return false;
+  }
+  // One step of the fight (not while an ultimate plays or a hit-stop holds): cooldowns run down and the effect acts.
+  function arenaStep(dt){
+    for(const f of S.f) if(f.acd) for(const k of [0,1]) f.acd[k]=Math.max(0,f.acd[k]-dt);
+    const a=S.arena; if(!a) return;
+    a.t+=dt; const A=ARENAS[a.id], k=clamp(Math.min(a.t,a.max-a.t)/ARENA_FADE,0,1), free=f=>f.hp>0&&!casting(f);      // k: how strong it is now, easing in and out
+    if(a.id==='gust'){
+      for(const f of S.f) if(free(f)&&f.dash<=0&&f.trap<=0) arenaShove(f,a.dir*(f.ground?A.push:A.air)*k*dt);
+      for(const p of S.pr) if(p.tr!=='fleet'&&!p.hover) p.vx+=a.dir*A.shot*k*dt;
+      for(const o of S.objs) if(o.dyn) o.vx+=a.dir*A.shot*k*dt;
+    }else if(a.id==='moon'){
+      for(const f of S.f) if(free(f)&&!f.ground&&f.dash<=0) f.vy+=1750*A.lift*k*dt;      // 1750: the gravity in control()
+      for(const p of S.pr) if(p.tr!=='fleet'&&p.grav) p.vy+=p.grav*A.lift*k*dt;
+    }else if(a.id==='rain'){
+      for(const f of S.f) if(free(f)&&!arenaCover(f)){ f.slow=Math.max(f.slow,A.soak); if(f.burn>0){ f.burn=0; puff(f.x,-(f.y+90),'#bbb',6); } }
+    }else if(a.id==='quake'){
+      if(a.t>=a.next&&a.next<a.max){
+        a.next+=A.every; a.n++; fx('quake',{x:rr((a.lo+a.hi)/2),y:BOARD&&!S.broken?BOARD.floor:0,n:Math.min(300,rr((a.hi-a.lo)/2))});
+        for(const f of S.f) if(free(f)&&f.ground&&f.dash<=0){ f.vy=A.hop; f.ground=false; f.jumps=1; f.vx*=0.4; f.hurt=Math.max(f.hurt,A.stagger); f.act=null; }
+        for(const o of S.objs) if(o.dyn) o.vy=Math.min(o.vy,-260);
+      }
+    }else if(a.id==='ring'){
+      const q=clamp(Math.min(a.t/A.close,(a.max-a.t)/A.open),0,1), s=q*q*(3-2*q); a.l=a.lo+(a.cx-a.half-a.lo)*s; a.r=a.hi+(a.cx+a.half-a.hi)*s;
+      for(const f of S.f) if(free(f)){ const x=clamp(f.x,a.l+16,a.r-16); if(x!==f.x){ if(f.flung>0) impact(f,Math.abs(f.vx)); f.vx=x>f.x?Math.max(0,f.vx):Math.min(0,f.vx); f.x=x; } }
+      let gone=false;
+      for(const p of S.pr) if(p.tr!=='fleet'&&!p.hover&&(p.x<a.l||p.x>a.r)){
+        const x=clamp(p.x,a.l,a.r);
+        if(p.tr==='bounce'&&!p.wall){ p.wall=1; p.vx=-p.vx; p.x=x; }                 // a bouncy shot comes back off the wall once
+        else if(p.k==='bomb'){ p.x=x; p.ttl=0; }                                     // a bomb goes off against it (next step, in projectiles)
+        else{ fx('spark',{x:rr(x),yd:rr(-p.y),col:PCOLS[a.side]}); p.ttl=0; gone=true; }
+      }
+      if(gone) S.pr=S.pr.filter(p=>p.ttl>0||p.k==='bomb');
+    }
+    if(a.t>=a.max) arenaEnd(0);
+  }
+  // What the picture needs: which items carry a block (it), seconds until each is ready again (rd), and the effect running (on).
+  // null when nobody carries one and nothing runs, so an ordinary match's snapshots are as they were.
+  function arenaView(){
+    const a=S.phase==='fight'?S.arena:null; let any=!!a;
+    const it=S.items.map(r=>r.map(i=>{ const c=arenaOf(i); if(c) any=true; return c?c.id:0; })); if(!any) return null;
+    return {it,rd:S.f.map(f=>[0,1].map(k=>f.acd?r1(f.acd[k]):0)),
+      on:a&&{id:a.id,side:a.side,slot:a.slot,t:+a.t.toFixed(2),max:a.max,dir:a.dir,x:a.x,y:a.y,lo:a.lo,hi:a.hi,l:a.l===undefined?undefined:rr(a.l),r:a.r===undefined?undefined:rr(a.r),nx:a.next===undefined||a.next>=a.max?undefined:+Math.max(0,a.next-a.t).toFixed(2)}};
+  }
   // After a knockout nothing is decided any more, but the picture must not freeze: fighters finish falling and come to
   // rest (no buttons, no shots, no damage). settle is that, for the pause after a round and the first seconds of the end.
   function settle(dt){
@@ -2992,7 +3115,7 @@ function createDuel(opts){
       for(const f of S.f){ f.run=1; f.grav=1; cfire('tick',f,-1,dt); }      // wielder customizations
       for(const f of S.f) control(f,dt);
       projectiles(dt,-1); summons(dt); stepMotes(dt); world(dt); leaveStep(dt); if(S.sheet) sheetTick(dt);
-      targetStep(dt);      // target: statuses run down (not while an ultimate plays: their clocks stop with the round's)
+      targetStep(dt);      // target: statuses run down (not while an ultimate plays: their clocks stop with the round's) arenaStep(dt);
     }
     const a=S.f[0], b=S.f[1], d0=a.hp<=0, d1=b.hp<=0;
     if(!S.practice&&(d0||d1||S.t<=0)){
@@ -3003,7 +3126,7 @@ function createDuel(opts){
   }
   S.step=dt=>{ acc+=Math.min(0.25,dt); while(acc>=STEP){ acc-=STEP; tick(STEP); S.tickN++; } };
   S.snapshot=()=>({phase:S.phase,t:+S.t.toFixed(2),round:S.round,wins:S.wins,ready:S.ready,winner:S.winner,champ:S.champ,ink:[S.inkLeft(0),S.inkLeft(1)],practice:S.practice,hs:S.phase==='fight'&&S.stop>0?1:0,ul:S.phase==='fight'&&S.ult>=0?[S.ult,+S.ultT.toFixed(2)]:null,
-    w:W,board:BOARD,sheet:sheetView(),broken:S.broken&&{t:r1(S.broken.t),hole:S.broken.hole},breached:S.breached,cells:S.cells.filter(c=>c.hp<2&&c.side!=='c').map(c=>[c.id,c.hp]),
+    w:W,board:BOARD,sheet:sheetView(),ar:arenaView(),broken:S.broken&&{t:r1(S.broken.t),hole:S.broken.hole},breached:S.breached,cells:S.cells.filter(c=>c.hp<2&&c.side!=='c').map(c=>[c.id,c.hp]),
     objs:S.objs.map(o=>[o.id,r1(o.x),r1(o.y),o.life===Infinity?-1:r1(o.life)]),fields:S.fields.map(q=>({a:q.a,b:q.b,u:q.u,life:r1(q.life),max:q.max,col:q.col})),lv:leaveView(),
     hack:S.hack&&{by:S.hack.by,target:S.hack.target,name:S.hack.def.name,desc:S.hack.def.desc,t:+S.hack.t.toFixed(2),max:S.hack.max,counter:S.hack.counter},
     fxs:S.effects.map(e=>({by:e.by,target:e.target,counter:e.counter,name:e.name})),
@@ -3036,6 +3159,7 @@ function createDuel(opts){
     for(const m of S.motes) put(m,0);
     for(const o of leaveState()) put(o,0);
     for(const s of S.sm) put(s,0); put(S.smT,0);      // summons and their timers
+    if(S.arena) put(S.arena,0);      // arena: the effect running is part of where the match stands
     return fnv1a(out.join(','));
   };
   if(S.sheet) sheetReset();
@@ -4206,6 +4330,7 @@ function sfxHear(p,v){
 function accept(v){
   for(const e of v.ev){
     worldEvent(e);
+    arenaEvent(e);      // arena customizations: the burst from the weapon
     e.t0=performance.now(); fx.push(e);
     if(e.e==='block') shake=Math.max(shake,3);
     if(e.e==='cost') costSeen(e);      // cost: a weapon's cost just showed itself (overheated, broke, drew blood)
@@ -5524,6 +5649,113 @@ function drawSummons(v,now,age){
     L.restore();
   }
 }
+/* ---------- arena customizations, on screen (the rules are under ARENAS) ----------
+   Whose weapon did it: everything an effect draws is in its holder's colour, a ring bursts out of the weapon when it
+   starts, the weapon wears a double ring while it lasts, and a plate in the corner names the effect and the weapon.
+   When it ends: the bar on the plate drains, and the effect itself fades over its last ARENA_FADE seconds.
+   Ready or not: a weapon that carries a block has a turning star at the hand when it can be set off, and a ring that
+   fills while it cools down. Nothing here flashes the whole picture. Night is switched off on the desktop overlay (DESK),
+   which must never darken the user's screen: there only the two light rings and the plate are drawn. */
+let arenaFx=null, arenaDark=null;      // arenaFx: the last 'arena' event, for the burst from the weapon; arenaDark: the darkness of night, painted off-screen
+const arenaRnd=(n,s)=>{ const q=Math.sin(n*127.1+s*311.7)*43758.5453; return q-Math.floor(q); };      // a fixed scatter for streaks, drops and dust: no dice
+function arenaEvent(e){
+  if(e.e==='arena'){ arenaFx={id:e.id,side:e.side,x:e.x,y:e.y,t0:performance.now()}; FXI.ring(e.x,-e.y,PCOL[e.side]); FXI.burst(e.x,-e.y,PCOL[e.side],18); }
+}
+// The part of the picture that is the stage: the art board, the sheet inside its window, or the whole view.
+function arenaBox(v){
+  const b=v.board&&!v.breached&&!v.broken?v.board:null;
+  if(b) return {x0:b.x0,x1:b.x1,top:GY-b.top,fy:GY-b.floor,bot:GY-b.floor+2};
+  if(sheetEmb()){ const q=sheetBox(), r=cv.width/innerWidth; return {x0:0,x1:960,top:(q.top*r-OY)/VS,fy:GY,bot:GY+2}; }
+  if(deskLike()) return {x0:-OX,x1:-OX+VW,top:Math.max(-OY/VS,GY-560),fy:GY,bot:GY+8};
+  return {x0:-OX,x1:-OX+VW,top:VTOP,fy:GY,bot:440};
+}
+const arenaNow=v=>{ const on=v.ar&&v.phase==='fight'?v.ar.on:null; return on&&arenaDef(on.id)?on:null; };
+const arenaK=on=>Math.max(0,Math.min(1,Math.min(on.t,on.max-on.t)/ARENA_FADE));
+// Behind the fighters: wind streaks, the moon and its dust, the cracked floor, the ground outside the ring.
+function arenaBack(v,now){
+  const on=arenaNow(v); if(!on) return;
+  const B=arenaBox(v), k=arenaK(on), col=PCOL[on.side], T=now/1000, w=B.x1-B.x0, h=B.fy-B.top, slow=CALM?0.3:1;
+  L.save(); L.beginPath(); L.rect(B.x0,B.top,w,B.bot-B.top); L.clip(); L.lineCap='round'; L.lineJoin='round';
+  if(on.id==='gust'){
+    const n=CALM?12:34;
+    for(let i=0;i<n;i++){ const len=60+arenaRnd(i,1)*130, y=B.top+12+arenaRnd(i,2)*(h-24), span=w+len*2, u=(arenaRnd(i,3)+T*slow*(0.55+arenaRnd(i,4)*0.7))%1, x=on.dir>0?B.x0-len+u*span:B.x1+len-u*span;
+      L.strokeStyle=i%4?col:'#111'; L.globalAlpha=(i%4?0.7:0.35)*k; L.lineWidth=2+arenaRnd(i,5)*3; L.beginPath(); L.moveTo(x-on.dir*len,y); L.lineTo(x,y);
+      if(i%3===0) L.quadraticCurveTo(x+on.dir*16,y,x+on.dir*12,y-10);      // some streaks curl at the head
+      L.stroke(); }
+  }else if(on.id==='moon'){
+    const r=34*(0.4+0.6*k), cx=B.x1-70, cy=B.top+64, a=0.95, d=r*0.5, b=Math.atan2(r*Math.sin(a),r*Math.cos(a)-d), r2=Math.hypot(r*Math.cos(a)-d,r*Math.sin(a));
+    L.globalAlpha=0.9*k; L.fillStyle=col; L.beginPath(); L.arc(cx,cy,r,a,Math.PI*2-a,false); L.arc(cx+d,cy,r2,Math.PI*2-b,b,true); L.closePath(); L.fill();
+    L.globalAlpha=0.25*k; L.strokeStyle=col; L.lineWidth=2; L.setLineDash([3,7]); L.beginPath(); L.arc(cx,cy,r+12+3*Math.sin(T*2),0,7); L.stroke(); L.setLineDash([]);
+    L.fillStyle=col; for(let i=0;i<(CALM?14:36);i++){ const u=(arenaRnd(i,2)+T*slow*(0.1+arenaRnd(i,3)*0.14))%1, x=B.x0+arenaRnd(i,1)*w+Math.sin(T*1.3+i)*6, y=B.fy-u*h*0.92;
+      L.globalAlpha=0.75*k*(1-u*0.8); L.beginPath(); L.arc(x,y,2+arenaRnd(i,4)*3.5,0,7); L.fill(); }
+  }else if(on.id==='quake'){
+    // the floor is cracked from end to end; before each jolt the crack rears up (the cue), most where a fighter stands
+    const warn=ARENAS.quake.warn, u=on.nx!==undefined&&on.nx<=warn?1-on.nx/warn:0, jit=CALM?0:u*2.5;
+    L.strokeStyle=col; L.globalAlpha=(0.55+0.45*u)*k; L.lineWidth=3+2*u; L.beginPath();
+    for(let x=B.x0,i=0;x<=B.x1+24;x+=24,i++){ const y=B.fy+2-(i%2?4+14*u:0)-arenaRnd(i,7)*4+Math.sin(now/19+i)*jit; i?L.lineTo(x,y):L.moveTo(x,y); } L.stroke();
+    if(u>0) for(const f of v.f) if(f.g){ L.globalAlpha=u*k; L.lineWidth=4; for(const dx of [-26,0,26]){ L.beginPath(); L.moveTo(f.x+dx-7,GY-f.y-4-u*6); L.lineTo(f.x+dx,GY-f.y-14-u*20); L.lineTo(f.x+dx+7,GY-f.y-4-u*6); L.stroke(); } }
+  }else if(on.id==='ring'&&on.l!==undefined&&!DESK){
+    L.fillStyle=col; L.globalAlpha=0.14*k; L.fillRect(B.x0,B.top,on.l-B.x0,B.bot-B.top); L.fillRect(on.r,B.top,B.x1-on.r,B.bot-B.top);
+  }
+  L.restore();
+}
+// In front of the fighters: the dark of night, rain, the ring's walls; then the burst, the plate and the cues at the hand.
+function arenaFront(v,now){
+  if(!v.ar) return;
+  const on=arenaNow(v), B=arenaBox(v), T=now/1000, w=B.x1-B.x0, h=B.fy-B.top, slow=CALM?0.3:1;
+  L.save(); L.lineCap='round'; L.lineJoin='round';
+  if(on){
+    const k=arenaK(on), col=PCOL[on.side];
+    L.save(); L.beginPath(); L.rect(B.x0,B.top,w,B.bot-B.top); L.clip();
+    if(on.id==='night'){
+      const lit=ARENAS.night.lit, at=i=>[v.f[i].x,GY-v.f[i].y-50*(v.f[i].sc||1),lit[i===on.side?0:1]*(0.5+0.5*k)];
+      if(!DESK){
+        const cw=Math.ceil(cv.width/2), ch=Math.ceil(cv.height/2); if(!arenaDark) arenaDark=document.createElement('canvas'); if(arenaDark.width!==cw||arenaDark.height!==ch){ arenaDark.width=cw; arenaDark.height=ch; }
+        const g=arenaDark.getContext('2d'); g.setTransform(1,0,0,1,0,0); g.globalCompositeOperation='source-over'; g.clearRect(0,0,cw,ch); g.setTransform(VS/2,0,0,VS/2,OX*VS/2,OY/2);
+        g.fillStyle='rgba(6,8,24,'+(0.94*k).toFixed(3)+')'; g.fillRect(B.x0,B.top,w,B.bot-B.top); g.globalCompositeOperation='destination-out';
+        for(const i of [0,1]){ const [x,y,r]=at(i), q=g.createRadialGradient(x,y,r*0.55,x,y,r); q.addColorStop(0,'rgba(0,0,0,1)'); q.addColorStop(1,'rgba(0,0,0,0)'); g.fillStyle=q; g.beginPath(); g.arc(x,y,r,0,7); g.fill(); }
+        L.save(); L.setTransform(1,0,0,1,0,0); L.drawImage(arenaDark,0,0,cv.width,cv.height); L.restore();
+      }
+      for(const i of [0,1]){ const [x,y,r]=at(i), mine=i===on.side; L.strokeStyle=mine?PFLASH[on.side]:'#9aa0b4'; L.globalAlpha=(mine?0.9:0.5)*k; L.lineWidth=mine?3:1.5; L.setLineDash(mine?[14,9]:[4,8]); L.lineDashOffset=-T*30*slow; L.beginPath(); L.arc(x,y,r*0.86,0,7); L.stroke(); }
+      L.setLineDash([]);
+    }else if(on.id==='rain'){
+      // a cloud bank in the holder's colour along the top; drops stop at whatever gives cover
+      const roofs=ARENA_PLATS.map(p=>[p.x0,p.x1,GY-p.y]); for(const o of wobj.values()) if(o.kind!=='popup'&&o.w>0) roofs.push([o.x,o.x+o.w,GY+o.y]);
+      L.fillStyle=col; L.globalAlpha=0.55*k; for(let x=B.x0-20+((T*12*slow)%44),i=0;x<B.x1+30;x+=44,i++){ L.beginPath(); L.arc(x,B.top+4,24+arenaRnd(i,9)*10,0,7); L.fill(); }
+      L.strokeStyle=PEN.water; L.lineWidth=2.5;
+      for(let i=0;i<(CALM?36:120);i++){ const x=B.x0+arenaRnd(i,1)*w, u=(arenaRnd(i,2)+T*slow*(1.3+arenaRnd(i,3)*0.9))%1, y=B.top+26+u*(h-26); let stop=B.fy; for(const q of roofs) if(x>=q[0]&&x<=q[1]&&q[2]>B.top+26&&q[2]<stop) stop=q[2];
+        if(y<stop-4){ L.globalAlpha=0.6*k; L.beginPath(); L.moveTo(x+4,y-15); L.lineTo(x,y); L.stroke(); }
+        else if(y<stop+26){ L.globalAlpha=0.5*k; L.beginPath(); L.moveTo(x-6,stop-5); L.lineTo(x-2,stop-1); L.moveTo(x+6,stop-5); L.lineTo(x+2,stop-1); L.stroke(); } }
+    }else if(on.id==='ring'&&on.l!==undefined){
+      const moving=on.t<ARENAS.ring.close?1:on.max-on.t<ARENAS.ring.open?-1:0;
+      for(const [x,dir] of [[on.l,1],[on.r,-1]]){ L.strokeStyle=col; L.globalAlpha=0.95*k; L.lineWidth=7; L.beginPath(); L.moveTo(x,B.fy+2); L.lineTo(x,B.top); L.stroke();
+        L.lineWidth=2.5; L.globalAlpha=0.6*k; for(let y=B.fy-10;y>B.top;y-=22){ L.beginPath(); L.moveTo(x,y); L.lineTo(x-dir*12,y-12); L.stroke(); }      // hatching on the outside face
+        if(moving){ L.lineWidth=4; L.globalAlpha=0.9*k; for(let y=B.fy-60;y>B.top+20;y-=110){ const ax=x+dir*moving*(14+((T*40*slow)%10)); L.beginPath(); L.moveTo(ax-dir*moving*9,y-9); L.lineTo(ax,y); L.lineTo(ax-dir*moving*9,y+9); L.stroke(); } } }
+    }
+    L.restore(); L.globalAlpha=1;
+    // the burst out of the weapon that set it off
+    if(arenaFx&&arenaFx.id===on.id&&arenaFx.side===on.side){ const u=(now-arenaFx.t0)/700; if(u>=0&&u<1){ const q=ease(u); L.strokeStyle=col; for(const m of [1,0.6]){ L.globalAlpha=(1-u)*0.8; L.lineWidth=(CALM?4:10)*(1-u)+1; L.beginPath(); L.arc(arenaFx.x,GY-arenaFx.y,(30+q*520)*m,0,7); L.stroke(); } } }
+    // the plate: what it is, whose weapon, how long is left
+    { const it=v.items[on.side][on.slot], A=ARENAS[on.id], left=Math.max(0,1-on.t/on.max), pw=168, ph=40, px=DESK?ARENA_W/2-pw/2:B.x0+10, py=DESK?B.fy-430:B.top+10, blink=!CALM&&on.max-on.t<1&&Math.floor(now/130)%2;
+      L.globalAlpha=blink?0.55:0.95; L.fillStyle='#fffdf6'; L.strokeStyle=col; L.lineWidth=2.5; L.beginPath(); L.rect(px,py,pw,ph); L.fill(); L.stroke();
+      L.fillStyle=col; L.textAlign='left'; L.font='bold 17px "Gochi Hand",cursive'; L.fillText(A.name,px+8,py+17);
+      L.font='11px sans-serif'; L.fillStyle='#59658a'; L.fillText((NAME[on.side]+'’s '+(it?it.name:'weapon')).slice(0,26),px+8,py+29);
+      L.fillStyle='#d9dbe4'; L.fillRect(px+6,py+33,pw-12,4); L.fillStyle=col; L.fillRect(px+6,py+33,(pw-12)*left,4);
+      if(on.nx!==undefined){ const u=1-Math.min(1,on.nx/ARENAS.quake.every); L.strokeStyle=col; L.lineWidth=3; L.beginPath(); L.arc(px+pw-18,py+16,9,-Math.PI/2,-Math.PI/2+u*Math.PI*2); L.stroke(); }      // quake: a dial that closes as the next jolt comes
+      L.globalAlpha=1; }
+  }
+  // at the hand: is this weapon's block ready (a turning star), cooling down (a ring that fills), or running now (a double ring)?
+  for(const i of [0,1]){
+    const f=v.f[i], s=f.held, id=v.ar.it[i]&&v.ar.it[i][s], p=anim[i]&&anim[i].pose; if(!id||!p||f.hp<=0||(net&&v.phase==='draw'&&i!==net.side&&net.side>=0)) continue;
+    const sc=K*(f.sc||1), x=f.x+(p[12]+Math.cos(p[22])*34)*sc*f.face, y=GY-f.y+(p[13]+Math.sin(p[22])*34)*sc, rd=v.ar.rd[i][s], col=PCOL[i], live=on&&on.side===i&&on.slot===s;
+    L.strokeStyle=col; L.fillStyle=col; L.globalAlpha=0.9;
+    if(live){ L.lineWidth=3; for(const r of [15,23]){ L.beginPath(); L.arc(x,y,r+2*Math.sin(T*8*slow+r),0,7); L.stroke(); } }
+    else if(rd>0){ L.globalAlpha=0.25; L.lineWidth=3; L.beginPath(); L.arc(x,y,14,0,7); L.stroke(); L.globalAlpha=0.8; L.beginPath(); L.arc(x,y,14,-Math.PI/2,-Math.PI/2+(1-rd/ARENA_CD)*Math.PI*2); L.stroke(); }
+    else{ const r=13+3*Math.sin(T*6*slow), a0=T*2.2*slow; L.globalAlpha=0.22; L.beginPath(); L.arc(x,y,r*1.7,0,7); L.fill(); L.globalAlpha=0.95; L.save(); L.translate(x,y); L.rotate(a0); L.lineWidth=2; L.strokeStyle='#fffdf6'; L.beginPath(); for(let n=0;n<8;n++){ const q=n%2?r*0.38:r*1.25, a=n*Math.PI/4; n?L.lineTo(Math.cos(a)*q,Math.sin(a)*q):L.moveTo(Math.cos(a)*q,Math.sin(a)*q); } L.closePath(); L.fill(); L.stroke();
+      L.restore(); for(const m of [0,Math.PI]){ L.beginPath(); L.arc(x+Math.cos(-a0*1.6+m)*26,y+Math.sin(-a0*1.6+m)*26,3,0,7); L.fill(); } }
+  }
+  L.restore();
+}
 function render(now){
   const v=koView||view, age=net&&!v.hs&&!koView&&(v.phase==='fight'||v.phase==='end')?Math.min(0.08,(now-viewAt)/1000):0, dt=Math.max(0,Math.min(0.05,(now-(lastRender||now))/1000)); lastRender=now;
   fitCanvas(); L.setTransform(1,0,0,1,0,0); L.clearRect(0,0,cv.width,cv.height); L.setTransform(VS,0,0,VS,OX*VS,OY);
@@ -5539,6 +5771,7 @@ function render(now){
   if(!v.sheet) for(const p of ARENA_PLATS){ L.beginPath(); L.moveTo(p.x0+(terrain?3:0),GY-p.y+(terrain?0:2)); L.lineTo(p.x1-(terrain?3:0),GY-p.y+(terrain?0:2)); L.stroke(); }
   L.globalAlpha=1; L.strokeStyle='#111';
   worldBack(v,now); leavesDraw(v,now,0);
+  arenaBack(v,now);      // arena customizations: what lies behind the fighters
   // an ultimate is playing: the stage goes dark around its caster (see ultBack)
   ultBack(v,now);
   // projectiles
@@ -5592,6 +5825,7 @@ function render(now){
   if(v.mo) for(const m of v.mo){ const T=TELLS[m.c], ma=v.ul?0:age; if(T&&T.mote){ L.save(); T.mote(L,m,{x:m.x+m.vx*ma,y:GY-(m.y+m.vy*ma),now,v,col:tellCol(v,m.side,m.slot)}); L.restore(); } }      // wielder customizations: motes, over the fighters
   worldFront(v,now);
   if(v.sheet) sheetFront(v,now);
+  arenaFront(v,now);     // arena customizations: what lies in front of them
   hpGhostStep(v,now,dt);
   // effects
   fx=fx.filter(e=>now-e.t0<(e.e==='rule'?900:700));
@@ -5787,7 +6021,7 @@ function labSummon(){
   else if(sim.items[1][0]){ sim.items[1][0]=null; setArt(1,0,null); }
   const tip=$('labSummonTip'); if(tip) tip.textContent=LAB_SUMMON_TIP[lab.cu||'']+(lab.cu?' Cost: '+summonCost(sim.items[0][0].customs[0])+' points.':'');
   document.querySelectorAll('#labSummons button[data-cu]').forEach(b=>b.classList.toggle('on',b.dataset.cu===(lab.cu||'')));
-}
+labArenaApply(); }
 function labPlace(gap){ const a=sim.f[0], b=sim.f[1], g=gap||lab.gap, x0=Math.max(60,Math.min(ARENA_W-60-g,ARENA_W/2-g/2-60));
   for(const f of [a,b]){ f.y=0; f.vx=f.vy=0; f.ground=true; f.act=null; f.hurt=0; f.stun=0; f.dash=0; f.burn=0; f.slow=0; f.shield=0; f.hp=HP; f.tfx={}; f.scale=f.scaleGoal=1; }
   a.x=x0; b.x=lab.aside?Math.max(20,x0-90):x0+g; a.face=1; b.face=-1; sim.pr.length=0; }
@@ -5838,6 +6072,17 @@ function labMoves(){
     +btn('ult','Ultimate: '+ULTS[st].name,undefined,'ult')+btn('hit','Take a hit')+btn('bighit','Take a big hit')+btn('trade','Trade blows')+btn('drop','Drop from high')+btn('jump3','Jump \u00d73');
   box.querySelectorAll('button').forEach(b=>b.onclick=()=>{ b.blur(); labPlay(b.dataset.m,b.dataset.alt===''?undefined:+b.dataset.alt); });
 }
+// arena customizations on the tester: "Arena block" puts one on the weapon under test (then land the combo's last hit or a
+// charged shot to set it off; the star at the hand shows when it is ready), "Set off now" starts one outright.
+function labArenaApply(){ if(sim) sim.arenaSet(0,0,lab.arena?[{id:lab.arena}]:[]); }
+function labArenaBuild(el){
+  const ids=Object.keys(ARENAS), low=id=>ARENAS[id].name.charAt(0)+ARENAS[id].name.slice(1).toLowerCase();
+  el.insertAdjacentHTML('beforeend',`<div class="row"><b>Arena block</b><span id="labArena" class="row" style="margin:0"><button data-a="" class="on">None</button>`+ids.map(id=>`<button data-a="${id}" title="${ARENAS[id].cost} points">${low(id)}</button>`).join('')+`</span></div>
+    <div class="row"><b>Set off now</b><span id="labArenaGo" class="row" style="margin:0">`+ids.map(id=>`<button data-a="${id}">${low(id)}</button>`).join('')+`</span></div>`);
+  const box=el.querySelector('#labArena');
+  box.querySelectorAll('button').forEach(b=>b.onclick=()=>{ b.blur(); lab.arena=b.dataset.a; box.querySelectorAll('button').forEach(o=>o.classList.toggle('on',o===b)); labArenaApply(); });
+  el.querySelectorAll('#labArenaGo button').forEach(b=>b.onclick=()=>{ b.blur(); if(sim) sim.startArena(0,b.dataset.a); });
+}
 function labBuild(){
   document.body.classList.add('lab'); document.title='Doodle Duel: move tester';
   const css=document.createElement('style'); css.textContent=`
@@ -5870,6 +6115,7 @@ function labBuild(){
     <p id="labCostNote" style="margin:0"></p>`;
   document.querySelector('.arenawrap').after(el);
   labShapeBuild(el);      // shape: the customization row
+  labArenaBuild(el);      // arena customizations: their own two rows
   const styles=$('labStyles'), els=$('labEls');
   styles.innerHTML=Object.keys(LAB_STOCK).map(s=>`<button data-s="${s}">${LAB_NAME[s]}</button>`).join('');
   const pickStyle=s=>{ lab.style=s; lab.last=null; styles.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.s===s)); labEquip(); labMoves(); labPlace(); };
