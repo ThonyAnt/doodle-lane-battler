@@ -43,6 +43,8 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   const sse=(res,event,data)=>res.write('event: '+event+'\ndata: '+JSON.stringify(data)+'\n\n');
   const broadcast=(room,event,data)=>{ for(const c of room.clients) sse(c.res,event,data); };
   function present(room){ const p=[false,false]; for(const c of room.clients) if(c.side>=0) p[c.side]=true; return p; }
+  // Who is here: the two seats, and whether a big screen is showing the match (players' devices then act as sketchbook and controller only).
+  const roster=room=>({present:present(room),screen:[...room.clients].some(c=>c.watch)});
   // 30 ticks a second. The match only advances while both players are connected.
   setInterval(()=>{
     const now=Date.now();
@@ -121,13 +123,13 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
         side=!taken.includes(0)?0:(!taken.includes(1)?1:-1);
         if(side>=0) room.players.set(id,side);
       }
-      const client={res,id,side,seq:-1}; room.clients.add(client); room.seen=Date.now();
+      const client={res,id,side,seq:-1,watch}; room.clients.add(client); room.seen=Date.now();
       sse(res,'hello',{side,code:room.code,watch});
       room.art.forEach((a,s)=>a.forEach((x,slot)=>{ if(x) sse(res,'item',{side:s,slot,strokes:x.strokes,ver:x.ver,kind:x.kind,style:x.style}); }));
-      broadcast(room,'players',{present:present(room)});
+      broadcast(room,'players',roster(room));
       sse(res,'state',room.sim.snapshot());
       req.on('close',()=>{
-        room.clients.delete(client); broadcast(room,'players',{present:present(room)});
+        room.clients.delete(client); broadcast(room,'players',roster(room));
         if(side>=0&&!present(room)[side]) room.sim.setInput(side,Object.assign({},room.sim.cnt[side],{l:0,r:0,d:0}));
       });
       return true;

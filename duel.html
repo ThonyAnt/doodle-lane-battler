@@ -14,7 +14,7 @@
   color-scheme:light;
 }
 *{box-sizing:border-box}
-html,body{margin:0}
+html,body{margin:0;touch-action:manipulation}
 body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.4;
   background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
   background-size:24px 24px;-webkit-tap-highlight-color:transparent}
@@ -64,6 +64,59 @@ body.screen .qr{width:min(300px,24vw,38vh);height:min(300px,24vw,38vh)}
 .seats{display:flex;gap:10px;justify-content:center;margin:0 0 12px}
 .seats span{border:2px solid var(--ink);border-radius:999px;padding:2px 12px;font-weight:700;background:#fff}
 .seats span.in{color:#fff}
+/* Player view: when the room has a big screen, a player's device is only a sketchbook and then a controller. */
+.who{font-weight:700;color:#fff;border:2px solid var(--ink);border-radius:999px;padding:3px 14px}
+body.handheld{overscroll-behavior:none;user-select:none;-webkit-user-select:none}
+body.handheld .controls,body.handheld .rules,body.handheld #arena{display:none}
+body.handheld .overlay{position:static;background:none;padding:8px}
+body.handheld .overlay .box{border:0;box-shadow:none;padding:2px 8px}
+body.handheld .overlay h2{font-size:19px;margin:0}
+body.handheld .overlay p{font-size:13px}
+/* The sketchbook fills exactly one screen, so nothing needs scrolling: the pad takes all the room that is left and keeps its
+   shape, with the tools beside it on a wide screen and beneath it on a tall one. */
+body.handheld:not(.playing){overflow:hidden}
+body.handheld:not(.playing) main{height:100vh;height:100dvh;overflow:hidden;gap:8px;padding:8px 12px}
+body.handheld .hud{padding:5px 10px}
+body.handheld .desks{flex:1;min-height:0;display:block}
+body.handheld .desk{height:100%;overflow:auto;display:grid;gap:8px 12px;grid-template-columns:minmax(0,1fr) minmax(280px,32%);grid-template-rows:auto auto auto auto minmax(0,1fr);
+  grid-template-areas:"pad slots" "pad ink" "pad actions" "pad read" "pad stock"}
+body.handheld .desk h2{display:none}
+body.handheld .slots{grid-area:slots;grid-template-columns:1fr} body.handheld .padrow{grid-area:pad;min-height:0} body.handheld .inkrow{grid-area:ink}
+body.handheld .actions{grid-area:actions} body.handheld .read{grid-area:read} body.handheld .stock{grid-area:stock;align-content:start}
+body.handheld .padbox{max-width:none;container-type:size;display:flex;align-items:center;justify-content:center}
+body.handheld .pad{width:min(100cqw,160cqh);height:min(100cqh,62.5cqw);aspect-ratio:auto}
+body.handheld .desk button{min-height:40px}
+body.handheld .slot{padding:8px 10px}
+body.handheld .actions .undo,body.handheld .actions .clear{flex:1 1 40%}
+body.handheld .actions .make,body.handheld .actions .ready{flex:1 1 40%;min-height:48px;font-size:16px;margin:0;white-space:nowrap}
+body.handheld .stock button{font-size:14px;padding:3px 10px;min-height:34px}
+body.handheld .stock span{font-size:12px}
+body.handheld .pen{width:40px;height:40px}
+@media (max-aspect-ratio:1/1){
+  body.handheld .desk{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto auto auto auto;grid-template-areas:"slots" "pad" "ink" "actions" "read" "stock"}
+  body.handheld .slots{grid-template-columns:1fr 1fr}
+  body.handheld .padrow{flex-direction:column}
+  body.handheld .pens{flex-direction:row;justify-content:center;gap:14px}
+}
+/* The controller is two thumb clusters in the bottom corners, where the thumbs rest when a tablet is held in both hands:
+   move left and right (with down beneath) under the left thumb, the two drawings (with jump above) under the right. */
+body.handheld.playing{touch-action:none;overflow:hidden}
+body.handheld .tcs{position:fixed;left:0;right:0;bottom:0;margin:0;pointer-events:none;
+  padding:0 max(20px,env(safe-area-inset-right)) max(22px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left))}
+body.handheld .tc{--b:clamp(74px,13.5vw,136px);background:none;border:0;padding:0;min-width:0;align-items:flex-end;pointer-events:none}
+body.handheld .tc .keys{display:none}
+body.handheld .tc .grp{display:grid;grid-template-columns:var(--b) var(--b);gap:12px;pointer-events:auto;touch-action:none}
+body.handheld .tc .grp:first-child{grid-template-areas:"l r" "d d"}
+body.handheld .tc .grp:last-child{grid-template-areas:"j j" "a b"}
+body.handheld .tc [data-k="l"]{grid-area:l} body.handheld .tc [data-k="r"]{grid-area:r} body.handheld .tc [data-k="d"]{grid-area:d}
+body.handheld .tc [data-k="a"]{grid-area:a} body.handheld .tc [data-k="b"]{grid-area:b} body.handheld .tc [data-k="j"]{grid-area:j}
+body.handheld .tc button{height:var(--b);min-width:0;font-size:calc(var(--b)*.36);border-width:3px;border-radius:24px;box-shadow:0 4px 0 var(--ink)}
+body.handheld .tc button.on{box-shadow:none;transform:translateY(4px)}
+body.handheld .tc [data-k="d"],body.handheld .tc [data-k="j"]{height:calc(var(--b)*.62);font-size:calc(var(--b)*.26)}
+body.handheld .tc [data-k="j"] small{display:inline;margin-left:8px}
+body.handheld .tc button small{font-size:13px;max-width:calc(var(--b) - 16px);margin:4px auto 0}
+body.handheld .tc[data-side="0"] button{border-color:var(--p1);box-shadow:0 4px 0 var(--p1)} body.handheld .tc[data-side="1"] button{border-color:var(--p2);box-shadow:0 4px 0 var(--p2)}
+body.handheld .tc[data-side] button.on{box-shadow:none}
 .code{letter-spacing:.12em;background:var(--hi);padding:0 8px;border-radius:6px}
 .link{font-weight:700;overflow-wrap:anywhere;user-select:all;-webkit-user-select:all;margin:4px 0}
 input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;padding:6px 10px;width:6.5em;text-transform:uppercase;color:var(--ink);background:#fff}
@@ -77,7 +130,8 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
 .slot b{font-weight:700}
 .slot[aria-pressed="true"]{background:#fff7d1;box-shadow:inset 0 -4px 0 var(--hi)}
 .padrow{display:flex;gap:10px;align-items:stretch}
-.pad{flex:1;min-width:0;border:2px dashed var(--ink);border-radius:10px;background:#fff;touch-action:none;cursor:crosshair;width:100%;height:auto;aspect-ratio:480/300;display:block;max-height:46vh}
+.padbox{flex:1;min-width:0;max-width:73.6vh}
+.pad{border:2px dashed var(--ink);border-radius:10px;background:#fff;touch-action:none;cursor:crosshair;width:100%;height:auto;aspect-ratio:480/300;display:block}
 .pens{display:flex;flex-direction:column;gap:6px}
 .pen{width:34px;height:34px;padding:0;border-radius:50%}
 .pen[aria-pressed="true"]{outline:3px solid var(--hi);outline-offset:2px}
@@ -118,6 +172,7 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
 <main>
   <header>
     <h1>Doodle Duel</h1>
+    <span class="who" id="who" hidden></span>
     <div class="controls">
       <span class="badge" id="reader">Drawings read by: local guess</span>
       <div class="seg" role="group" aria-label="Opponent">
@@ -509,7 +564,7 @@ const GY=392, cv=$('arena'), L=cv.getContext('2d');
 // Match the canvas backing store to the screen's real pixels so lines stay sharp on high-density displays.
 // During a fight the arena fills the window's width. If that would make it taller than the screen allows, the height is
 // capped and the view simply shows more floor either side of the arena (OX), so nothing is stretched and the rules do not change.
-let VS=1, OX=0, VW=960, playing=false, bigScreen=false;
+let VS=1, OX=0, VW=960, playing=false, bigScreen=false, padView=false;
 function fitCanvas(){
   const r=Math.min(3,window.devicePixelRatio||1), cw=cv.clientWidth||960, full=cw*440/960;
   const ch=Math.round(playing?Math.max(240,Math.min(full,window.innerHeight*(bigScreen?0.86:0.64))):full);
@@ -571,7 +626,7 @@ function buildDesks(){
     const el=document.createElement('div'); el.className='desk';
     el.innerHTML=`<h2><span class="dot" style="background:${PCOL[side]}"></span>${NAME[side]}'s sketchbook</h2>
       <div class="slots"><button class="slot" data-k="0" aria-pressed="true"></button><button class="slot" data-k="1" aria-pressed="false"></button></div>
-      <div class="padrow"><canvas class="pad" width="${PAD_W*2}" height="${PAD_H*2}" aria-label="Drawing pad"></canvas>
+      <div class="padrow"><div class="padbox"><canvas class="pad" width="${PAD_W*2}" height="${PAD_H*2}" aria-label="Drawing pad"></canvas></div>
         <div class="pens">${Object.keys(PEN).map((e,i)=>`<button class="pen" data-el="${e}" style="background:${PEN[e]}" aria-pressed="${i===0}" aria-label="${e==='none'?'Plain':e} ink" title="${e==='none'?'Plain':e} ink"></button>`).join('')}</div></div>
       <div class="inkrow"><span>Ink</span><div class="inkbar"><div class="have"></div><div class="cost"></div></div><span class="inkn"></span></div>
       <div class="actions"><button class="undo">Undo</button><button class="clear">Clear</button><button class="primary make">Make it!</button><button class="ready">I'm ready</button></div>
@@ -676,6 +731,12 @@ addEventListener('keydown',e=>{ if(e.target.tagName==='INPUT'||e.repeat&&keyTarg
   const t=keyTarget(e.code); if(!t||!view||view.phase==='draw'||view.phase==='over') return; e.preventDefault(); press(t[0],t[1],true); });
 addEventListener('keyup',e=>{ const t=keyTarget(e.code); if(t) press(t[0],t[1],false); });
 addEventListener('blur',()=>{ for(const s of [0,1]) for(const k of 'lrd') press(s,k,false); });
+// iPad Safari ignores the viewport's no-zoom setting, so stop the zoom gestures by hand: a second tap soon after the first
+// during a fight (the buttons use pointer events, so they still fire), and pinching at any time.
+let lastTap=0;
+document.addEventListener('touchend',e=>{ const now=Date.now(); if(playing&&now-lastTap<450&&e.cancelable) e.preventDefault(); lastTap=now; },{passive:false});
+document.addEventListener('gesturestart',e=>e.preventDefault());
+document.addEventListener('dblclick',e=>{ if(playing) e.preventDefault(); });
 function buildControls(){
   const box=$('tcs'); box.innerHTML='';
   for(const side of [0,1]){
@@ -684,7 +745,18 @@ function buildControls(){
     const el=document.createElement('div'); el.className='tc'; el.dataset.side=side;
     el.innerHTML=`<div class="grp"><button data-k="l" aria-label="Move left">◀</button><button data-k="d" aria-label="Down">▼</button><button data-k="r" aria-label="Move right">▶</button></div><div class="keys">${keys}</div>
       <div class="grp"><button data-k="a"><span class="cdfill"></span>A<small></small></button><button data-k="b"><span class="cdfill"></span>B<small></small></button><button data-k="j" aria-label="Jump">⤒<small>jump</small></button></div>`;
-    el.querySelectorAll('button').forEach(b=>{
+    // Movement is one touch zone: a thumb can slide between left, right and down without lifting, and a touch that lands
+    // in the gap between two buttons still counts for the nearest one.
+    const mv=el.querySelector('.grp'), mb=[...mv.querySelectorAll('button')]; let mp=null;
+    const at=e=>{ let hit=null, best=1e9;
+      for(const b of mb){ const r=b.getBoundingClientRect(), d=Math.hypot(Math.max(r.left-e.clientX,0,e.clientX-r.right),Math.max(r.top-e.clientY,0,e.clientY-r.bottom)); if(d<best){ best=d; hit=b; } }
+      return best<44?hit:null; };
+    const hold=b=>{ for(const x of mb){ const on=x===b; if(x.classList.contains('on')!==on){ x.classList.toggle('on',on); press(side,x.dataset.k,on); } } };
+    const lift=e=>{ if(e.pointerId===mp){ mp=null; hold(null); } };
+    mv.addEventListener('pointerdown',e=>{ e.preventDefault(); if(mp!==null) return; mp=e.pointerId; try{ mv.setPointerCapture(mp); }catch(_){} hold(at(e)); });
+    mv.addEventListener('pointermove',e=>{ if(e.pointerId===mp) hold(at(e)); });
+    mv.addEventListener('pointerup',lift); mv.addEventListener('pointercancel',lift); mv.addEventListener('contextmenu',e=>e.preventDefault());
+    el.querySelectorAll('.grp:last-child button').forEach(b=>{
       const k=b.dataset.k, off=()=>{ b.classList.remove('on'); press(side,k,false); };
       b.addEventListener('pointerdown',e=>{ e.preventDefault(); try{ b.setPointerCapture(e.pointerId); }catch(_){} b.classList.add('on'); press(side,k,true); });
       b.addEventListener('pointerup',off); b.addEventListener('pointercancel',off); b.addEventListener('contextmenu',e=>e.preventDefault());
@@ -699,7 +771,7 @@ function resetLocal(){
 }
 function setMode(m){
   mode=m; for(const b of ['Bot','2p','Online','Practice']) $('mode'+b).setAttribute('aria-pressed',m===b.toLowerCase());
-  if(net){ net.es.close(); net=null; } setScreen(false); sim=null; bot=null; resetLocal(); lastPhase=''; overlayKey='';
+  if(net){ net.es.close(); net=null; } setScreen(false); setPad(); sim=null; bot=null; resetLocal(); lastPhase=''; overlayKey='';
   if(m==='online'){ local=[false,false]; view=createDuel().snapshot(); buildDesks(); buildControls(); const code=(location.hash||'').slice(1).toUpperCase(); if(/^[A-Z]{4}$/.test(code)) joinRoom(code,watched()===code); return; }
   if(location.hash) history.replaceState(null,'',location.pathname);
   local=m==='2p'?[true,true]:[true,false]; sim=createDuel({practice:m==='practice'});
@@ -714,6 +786,12 @@ function post(body){ if(!net) return; fetch('/duel/act',{method:'POST',headers:{
 // The room it is showing is remembered for this tab, so a reload comes back as the screen and not as a player.
 const watched=()=>{ try{ return sessionStorage.getItem('dd-watch')||''; }catch(e){ return ''; } };
 function setScreen(on){ bigScreen=on; document.body.classList.toggle('screen',on); fitCanvas(); }
+// Player view: a player in a room that has a big screen sees only the sketchbook, then only the controller.
+function setPad(){
+  const on=!!(net&&net.side>=0&&net.screen); if(on===padView) return;
+  padView=on; document.body.classList.toggle('handheld',on); lastPhase=''; overlayKey='';
+  const w=$('who'); w.hidden=!on; if(on){ w.textContent='You are '+NAME[net.side]; w.style.background=PCOL[net.side]; }
+}
 async function createRoom(watch){
   try{ const r=await fetch('/duel/room',{method:'POST'}); const o=await r.json(); if(!r.ok) throw new Error(o.error); joinRoom(o.code,watch===true); }
   catch(e){ alert('Could not create a room: '+(e.message||'the server did not answer')); }
@@ -721,12 +799,13 @@ async function createRoom(watch){
 function joinRoom(code,watch){
   if(net) net.es.close();
   watch=!!watch; try{ if(watch) sessionStorage.setItem('dd-watch',code); else sessionStorage.removeItem('dd-watch'); }catch(e){}
-  const es=new EventSource('/duel/events?room='+code+'&id='+cid+(watch?'&watch=1':'')); net={code,es,side:-1,watch,present:[false,false],seq:Date.now(),gone:false};
-  setScreen(watch);
+  const es=new EventSource('/duel/events?room='+code+'&id='+cid+(watch?'&watch=1':'')); net={code,es,side:-1,watch,screen:false,present:[false,false],seq:Date.now(),gone:false};
+  setScreen(watch); setPad();
   history.replaceState(null,'','#'+code); resetLocal();
   const on=(name,fn)=>es.addEventListener(name,e=>{ if(net&&net.es===es) fn(JSON.parse(e.data)); });
-  on('hello',d=>{ net.side=d.side; local=[d.side===0,d.side===1]; buildDesks(); buildControls(); lastPhase=''; });
-  on('players',d=>{ net.present=d.present; });
+  on('hello',d=>{ net.side=d.side; local=[d.side===0,d.side===1]; buildDesks(); buildControls(); lastPhase=''; setPad(); });
+  // Once a big screen has been seen the player view stays, so the screen reloading does not flip the layout mid-fight.
+  on('players',d=>{ net.present=d.present; net.screen=net.screen||!!d.screen; setPad(); });
   on('state',accept);
   on('item',d=>setArt(d.side,d.slot,d.strokes,d.ver,d.kind,d.style));
   on('reset',()=>{ for(const s of [0,1]) art[s]=[null,null]; fx=[]; for(const d of desk) if(d){ d.strokes=[]; d.k=0; } });
@@ -784,6 +863,7 @@ function syncUI(){
     $('mkRoom').onclick=()=>{ const w=net.watch; net=null; history.replaceState(null,'',location.pathname); createRoom(w); };
   }else if(key.startsWith('wait')){
     const isLocal=/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname), base=isLocal&&serverInfo.lanUrl?serverInfo.lanUrl:location.origin, url=base+'/duel#'+net.code;
+    if(padView){ o.innerHTML=`<div class="box"><h2>Waiting for ${NAME[1-net.side]} to scan the big screen</h2><p style="margin:0">You can start drawing now.</p></div>`; return; }
     const head=net.watch?`<h2>Scan to play · room <span class="code">${net.code}</span></h2>
       <div class="seats">${[0,1].map(s=>`<span class="${net.present[s]?'in':''}" style="${net.present[s]?'background:'+PCOL[s]:''}">${NAME[s]}: ${net.present[s]?'joined ✓':'waiting…'}</span>`).join('')}</div>
       <p>The first two devices to scan are Blue and Red. This screen shows the fight.</p>`
