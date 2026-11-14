@@ -4,8 +4,11 @@ Where a scene plugs into the code, using the spreadsheet stage as the pattern. I
 number, because `duel.html` changes daily; search for them. The repo's `CLAUDE.md` has a bullet headed "Spreadsheet
 stage" that describes the current implementation in more detail; read it too, and update it when you add a scene.
 
-Read the spreadsheet stage's code end to end before writing a new scene. Search `duel.html` for `sheet` (rules and
-page) and `duel-server.js` for `stage`.
+Read the existing scenes' code end to end before writing a new one. Search `duel.html` for `sheet` and for `deck`
+(rules and page) and `duel-server.js` for `stage`. The slideshow (`deck`) is the newer of the two and shows two things
+the spreadsheet does not: geometry shared between rules and page (`deckLayout`, `deckCover`, defined at the top level
+of the rules block so both sides call the same functions), and replacing the whole arena through a transition
+(`deckMix`).
 
 ## The three places a scene lives
 
@@ -83,6 +86,9 @@ the scene as a parameter instead of copying it.
 - **Works on every screen.** The retro desktop embeds the scene in the program's window; phones and tablets used as
   controllers, the plain layout (`?plain=1`) and the big screen each draw it their own way. Check what the
   spreadsheet does in each before assuming.
-- **One stage at a time.** `STAGE`, the server and `createDuel` currently treat "a stage" as "the sheet or nothing".
-  Adding a second scene is the moment to turn those into a small table of scenes (id, reset, tick, view, draw), so
-  the third costs less than the second.
+- **Scenes are wired side by side.** `S.sheet` and `S.deck` each have their own reset, tick and view, hooked into the
+  same handful of places (`createDuel`, `resetWorld`, `setPlats`, `setLayout`, `tick`, `snapshot`; on the page
+  `sceneKind`, the body class, `render`; on the server `newRoom`). Adding a third is the moment to turn those hooks
+  into a small table of scenes (id, reset, tick, view, draw), so the fourth costs less than the third.
+- **The program's toolbars share holders.** Both programs' toolbar rows live in `#xlbar` and `#xltabs`, each row
+  tagged `forsheet` or `fordeck`, and the body class decides which show. A new program adds its own tag.

@@ -6,8 +6,8 @@ description: Design and build a new fight scene (stage, arena, level, map) for D
 # Scene creation for Doodle Duel
 
 A scene is a late-90s program open on the game's retro desktop, with somebody using it while two stick figures fight
-inside the document. The program's interface is the arena. The one scene that exists today is the spreadsheet stage
-("Granola Sheets 97"): a banker builds an IPO model, the cells he fills in are the platforms, he deletes everything in a
+inside the document. The program's interface is the arena. Two scenes exist today. The second, the slideshow
+("Podium 97"), was built with this skill. The first is the spreadsheet stage ("Granola Sheets 97"): a banker builds an IPO model, the cells he fills in are the platforms, he deletes everything in a
 rage and `#REF!` errors rain down, then he notices the fighters and hunts them with the selection box. Read its script
 in `references/beat-sheet.md` before designing anything; it is the standard every new scene is measured against.
 
