@@ -186,7 +186,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       if(both){ if(room.bot){ room.bot(S,dt); if(S.phase==='draw'&&!S.ready[1]) S.setReady(1); } S.step(dt); }
       // The countdown has begun and the rules are still being written: it waits for them, once, and four seconds at most (S.setHold).
       if(S.phase==='count'&&room.forge.state==='working'&&room.forge.held!==S.round){ room.forge.held=S.round; S.setHold(D.FORGE_LIMITS.hold); } else if(S.phase==='draw') room.forge.held=null;
-      const live=both&&(S.phase==='count'||S.phase==='fight'||S.phase==='end');
+      const live=both&&(S.phase==='count'||S.phase==='fight'||S.phase==='end'||(S.phase==='over'&&(S.overT||0)<4.2));      // the ended state is sent at full rate while the fighters come to rest
       if(room.clients.size&&((live&&now-room.sent>=15)||room.dirty||now-room.sent>=250)){ broadcast(room,'state',S.snapshot()); room.sent=now; room.dirty=false; }
       if(room.clients.size) room.seen=now; else if(now-room.seen>10*60e3){ shelve(room); rooms.delete(room.code); }
     }
