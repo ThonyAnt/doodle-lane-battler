@@ -151,7 +151,7 @@ The server runs the match; each device only draws and displays, so both players 
 | Variable | Default | What it does |
 |---|---|---|
 | `OPENAI_API_KEY` | none | Key used by the server to read drawings |
-| `OPENAI_MODEL` | `gpt-4.1-mini` | Vision model that classifies the drawing |
+| `OPENAI_MODEL` | `gpt-6-luna` | Vision model that classifies the drawing |
 | `PORT` | `3000` | Port the server listens on |
 | `OPENAI_FORGE_MODEL` | `OPENAI_MODEL` | Model that writes the match rules (RuleForge) |
 | `FORGE` | on | `0` switches RuleForge off |

@@ -7,7 +7,7 @@ try{ for(const line of fs.readFileSync(path.join(root,'.env'),'utf8').split(/\r?
   const v=m[2].replace(/^(['"])(.*)\1$/,'$2'); if(v&&process.env[m[1]]===undefined) process.env[m[1]]=v; } }catch(e){}
 
 module.exports=function(tool){
-  const KEY=process.env.OPENAI_API_KEY, MODEL=process.env.OPENAI_FORGE_MODEL||process.env.OPENAI_MODEL||'gpt-4.1-mini';
+  const KEY=process.env.OPENAI_API_KEY, MODEL=process.env.OPENAI_FORGE_MODEL||process.env.OPENAI_MODEL||'gpt-6-luna';
   const BASE=(process.env.OPENAI_BASE_URL||'https://api.openai.com/v1').replace(/\/$/,'');
   if(!KEY){
     console.error(tool+' asks the real model, and OPENAI_API_KEY is not set.\nPut OPENAI_API_KEY=... in the .env file next to server.js (or in the environment) and run it again.');

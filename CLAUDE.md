@@ -149,7 +149,7 @@ Base health 500, match 90 s, ink max 100, refill 6/s (12/s in the last 30 s), in
 
 - Tested: match rules by simulation; single-device modes and a full online match between two headless browsers, all against a stand-in for the OpenAI endpoint.
 - Not tested: the real OpenAI API (accuracy and latency on doodles), real iPads and touch input, play over a slow network.
-- The original default model `gpt-4.1-nano` was retired by OpenAI; the default is now `gpt-4.1-mini`, checked against the real API (about 1 s per drawing).
+- The original default model `gpt-4.1-nano` was retired by OpenAI; the default was then `gpt-4.1-mini`, checked against the real API (about 1 s per drawing). The owner has since made `gpt-6-luna` the default for both the reader and RuleForge (`OPENAI_MODEL`; about 2 s per drawing with no thinking, by the note above `READ_EFFORT` in `duel-server.js`). Set `OPENAI_MODEL=gpt-4.1-mini` to go back. Not checked: whether a forge with this model fits its 6 s first-call time limit.
 
 ## Next steps the owner asked for
 
