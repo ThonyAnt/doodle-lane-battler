@@ -1,13 +1,13 @@
 // Doodle Lane Battler server: serves the page, reads drawings with OpenAI, and runs online rooms.
 // Run:  put your key in the .env file next to this script, then:  node server.js   (Node 18+, no dependencies)
-// Settings (.env or environment): OPENAI_API_KEY, OPENAI_MODEL (default gpt-4.1-nano), PORT (default 3000), OPENAI_BASE_URL.
+// Settings (.env or environment): OPENAI_API_KEY, OPENAI_MODEL (default gpt-4.1-mini), PORT (default 3000), OPENAI_BASE_URL.
 const http=require('http'), fs=require('fs'), path=require('path'), os=require('os');
 
 // Load KEY=value lines from a .env file next to this script (real environment variables win).
 try{ for(const line of fs.readFileSync(path.join(__dirname,'.env'),'utf8').split(/\r?\n/)){
   const m=line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/i); if(!m||line.trim().startsWith('#')) continue;
   const v=m[2].replace(/^(['"])(.*)\1$/,'$2'); if(v&&process.env[m[1]]===undefined) process.env[m[1]]=v; } }catch(e){}
-const KEY=process.env.OPENAI_API_KEY, MODEL=process.env.OPENAI_MODEL||'gpt-4.1-nano';
+const KEY=process.env.OPENAI_API_KEY, MODEL=process.env.OPENAI_MODEL||'gpt-4.1-mini';
 const BASE=(process.env.OPENAI_BASE_URL||'https://api.openai.com/v1').replace(/\/$/,''), PORT=+process.env.PORT||3000;
 const PROMPT="You are the referee of a drawing game. The attached image is a quick doodle a player drew to summon a unit.\nDecide what it is and classify it. Reply with JSON only, no other text:\n{\"name\":\"2-3 word name of what was drawn\",\"movement\":\"ground|flying|stationary\",\"attack\":\"melee|ranged|area|none\",\"element\":\"fire|water|plant|none\"}\nRules: movement is \"flying\" for anything with wings or that floats in air, \"stationary\" for buildings, walls, towers, traps and plants rooted in place, otherwise \"ground\".\nattack is \"ranged\" if it shoots or throws (bow, gun, wand, cannon), \"area\" if it explodes or splashes (bomb, wave, breath), \"none\" if it only blocks (wall, shield, rock), otherwise \"melee\".\nelement is \"fire\" for flames, heat or lava, \"water\" for water or ice, \"plant\" for leaves, wood or vines, otherwise \"none\". Ink colour is a hint (red fire, blue water, green plant) but the content of the drawing decides.\nAlways pick the closest fit, even for a scribble.";
 
@@ -120,11 +120,13 @@ function readBody(req,limit){
     req.on('end',()=>resolve(Buffer.concat(chunks))); req.on('error',reject);
   });
 }
+const duel=require('./duel-server.js')({readBody,KEY,MODEL,BASE});
 const FILES={'/':['index.html','text/html; charset=utf-8'],'/index.html':['index.html','text/html; charset=utf-8'],'/qrcode.js':['qrcode.js','text/javascript; charset=utf-8']};
 http.createServer(async (req,res)=>{
   const send=(code,obj)=>{ res.writeHead(code,{'Content-Type':'application/json','Cache-Control':'no-store'}); res.end(JSON.stringify(obj)); };
   const url=new URL(req.url,'http://x');
   try{
+    if(await duel(req,res,url)) return;
     if(req.method==='GET'&&FILES[url.pathname]){
       const [file,type]=FILES[url.pathname];
       res.writeHead(200,{'Content-Type':type,'Cache-Control':'no-cache'}); return fs.createReadStream(path.join(__dirname,file)).pipe(res);

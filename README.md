@@ -4,6 +4,12 @@ A one-lane battler where every unit is something you draw. Ink is the price: eac
 
 Hackathon MVP with three ways to play: against a bot, two players on one screen, or online with each player on their own device.
 
+## Doodle Duel (second game idea)
+
+Open `/duel` on the same server for a live two-player stickman fight. Before each round both players draw two things (a sword, a bow, a bomb, a shield, wings, a snack) and share 100 ink between them; the vision model decides what each drawing does and the ink spent sets how strong it is. Then you fight live: move, double jump, and use your two drawings. First to 2 rounds wins. It has the same three ways to play (bot, one screen, online rooms with a QR code).
+
+Keys: A/D move, W jump, S drop through a platform, F and G use your drawings. Second player on one screen: arrows, K and L. Touch buttons appear under the arena on tablets.
+
 ## Run
 
 Needs Node 18 or newer. No dependencies.
@@ -31,7 +37,7 @@ The server runs the match; each device only draws and displays, so both players 
 | Variable | Default | What it does |
 |---|---|---|
 | `OPENAI_API_KEY` | none | Key used by the server to read drawings |
-| `OPENAI_MODEL` | `gpt-4.1-nano` | Vision model that classifies the drawing |
+| `OPENAI_MODEL` | `gpt-4.1-mini` | Vision model that classifies the drawing |
 | `PORT` | `3000` | Port the server listens on |
 
 ## Rules
@@ -45,8 +51,9 @@ The server runs the match; each device only draws and displays, so both players 
 
 - `index.html`: the whole game (simulation, bot, drawing pads, rendering).
 - `server.js`: serves the page, reads drawings with OpenAI (the key never reaches the browser), and runs online rooms. It loads the match rules from the marked block in `index.html`, so there is one copy of the rules.
+- `duel.html` and `duel-server.js`: Doodle Duel. Same pattern: the rules sit in a marked block in `duel.html` and the server runs that block for online rooms.
 - `qrcode.js`: QR Code Generator by Kazuhiko Arase (MIT), used for the join code.
 
 ## Status
 
-Online play is tested with two browsers on one machine and a stand-in for the OpenAI endpoint. Not yet tested: the real OpenAI API, real tablets, and play over a slow network. Balance numbers and the bot's 15% handicap are first guesses.
+Online play is tested with two browsers on one machine and a stand-in for the OpenAI endpoint. Not yet tested: the real OpenAI API, real tablets, and play over a slow network. Doodle Duel is tested by simulation, a scripted two-client online match and a desktop browser; drawings were read by the real OpenAI API (`gpt-4.1-mini`, about 1 second each). Balance numbers and the bot's 15% handicap are first guesses.

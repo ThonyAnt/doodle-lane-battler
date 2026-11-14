@@ -9,6 +9,13 @@ Hackathon MVP. A one-lane battler where every unit is something the player draws
 - `qrcode.js`: vendored QR library (MIT). Do not edit.
 - `.env`: holds `OPENAI_API_KEY` (git-ignored). `.env.example` is the template.
 
+## Doodle Duel (`/duel`)
+
+- `duel.html`: live 2-player stickman fight with hand-drawn weapons and abilities. The block between `/*DUEL-START*/` and `/*DUEL-END*/` is the pure rules (item stats, physics, phases, bot). Keep it free of DOM access.
+- `duel-server.js`: routes under `/duel/` (`read`, `room`, `events`, `act`), loaded by `server.js`. Server-authoritative at about 30 Hz over Server-Sent Events; clients send held buttons plus press counts with a sequence number.
+- Phases: draw (two items, 100 shared ink) -> count -> fight (60 s) -> end; first to 2 rounds. Item kinds: melee, ranged, bomb, shield, dash, heal. Tuning lives in `itemStats`.
+- Bot-vs-bot simulation gives a median round of about 22 s; melee wins most often between bots. Not tested on real tablets.
+
 ## Online play
 
 - `POST /room` creates a room with a 4-letter code. `GET /events?room=CODE&id=CLIENT` is a Server-Sent Events stream (`hello`, `players`, `state`, `pending`, `spawn`, `cancel`, `reset`, `gone`). `POST /act` takes `start`, `reset` and `send` (strokes plus a PNG of the pad).
@@ -24,7 +31,7 @@ Base health 500, match 90 s, ink max 100, refill 6/s (12/s in the last 30 s), in
 
 - Tested: match rules by simulation; single-device modes and a full online match between two headless browsers, all against a stand-in for the OpenAI endpoint.
 - Not tested: the real OpenAI API (accuracy and latency on doodles), real iPads and touch input, play over a slow network.
-- The default model `gpt-4.1-nano` was picked from OpenAI's model list as the fastest small vision model; change `OPENAI_MODEL` if it reads doodles badly.
+- The original default model `gpt-4.1-nano` was retired by OpenAI; the default is now `gpt-4.1-mini`, checked against the real API (about 1 s per drawing).
 
 ## Next steps the owner asked for
 
