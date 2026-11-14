@@ -168,5 +168,132 @@ function parse(src){
   }
 }
 
-return {parse,LIMITS};
+// check(ast, env) -> [{line,col,msg}], empty when the code only touches what env offers and uses it the right way.
+// env is a table of what a rule may touch: a leaf is 'num', 'bool', 'str', 'mem' or 'fn(<argument types>)' with an
+// optional ':<result type>'; anything else in it is a table of leaves (me.x, Math.abs). The argument type 'who'
+// accepts only the bare names me and foe. Types are followed as far as they are certain: a value out of mem can be
+// anything, so only what is definitely wrong is reported.
+const MEM_NAME=/^[a-z][a-z0-9]{0,11}$/, own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
+const TYPE_WORD={num:'a number',bool:'true or false',str:'text'};
+function check(ast,env){
+  const errs=[], err=(n,msg)=>{ if(errs.length<12) errs.push({line:(n&&n.line)||1,col:(n&&n.col)||1,msg}); };
+  if(!ast||ast.t!=='prog'||!Array.isArray(ast.body)||!env||typeof env!=='object') return [{line:1,col:1,msg:'nothing to check'}];
+  const scopes=[new Map()], mem=new Set(); let locals=0;
+  const local=name=>{ for(let i=scopes.length-1;i>=0;i--) if(scopes[i].has(name)) return scopes[i].get(name); return null; };
+  const VAL=ty=>({k:'val',ty}), BADREF={k:'bad'};
+  const leaf=(n,v,name)=>{
+    if(v&&typeof v==='object') return {k:'obj',table:v,name};
+    if(v==='num'||v==='bool'||v==='str') return VAL(v);
+    if(v==='mem') return {k:'mem'};
+    const m=typeof v==='string'&&/^fn\(([a-z, ]*)\)(?::(num|bool|str))?$/.exec(v);
+    if(m) return {k:'fn',name,args:m[1].split(',').map(s=>s.trim()).filter(Boolean),ret:m[2]||''};
+    err(n,"'"+name+"' cannot be used"); return BADREF;
+  };
+  const memName=(n,name)=>{
+    if(!MEM_NAME.test(name)){ err(n,"'mem."+name+"' is not allowed: a mem name is 1 to 12 lower-case letters and digits, starting with a letter"); return; }
+    if(!mem.has(name)){ mem.add(name); if(mem.size===LIMITS.mem+1) err(n,'more than '+LIMITS.mem+' mem names'); }
+  };
+  const path=n=>n.t==='name'?n.name:n.t==='dot'?path(n.obj)+'.'+n.prop:'that';
+  // What a piece of code refers to: a value of some type, nothing (a call with no result), or a thing that is not a
+  // value by itself (me, Math, mem, a function).
+  function ref(n){
+    switch(n.t){
+      case 'num': return VAL('num');
+      case 'str': return VAL('str');
+      case 'bool': return VAL('bool');
+      case 'name': {
+        const l=local(n.name); if(l) return VAL(l.ty);
+        if(own(env,n.name)) return leaf(n,env[n.name],n.name);
+        err(n,"unknown name '"+n.name+"'"); return BADREF;
+      }
+      case 'dot': {
+        const o=ref(n.obj), what=path(n.obj);
+        if(o.k==='bad') return BADREF;
+        if(o.k==='mem'){ memName(n,n.prop); return VAL('any'); }
+        if(o.k==='obj'){ if(own(o.table,n.prop)) return leaf(n,o.table[n.prop],what+'.'+n.prop); err(n,"'"+what+"' has no '"+n.prop+"'"); return BADREF; }
+        err(n,o.k==='fn'?"'"+what+"' is a function: it can only be called":"'"+what+"' is a value: it has no '"+n.prop+"'"); return BADREF;
+      }
+      case 'call': {
+        const f=ref(n.callee), what=path(n.callee);
+        if(f.k!=='fn'){ if(f.k!=='bad') err(n.callee,"'"+what+"' is not a function"); for(const a of n.args) if(a.t!=='name'||(a.name!=='me'&&a.name!=='foe')) value(a); return BADREF; }
+        if(n.args.length!==f.args.length) err(n,"'"+what+"' takes "+f.args.length+' argument'+(f.args.length===1?'':'s')+' ('+f.args.join(', ')+') but was given '+n.args.length);
+        n.args.forEach((a,i)=>{
+          const want=f.args[i];
+          if(want==='who'){ if(a.t!=='name'||(a.name!=='me'&&a.name!=='foe')||ref(a).k!=='obj') err(a,'argument '+(i+1)+" of '"+what+"' must be the name me or the name foe"); return; }
+          const ty=value(a);
+          if(want&&ty!=='any'&&ty!==want) err(a,'argument '+(i+1)+" of '"+what+"' must be "+(TYPE_WORD[want]||want));
+        });
+        return f.ret?VAL(f.ret):{k:'void',name:what};
+      }
+      case 'un': {
+        const ty=value(n.e);
+        if(n.op==='!') return VAL('bool');
+        if(ty!=='any'&&ty!=='num') err(n,"'-' needs a number");
+        return VAL('num');
+      }
+      case 'bin': return VAL(binType(n,n.op,value(n.l),value(n.r)));
+      case 'cond': { value(n.test); const a=value(n.a), b=value(n.b); return VAL(a===b?a:'any'); }
+    }
+    err(n,'this cannot be used here'); return BADREF;
+  }
+  function binType(n,op,a,b){
+    const isNum=t=>t==='any'||t==='num';
+    if(op==='&&'||op==='||') return a===b?a:'any';
+    if(op==='=='||op==='!='||op==='==='||op==='!==') return 'bool';
+    if(op==='+'){
+      if(a==='bool'||b==='bool'||(a!=='any'&&b!=='any'&&a!==b)){ err(n,"'+' needs two numbers or two pieces of text"); return 'any'; }
+      return a==='any'?b:a;
+    }
+    if(!isNum(a)||!isNum(b)) err(n,"'"+op+"' needs two numbers");
+    return op==='<'||op==='<='||op==='>'||op==='>='?'bool':'num';
+  }
+  function value(n){
+    const r=ref(n);
+    if(r.k==='val') return r.ty;
+    if(r.k==='void') err(n,"'"+r.name+"' gives nothing back, so it cannot be used as a value");
+    else if(r.k!=='bad') err(n,"'"+path(n)+"' is not a value by itself"+(r.k==='fn'?': call it':r.k==='mem'?': use mem.name':': use one of its parts, like '+path(n)+'.'+Object.keys(r.table)[0]));
+    return 'any';
+  }
+  function inScope(fn){ scopes.push(new Map()); fn(); scopes.pop(); }
+  function stmt(n){
+    switch(n.t){
+      case 'block': inScope(()=>n.body.forEach(stmt)); return;
+      case 'let': {
+        const ty=value(n.init);
+        if(own(env,n.name)) err(n,"'"+n.name+"' is already the name of something in the game: pick another name");
+        else if(local(n.name)) err(n,"'"+n.name+"' is already declared");
+        else if(++locals===LIMITS.locals+1) err(n,'more than '+LIMITS.locals+' locals');
+        scopes[scopes.length-1].set(n.name,{ty,isConst:!!n.isConst}); return;
+      }
+      case 'set': {
+        const l=local(n.name), ty=value(n.value);
+        if(!l){ err(n,own(env,n.name)?"'"+n.name+"' cannot be changed: only locals and mem.name can":"'"+n.name+"' is not declared: use let "+n.name+' = ...'); return; }
+        if(l.isConst){ err(n,"'"+n.name+"' is a const and cannot be changed"); return; }
+        if(n.op==='=') l.ty=l.ty===ty?ty:'any'; else l.ty=binType(n,n.op[0],l.ty,ty);
+        return;
+      }
+      case 'mset': {
+        const ty=value(n.value);
+        if(!own(env,'mem')||env.mem!=='mem'||local('mem')){ err(n,'there is no mem here'); return; }
+        memName(n,n.name); if(n.op!=='=') binType(n,n.op[0],'any',ty);
+        return;
+      }
+      case 'if': value(n.test); inScope(()=>stmt(n.then)); if(n.else) inScope(()=>stmt(n.else)); return;
+      case 'ret': return;
+      case 'expr': unused(n.e); return;
+    }
+    err(n,'this is not a statement');
+  }
+  // An expression whose result is thrown away: a call that gives nothing back is fine here, also as  test && call();
+  function unused(n){
+    if(n.t==='call') ref(n);
+    else if(n.t==='bin'&&(n.op==='&&'||n.op==='||')){ value(n.l); unused(n.r); }
+    else if(n.t==='cond'){ value(n.test); unused(n.a); unused(n.b); }
+    else value(n);
+  }
+  try{ ast.body.forEach(stmt); }catch(e){ err(null,'the code could not be checked'); }     // only a tree that parse did not make can get here
+  return errs;
+}
+
+return {parse,check,LIMITS};
 });
