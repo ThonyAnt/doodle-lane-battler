@@ -1767,7 +1767,7 @@ function retroBuild(){
       el.value=RP[k]; out.textContent=(+RP[k]).toFixed(2); el.parentElement.title=tips[k]; el.oninput=()=>{ ANIM.rig.set(k,+el.value); out.textContent=(+el.value).toFixed(2); }; }
     const on=document.querySelector('#c-onion'), rg=document.querySelector('#c-rig'); on.checked=RP.onion; rg.checked=RP.show;
     on.onchange=()=>ANIM.rig.set('onion',on.checked); rg.onchange=()=>ANIM.rig.set('show',rg.checked);
-    on.parentElement.title='Off: afterimages only during attacks, dashes and Overclock. On: always.';
+    on.parentElement.title='Off: afterimages only during a dash. On: always.';
   }
   document.querySelector('#start').onclick=()=>{ if(view&&view.phase!=='draw'&&view.phase!=='over') deskMenu=!deskMenu; };
   $('deskHint').textContent='Esc or Start: this window';
@@ -1991,7 +1991,7 @@ function drawFighter(v,i,now,age,dt){
   const RG=ANIM.rig, rigAt={x,base,d,KS:K*(f.sc||1),dt};
   if(RG){ if(!st.rig) st.rig=RG.make();
     RG.apply(st.rig,s,Object.assign({grounded:!!f.g,act:!!f.act,oc:!!f.oc,loose:!f.act&&!f.hurt&&!f.sh&&f.hp>0&&v.phase==='fight'},rigAt));
-    RG.ghost(st.rig,s,rigAt,RG.P.onion||!!(f.act||f.dash||f.oc)); RG.drawGhosts(L,st.rig,col); }
+    RG.ghost(st.rig,s,rigAt,RG.P.onion||!!f.dash); RG.drawGhosts(L,st.rig,col); }
   const p=s.p, U=n=>n/K;
   // contact shadow
   L.fillStyle='rgba(0,0,0,.09)'; L.beginPath(); L.ellipse(f.x,GY-shadowY(f)+4,28,3.5,0,0,7); L.fill();
