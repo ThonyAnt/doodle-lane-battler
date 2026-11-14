@@ -1,6 +1,8 @@
 // ForgeScript: the small language that RuleForge's match rules are written in. A strict subset of JavaScript that is
 // parsed, checked and interpreted here, so a rule written by a language model never reaches eval, new Function or vm.
 //   ForgeScript.parse(src)        -> {ok:true, ast, nodes} | {ok:false, errors:[{line,col,msg}]}
+//   ForgeScript.check(ast, env)   -> [{line,col,msg}]: what the code touches that env does not offer; empty means clean
+//   ForgeScript.compile(ast, opts)-> run(host); throws ForgeScript.Fault (name 'ForgeFault') and nothing else
 //   ForgeScript.LIMITS            -> the size limits of a rule
 // Statements: let x = e;  const x = e;  x = e;  mem.name = e;  (also += -= *= /=)  if (e) ... else ...  return;
 //   an expression as a statement (a call, usually), { } blocks, // comments.
@@ -132,7 +134,7 @@ function parse(src){
     const t=peek();
     if(isOp('{')) return block();
     if(isOp(';')){ p++; return null; }
-    if(t.k==='kw'){
+    if(t.k==='kw'&&t.v!=='true'&&t.v!=='false'){
       p++;
       if(t.v==='let'||t.v==='const'){
         if(!is('name')) err('expected a name after '+t.v+' but found '+show(peek()));
@@ -148,13 +150,12 @@ function parse(src){
       if(t.v==='return'){ if(!isOp(';')) err("expected ';' after return: a rule returns nothing"); p++; return node('ret',t,{}); }
       err("'"+t.v+"' cannot start a statement",t);
     }
-    const e=expr(), a=peek();
-    if(a.k==='op'&&ASSIGN.includes(a.v)){
-      p++; const value=expr(); expect(';');
-      if(e.t==='name') return node('set',t,{name:e.name,op:a.v,value});
-      if(e.t==='dot'&&e.obj.t==='name'&&e.obj.name==='mem') return node('mset',t,{name:e.prop,op:a.v,value});
-      err('only a local or mem.name can be assigned to',t);
-    }
+    // x = e;  and  mem.name = e;  are spotted by their first tokens, so the thing assigned to is not a node of its own
+    const assign=i=>toks[p+i].k==='op'&&ASSIGN.includes(toks[p+i].v);
+    if(t.k==='name'&&assign(1)){ const op=toks[p+1].v; p+=2; const value=expr(); expect(';'); return node('set',t,{name:t.v,op,value}); }
+    if(is('name','mem')&&toks[p+1].k==='op'&&toks[p+1].v==='.'&&toks[p+2].k==='name'&&assign(3)){ const name=toks[p+2].v, op=toks[p+3].v; p+=4; const value=expr(); expect(';'); return node('mset',t,{name,op,value}); }
+    const e=expr();
+    if(assign(0)) err('only a local or mem.name can be assigned to',t);
     expect(';'); return node('expr',t,{e});
   }
   try{
@@ -295,5 +296,141 @@ function check(ast,env){
   return errs;
 }
 
-return {parse,check,LIMITS};
+// compile(ast, opts) -> run(host). A tree-walking evaluator: the tree is only ever read, never turned into JavaScript.
+// host has the shape of the checker's env with real values and functions in it. What keeps a rule inside:
+//  - a name is looked up among the rule's own locals, then as an OWN property of host; a.b reads an OWN property of a
+//    plain host object; nothing is ever read off a prototype, a function, an array or a value;
+//  - the only values are numbers, booleans and strings. A host function is handed those, plus host.me or host.foe when
+//    the argument is that bare name, and must give back one of those or nothing;
+//  - mem is read and written through hasOwnProperty only, and an unset name reads as 0;
+//  - every node visited costs one unit of fuel (opts.fuel, LIMITS.fuel by default), so a run always ends;
+//  - whatever goes wrong, a host function throwing included, comes out as a ForgeScript.Fault and as nothing else.
+// It does not rely on check() having been run: check is there to tell the author what is wrong before the first run.
+class Fault extends Error{ constructor(msg){ super(msg); this.name='ForgeFault'; } }
+const MAX_STR=200, VOID=Object.freeze({}), isPrim=v=>typeof v==='number'||typeof v==='boolean'||typeof v==='string';
+const isObj=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
+function compile(ast,opts){
+  if(!ast||ast.t!=='prog'||!Array.isArray(ast.body)) throw new Fault('there is no code to run');
+  const maxFuel=opts&&Number.isFinite(+opts.fuel)?+opts.fuel:LIMITS.fuel;
+  return function run(host){
+    if(!isObj(host)) throw new Fault('there is nothing to run against');
+    let fuel=maxFuel; const locals=new Map(), order=[];
+    const bad=msg=>{ throw new Fault(msg); }, tick=()=>{ if(--fuel<0) bad('the rule ran for too long'); };
+    const get=(o,k,what)=>{ if(typeof k!=='string'||!own(o,k)) bad("there is no '"+what+"'"); return o[k]; };
+    const prim=(v,what)=>isPrim(v)?v:bad("'"+what+"' is not a number, true or false, or text");
+    const text=v=>typeof v==='string'&&v.length>MAX_STR?bad('a piece of text grew past '+MAX_STR+' characters'):v;
+    const path=n=>n&&n.t==='name'?n.name:n&&n.t==='dot'?path(n.obj)+'.'+n.prop:'that';
+    const isMem=n=>n&&n.t==='name'&&n.name==='mem'&&!locals.has('mem');
+    const memOf=()=>{ const m=own(host,'mem')?host.mem:undefined; return isObj(m)?m:bad('there is no mem here'); };
+    // a host object: host.me, host.Math, host.shot ...
+    function obj(n){
+      tick();
+      if(n.t==='name'&&!locals.has(n.name)){ const v=get(host,n.name,n.name); return isObj(v)?v:bad("'"+n.name+"' has no parts"); }
+      if(n.t==='dot'&&!isMem(n.obj)){ const v=get(obj(n.obj),n.prop,path(n)); return isObj(v)?v:bad("'"+path(n)+"' has no parts"); }
+      bad("'"+path(n)+"' has no parts");
+    }
+    function call(n){
+      tick();
+      const c=n.callee, what=path(c); let self, fn;
+      if(c&&c.t==='name'&&!locals.has(c.name)){ self=host; fn=get(host,c.name,what); }
+      else if(c&&c.t==='dot'&&!isMem(c.obj)){ self=obj(c.obj); fn=get(self,c.prop,what); }
+      if(typeof fn!=='function') bad("'"+what+"' is not a function");
+      const args=[];
+      for(const a of n.args){
+        // me and foe, written as bare names, are the only things that are not plain values and may still be handed over
+        if(a&&a.t==='name'&&(a.name==='me'||a.name==='foe')&&!locals.has(a.name)){ tick(); const w=get(host,a.name,a.name); args.push(isObj(w)?w:prim(w,a.name)); }
+        else args.push(val(a));
+      }
+      let r;
+      try{ r=fn.apply(self,args); }catch(e){ bad("'"+what+"' failed"+(e&&typeof e.message==='string'?': '+e.message.slice(0,120):'')); }
+      return r===undefined?VOID:text(prim(r,what+'()'));
+    }
+    function bin(op,a,b){
+      const nums=typeof a==='number'&&typeof b==='number';
+      switch(op){
+        case '+': return nums?a+b:typeof a==='string'&&typeof b==='string'?text(a+b):bad("'+' needs two numbers or two pieces of text");
+        case '==': case '===': return a===b;
+        case '!=': case '!==': return a!==b;
+      }
+      if(!nums) bad("'"+op+"' needs two numbers");
+      switch(op){
+        case '-': return a-b; case '*': return a*b; case '/': return a/b; case '%': return a%b;
+        case '<': return a<b; case '<=': return a<=b; case '>': return a>b; case '>=': return a>=b;
+      }
+      bad('unknown operator');
+    }
+    // a value: always a number, a boolean or a string
+    function val(n){
+      tick();
+      switch(n&&n.t){
+        case 'num': return typeof n.v==='number'?n.v:bad('not a number');
+        case 'str': return typeof n.v==='string'?n.v:bad('not text');
+        case 'bool': return n.v===true;
+        case 'name': { const l=locals.get(n.name); return l?l.v:prim(get(host,n.name,n.name),n.name); }
+        case 'dot': {
+          if(isMem(n.obj)){ const m=memOf(); return typeof n.prop==='string'&&own(m,n.prop)?prim(m[n.prop],'mem.'+n.prop):0; }
+          return prim(get(obj(n.obj),n.prop,path(n)),path(n));
+        }
+        case 'call': { const r=call(n); return r===VOID?bad("'"+path(n.callee)+"' gives nothing back"):r; }
+        case 'un': { const v=val(n.e); return n.op==='!'?!v:n.op==='-'&&typeof v==='number'?-v:bad("'-' needs a number"); }
+        case 'bin': {
+          if(n.op==='&&'){ const l=val(n.l); return l?val(n.r):l; }
+          if(n.op==='||'){ const l=val(n.l); return l?l:val(n.r); }
+          const l=val(n.l); return bin(n.op,l,val(n.r));
+        }
+        case 'cond': return val(n.test)?val(n.a):val(n.b);
+      }
+      bad('this is not a value');
+    }
+    // an expression used as a statement: its result is dropped, so a call that gives nothing back is fine
+    function unused(n){
+      if(n&&n.t==='call') call(n);
+      else if(n&&n.t==='bin'&&n.op==='&&'){ tick(); if(val(n.l)) unused(n.r); }
+      else if(n&&n.t==='bin'&&n.op==='||'){ tick(); if(!val(n.l)) unused(n.r); }
+      else if(n&&n.t==='cond'){ tick(); unused(val(n.test)?n.a:n.b); }
+      else val(n);
+    }
+    // a statement: true means a return was reached
+    function exec(n){
+      tick();
+      switch(n&&n.t){
+        case 'block': {
+          if(!Array.isArray(n.body)) bad('not a block');
+          const start=order.length;
+          for(const s of n.body) if(exec(s)) return true;
+          while(order.length>start) locals.delete(order.pop());
+          return false;
+        }
+        case 'let': {
+          const v=val(n.init);
+          if(typeof n.name!=='string'||locals.has(n.name)||own(host,n.name)) bad("'"+n.name+"' is already taken");
+          if(locals.size>=LIMITS.locals) bad('more than '+LIMITS.locals+' locals');
+          locals.set(n.name,{v,isConst:!!n.isConst}); order.push(n.name); return false;
+        }
+        case 'set': {
+          const v=val(n.value), l=locals.get(n.name);
+          if(!l) bad("'"+n.name+"' is not a local");
+          if(l.isConst) bad("'"+n.name+"' is a const");
+          l.v=n.op==='='?v:assignOp(n.op,l.v,v); return false;
+        }
+        case 'mset': {
+          const v=val(n.value), m=memOf(), name=n.name;
+          if(typeof name!=='string'||!MEM_NAME.test(name)) bad("'mem."+name+"' is not an allowed mem name");
+          const had=own(m,name);
+          if(!had&&Object.keys(m).length>=LIMITS.mem) bad('more than '+LIMITS.mem+' mem names');
+          m[name]=n.op==='='?v:assignOp(n.op,had?prim(m[name],'mem.'+name):0,v); return false;
+        }
+        case 'if': if(val(n.test)) return exec(n.then); return n.else?exec(n.else):false;
+        case 'ret': return true;
+        case 'expr': unused(n.e); return false;
+      }
+      bad('this is not a statement');
+    }
+    const assignOp=(op,a,b)=>ASSIGN.includes(op)&&op!=='='?bin(op[0],a,b):bad('unknown assignment');
+    try{ for(const s of ast.body) if(exec(s)) break; }
+    catch(e){ if(e instanceof Fault) throw e; throw new Fault('the rule broke'+(e&&typeof e.message==='string'?': '+e.message.slice(0,120):'')); }
+  };
+}
+
+return {parse,check,compile,LIMITS,Fault};
 });

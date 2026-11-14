@@ -43,4 +43,40 @@ const FS=require('../forgescript.js');
   ok('reports a place for every error',errs("say(1); push(foe, 1);").every(e=>e.line===1&&e.col>=1&&typeof e.msg==='string'));
 }
 
+{ // 3. the interpreter
+  const run=(s,host,opts)=>{ FS.compile(FS.parse(s).ast,opts)(host); return host; }, faults=(s,host,opts)=>{ try{ run(s,host,opts); return false; }catch(e){ return e.name==='ForgeFault'; } };
+  ok('arithmetic and precedence',run("mem.v = 1 + 2 * 3 - 8 / 4 % 3;",{mem:{}}).mem.v===5);
+  ok('logic short-circuits',(h=>{ run("false && boom(); true || boom();",h); return h.n===0; })({n:0,boom(){ this.n++; }}));
+  ok('== never coerces',run("mem.v = (1 == true) ? 1 : 0;",{mem:{}}).mem.v===0);
+  ok('if, else, return and locals',run("let a = 2; if (a > 1) { mem.v = 10; return; } else mem.v = 20; mem.v = 30;",{mem:{}}).mem.v===10);
+  ok('who arguments keep their identity',(h=>{ run("push(foe, 1, 2);",h); return h.got===h.foe; })({foe:{x:1},push(w){ this.got=w; }}));
+  ok('string plus number is a fault',faults("say('a' + 1);",{say(){}}));
+  ok('a missing host value is a fault, not a TypeError',faults("mem.v = shot.speed;",{mem:{}}));
+  ok('a host function returning an object is a fault',faults("mem.v = leak();",{mem:{},leak:()=>({})}));
+  ok('runs out of fuel',faults("mem.a = 1; mem.b = 2; mem.c = 3; mem.d = 4;",{mem:{}},{fuel:5}));
+  ok('mem cannot reach the prototype',(h=>{ run("mem.v = mem.tostring == 1 ? 1 : 2;",h); return h.mem.v===2; })({mem:{}}));
+  ok('fast enough',(()=>{ const f=FS.compile(FS.parse(Array.from({length:40},(_,i)=>'mem.a = mem.a + '+i+';').join(' ')).ast), h={mem:{a:0}}, t=Date.now(); for(let i=0;i<1000;i++) f(h); return Date.now()-t<50; })());
+  // beyond the plan: the interpreter has to hold whatever the checker lets through, and without the checker at all
+  const val=(s,host)=>run('mem.v = '+s+';',Object.assign({mem:{}},host)).mem.v;
+  ok('the other operators',val("-3 % 2")===-1&&val("7 / 2")===3.5&&val("!0")===true&&val("'a' + 'b'")==='ab'&&val("2 < 3 == true")===true&&val("1 !== 1")===false&&val("'1' != 1")===true&&val("0 || 5")===5&&val("2 && 3")===3&&val("- -2")===2);
+  ok('a compound assignment works on locals and mem',run("let a = 2; a *= 5; a -= 1; mem.v = 4; mem.v /= 2; mem.v += a;",{mem:{}}).mem.v===11);
+  ok('a call as a value, and behind && as a statement',(h=>{ run("mem.v = Math.max(1, twice(4)); mem.v > 7 && note('hi'); chance(1) ? note('yes') : note('no');",h); return h.mem.v===8&&h.said.join()==='hi,yes'; })
+    ({mem:{},said:[],Math:{max:Math.max},twice:v=>v*2,chance:()=>true,note(s){ this.said.push(s); }}));
+  ok('a member function is called on its own object',(h=>{ run("shot.reflect(1.2);",h); return h.shot.got===1.2; })({shot:{reflect(f){ this.got=f; }}}));
+  ok('a block ends its locals',faults("{ let a = 1; } mem.v = a;",{mem:{}})&&run("{ let a = 1; } { let a = 2; mem.v = a; }",{mem:{}}).mem.v===2);
+  for(const [s,h] of [["mem.v = me;",{mem:{},me:{x:1}}],["mem.v = say;",{mem:{},say(){}}],["mem.v = say('x');",{mem:{},say(){}}],["say(shot);",{say(){},shot:{}}],["say(mem);",{say(){},mem:{}}],["push(Math, 1);",{push(){},Math:{}}],
+    ["mem.v = 1 + true;",{mem:{}}],["mem.v = -'a';",{mem:{}}],["mem.v = 'a' < 'b';",{mem:{}}],["dist();",{dist:5}],["me.x();",{me:{x:1}}],["mem.v = me.y;",{mem:{},me:{x:1}}],["mem.v = me.x.y;",{mem:{},me:{x:1}}],
+    ["mem.v = me.tostring;",{mem:{},me:{}}],["mem.v = say.name;",{mem:{},say(){}}],["mem.v = say.length;",{mem:{},say(){}}],["mem.v = list.length;",{mem:{},list:[1,2]}],["a = 1;",{}],["const c = 1; c = 2;",{}],["let a = 1; let a = 2;",{}],["let dist = 1;",{dist:5}],
+    ["mem.Big = 1;",{mem:{}}],["mem.v = 1;",{}],["mem.v = 1;",{mem:5}],["mem.v = mem.w;",{mem:{w:{}}}],["boom();",{boom(){ throw new TypeError('x'); }}],["mem.v = leak();",{mem:{},leak:()=>null}],["mem.v = leak();",{mem:{},leak:()=>[1]}],["mem.v = leak();",{mem:{},leak:()=>()=>1}],
+    ["mem.a = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'; mem.a += mem.a; mem.a += mem.a;",{mem:{}}]])
+    ok('a fault: '+s.slice(0,40),faults(s,h));
+  ok('mem takes 8 names and no more',run(Array.from({length:8},(_,i)=>'mem.m'+i+' = 1;').join(' '),{mem:{}}).mem.m7===1&&faults("mem.i = 1;",{mem:{a:1,b:1,c:1,d:1,e:1,f:1,g:1,h:1}}));
+  ok('nothing but a ForgeFault ever comes out',[null,undefined,5,'x'].every(h=>{ try{ FS.compile(FS.parse("say('x');").ast)(h); }catch(e){ return e instanceof FS.Fault&&e instanceof Error&&e.name==='ForgeFault'; } })
+    &&[null,{},{t:'prog'},{t:'prog',body:[{t:'what'}]},{t:'prog',body:[{t:'expr',e:{t:'dot',obj:{t:'name',name:'me'},prop:'constructor'}}]}].every(a=>{ try{ FS.compile(a)({me:{}}); }catch(e){ return e.name==='ForgeFault'; } }));
+  ok('a tree that loops back on itself runs out of fuel',(()=>{ const loop={t:'block',body:[]}; loop.body.push(loop,loop); try{ FS.compile({t:'prog',body:[loop]})({}); }catch(e){ return e.name==='ForgeFault'; } })());
+  ok('host objects cannot be reached through their prototype',(()=>{ const h={mem:{},me:Object.create({secret:42})}; return faults("mem.v = me.secret;",h)&&faults("mem.v = me.hasOwnProperty;",h)&&faults("me.valueOf();",h); })());
+  ok('only me and foe pass as themselves, and only as bare names',(h=>{ run("push(me, 1); push(foe, 2);",h); return h.got.length===2&&h.got[0]===h.me&&h.got[1]===h.foe; })({me:{x:1},foe:{x:2},got:[],push(w){ this.got.push(w); }})
+    &&faults("let foe = 1; push(foe, 1);",{foe:{x:1},push(){}})&&faults("push(me, 1);",{me:5,push(w){ if(typeof w!=='object') throw new Error('not a fighter'); }}));
+}
+
 console.log(bad?bad+' failed':'all forge tests pass'); process.exit(bad?1:0);
