@@ -607,6 +607,252 @@ function traitChoices(kind,asked,seed){
   for(let i=0;out.length<2&&i<ok.length;i++){ const t=ok[(h+i)%ok.length]; if(!out.includes(t)) out.push(t); }
   return out.slice(0,2);
 }
+/* ---------- Customizations: prebuilt blocks a weapon can carry ----------
+   A block is one dramatic, visible behaviour (lifesteal orbs, a glide, a trail of fire). An item carries at most
+   CUSTOM_MAX of them, in it.customs, and all of them together may cost at most CUSTOM_BUDGET points, so a weapon gets
+   one signature block and perhaps a small one. Every block has an axis; only 'wielder' (what the weapon does to its
+   holder) is built so far, in its marked region below. The other regions are empty places for the other axes.
+
+   HOW TO ADD A BLOCK
+   1. In your axis region write   CUSTOMS.myblock={label,axis,cost,kinds,styles?,params,text,tell,fires?,on:{...},view?};
+        cost    points for the block with every parameter at its weak end (`from`)
+        kinds   item kinds it suits (styles: optional list of weapon styles); anything else is dropped by fitCustoms
+        params  {name:{from,to,def,pts}}: from = weak end, to = strong end (either may be the larger number),
+                def = the usual value, pts = points added at the strong end (linear in between); step:1 for whole numbers
+        text    one line for the player; tell: one line saying what a watcher SEES
+        on      handlers by moment (the table below); each is fn(c,arg) with the context c
+        fires   the moment(s) that count as the block going off (a name or a list). Only these ask the trigger and the
+                cost modifiers. Default: every moment but `round` and `mote`.
+        view    optional fn(c): a small number, text or flat list the page needs every frame; it lands in the snapshot
+                as f[side].cv[id]. Must not change anything.
+   2. In the page, next to the other TELLS, write   TELLS.myblock={front,back,weapon,tint,event,fx,mote};
+      (all optional, see there). Whatever the rules send with c.emit(name,{x,y,...}) arrives there as an event.
+   3. Add tests to tools/test-world.js and a line to CLAUDE.md. Nothing else needs a line: the move tester, the
+      sketchbook card, the snapshot and the validator all read CUSTOMS.
+
+   RULES FOR EVERY BLOCK
+   - It has a tell: someone across the room sees that something happened and whose weapon did it. No hidden arithmetic.
+   - Deterministic: c.rand(), never Math.random. No clocks, no globals that outlive the match: keep state in c.st.
+   - An ultimate is never interrupted: no moment fires while one plays (S.ult>=0) or for a fighter who is casting, an
+     ultimate's own blows (tr 'fleet') trigger nothing, and c.hurt / c.shot do nothing meanwhile. Do not work round it.
+   - Whatever reaches the page is plain JSON: numbers, text, flat lists (c.emit fields, view(), a mote's own fields).
+   - Handlers are written here, outside createDuel, so they reach the match only through c. A handler that throws is
+     caught, noted in S.cuFault and skipped; tests should check S.cuFault stays null.
+   - c.st may hold numbers, text and flat lists of them only (it is part of S.hash); it starts as {v:item version} and
+     is emptied when the round starts or the item is replaced.
+
+   MOMENTS  (holder = the fighter carrying the item; "held" = it is the item in their hand)
+     round   ()                 the fight of a round starts (not in practice mode; state is fresh either way)
+     tick    (dt)               every 1/120 s of fighting, for both carried items; check c.held. Before the fighter moves.
+                                c.me.run and c.me.grav are multipliers of run speed and gravity, back to 1 every tick.
+     move    (act)              the holder starts an attack move with this item (act.m its name, act.rate its speed)
+     use     ({kind})           the holder presses this item's button and it goes off (any kind)
+     swing   ({reach,dmg,kb,m}) a melee hit mark of this item is about to be tested: reach, damage, knock-back may be changed
+     shot    (p)                a projectile of this item (shot or bomb) is about to leave: p may be changed
+     hit     (h)                a blow of this item is about to take health from the foe: h.dmg, h.kx, h.ky, h.stun may be changed
+     struck  (h)                the holder is about to take a blow while holding this item: as above, and h.firm=true
+                                means no stagger and no knock-back
+     landed  (h)                after `hit`: h.dmg is what the foe lost, h.blocked whether a shield took it
+     took    (h)                after `struck`: h.dmg is what the holder lost
+     jump    (j)                the holder presses jump while holding this: j.ok (may they), j.air, j.n (jumps so far), j.vy
+     land    ({vy})             the holder touches down while holding this
+     mote    (m,dt)             one step of a mote this block made (see c.mote); return false to remove it
+     h is {dmg,kx,ky,stun,el,tr,blocked,fin,firm,slot,by,t}: by and t are the fighters giving and taking the blow.
+
+   CONTEXT  c
+     c.S       the match (read it; change it through the helpers)       c.id, c.entry, c.p   block id, the item's entry, its parameters
+     c.me, c.foe   the holder and the other fighter (rules objects: x, y = height above the floor, vx, vy, hp, face, ...)
+     c.side, c.slot, c.item, c.held                                     c.st   this fighter's state for this block and slot
+     c.width   arena width                                              c.rand()   the match's dice
+     c.casting(f)   is that fighter casting an ultimate
+     c.emit(name,fields)   tell the page: event {e:'cu',c:id,k:name,side,slot,...fields}; x and y as the rules have them
+                           (y up); snd: the name of a sound in sfx.js to play with it
+     c.mote(fields)   put a free-flying thing in the world: {id,c,side,slot,x,y,vx,vy,t,...fields}; the block's `mote`
+                      handler moves it each tick, the snapshot carries id,c,side,slot,x,y,vx,vy and its `d` field, and
+                      TELLS[id].mote draws it. Returns it, or null when there are already CUSTOM_MOTES of them.
+     c.shot(fields)   fire a projectile of the item (defaults: a straight shot from the holder's chest, the item's
+                      damage and element). It is marked `nocu`, so its hit triggers no block and no match rule.
+     c.hurt(who,dmg,{el,kx,ky,stun})   damage through the normal path (blocks, burning, the hit number); triggers no block
+     c.heal(who,hp)   heal (halved while burning, stops at full health); returns what was healed
+
+   THE TWO MODIFIER AXES  An entry in it.customs is {id, params:{...}, when?:{id,params}, cost?:{id,params}}.
+   `when` (the trigger axis, table CUSTOM_WHEN) says when the block may fire: every third hit, in the air, at low health.
+   `cost` (the cost axis, table CUSTOM_COST) says what firing spends: ink, health, heat. They are not blocks: they ride on
+   a block's entry, change its points by their own `pts` (a discount for a stricter trigger or a dearer cost) and are
+   asked through customWhen(c,moment,arg) and customPay(c,moment,arg) just before a moment named in `fires` runs.
+   Both tables are empty and both functions say yes until those axes are built, in their regions below. */
+const CUSTOM_BUDGET=10, CUSTOM_MAX=2, CUSTOM_MOTES=60, CUSTOM_AXES=['shape','leaves','target','wielder','trigger','cost','summon','arena','transform'];
+const CUSTOMS={}, CUSTOM_WHEN={}, CUSTOM_COST={};
+const customHas=(table,id)=>Object.prototype.hasOwnProperty.call(table,id);
+// Parameters as the table allows them: every one present, a number, inside its range. Anything else becomes the default.
+function customParams(spec,raw){
+  const out={}; if(!spec) return out;
+  for(const k of Object.keys(spec)){ const q=spec[k], lo=Math.min(q.from,q.to), hi=Math.max(q.from,q.to); let v=raw&&typeof raw==='object'&&raw[k]!==null&&typeof raw[k]!=='object'?+raw[k]:NaN;
+    if(!Number.isFinite(v)) v=q.def; v=Math.max(lo,Math.min(hi,v)); out[k]=q.step?Math.round(v/q.step)*q.step:Math.round(v*100)/100; }
+  return out;
+}
+const customParamPoints=(spec,vals)=>{ let n=0; if(spec&&vals) for(const k of Object.keys(spec)){ const q=spec[k]; if(q.pts&&q.to!==q.from&&Number.isFinite(vals[k])) n+=q.pts*(vals[k]-q.from)/(q.to-q.from); } return n; };
+// What one entry costs: the block, its parameters, and its trigger and cost modifiers. Never less than 1.
+function customPoints(en){
+  if(!en||!customHas(CUSTOMS,en.id)) return 0; const def=CUSTOMS[en.id]; let n=(+def.cost||0)+customParamPoints(def.params,en.params);
+  for(const [key,table] of [['when',CUSTOM_WHEN],['cost',CUSTOM_COST]]){ const m=en[key]; if(m&&customHas(table,m.id)) n+=(+table[m.id].pts||0)+customParamPoints(table[m.id].params,m.params); }
+  return Math.max(1,Math.round(n*10)/10);
+}
+const customsTotal=list=>Math.round((Array.isArray(list)?list:[]).reduce((n,en)=>n+customPoints(en),0)*10)/10;
+// The one validator. Whatever it is given (a reader's answer, a request from a page, nonsense) it returns a clean list:
+// known blocks that suit the item, each once, at most CUSTOM_MAX, parameters in range, modifiers known or dropped, in the
+// order asked, within CUSTOM_BUDGET. A block that does not fit the points left is tried once more with its paid
+// parameters at their weak ends, and dropped if it still does not fit. It never throws. An entry may be given as a bare
+// id, as {id, params:{...}} or with the parameters beside the id.
+function fitCustoms(list,kind,style){
+  const out=[]; let left=CUSTOM_BUDGET; if(!Array.isArray(list)) return out;
+  for(const raw of list.slice(0,8)){
+    if(out.length>=CUSTOM_MAX) break;
+    const o=raw&&typeof raw==='object'?raw:{id:raw}, id=typeof o.id==='string'?o.id.toLowerCase().trim():'';
+    if(!customHas(CUSTOMS,id)||out.some(e=>e.id===id)) continue;
+    const def=CUSTOMS[id]; if((def.kinds&&!def.kinds.includes(kind))||(def.styles&&!def.styles.includes(style))) continue;
+    const en={id,params:customParams(def.params,o.params&&typeof o.params==='object'?o.params:o)};
+    for(const [key,table] of [['when',CUSTOM_WHEN],['cost',CUSTOM_COST]]){
+      const m=o[key], mid=typeof m==='string'?m.toLowerCase().trim():m&&typeof m==='object'&&typeof m.id==='string'?m.id.toLowerCase().trim():'';
+      if(customHas(table,mid)) en[key]={id:mid,params:customParams(table[mid].params,m&&typeof m==='object'?(m.params&&typeof m.params==='object'?m.params:m):null)};
+    }
+    let pts=customPoints(en);
+    if(pts>left+1e-9&&def.params){ for(const k of Object.keys(def.params)) if(def.params[k].pts>0) en.params[k]=customParams({v:def.params[k]},{v:def.params[k].from}).v; pts=customPoints(en); }
+    if(pts>left+1e-9) continue;
+    out.push(en); left-=pts;
+  }
+  return out;
+}
+// Does this moment count as the block going off (and so ask its trigger and its cost)?
+const customFires=(def,hook)=>def.fires?[].concat(def.fires).includes(hook):hook!=='round'&&hook!=='mote';
+//
+/* CUSTOMS:shape START */
+/* CUSTOMS:shape END */
+//
+/* CUSTOMS:leaves START */
+/* CUSTOMS:leaves END */
+//
+/* CUSTOMS:target START */
+/* CUSTOMS:target END */
+//
+/* CUSTOMS:wielder START */
+// Lifesteal, the reference block. A blow that takes health knocks orbs out of the victim; they fly to the attacker and
+// each heals a share on arrival, so the healing is seen leaving one fighter and reaching the other. Plant ink heals
+// its user the same way (see hurt), with or without this block.
+CUSTOMS.lifesteal={label:'Lifesteal',axis:'wielder',cost:5.5,kinds:['melee','ranged','bomb','dash'],
+  params:{share:{from:0.15,to:0.4,def:0.3,pts:2}},
+  text:'Your hits pull healing orbs out of the enemy.',
+  tell:'green orbs burst from the victim and fly to the attacker; a ring pulses where each one lands',
+  fires:'landed',
+  on:{
+    landed(c,h){ if(!h.blocked) lifeOrbs(c,h.t,h.dmg*c.p.share); },
+    mote(c,m,dt){
+      const me=c.me, st=c.st; if(me.hp<=0){ st.out=Math.max(0,(st.out||0)-1); return false; }
+      const tx=me.x, ty=me.y+55*me.scale, dx=tx-m.x, dy=ty-m.y, d=Math.hypot(dx,dy)||1;
+      if(d<20||m.t>1.8){                                        // it arrives (or has chased long enough): the heal lands now
+        st.sum=(st.sum||0)+c.heal(me,m.n); st.out=Math.max(0,(st.out||0)-1);
+        const e={x:Math.round(me.x),y:Math.round(me.y+55*me.scale)}; if(!st.out){ e.total=+st.sum.toFixed(1); e.snd='heal'; st.sum=0; }
+        c.emit('in',e); return false;
+      }
+      // out of the victim in a burst, then pulled in harder and harder
+      const sp=Math.min(1100,200+m.t*1500), k=Math.min(1,dt*(0.4+m.t*m.t*42));
+      m.vx+=(dx/d*sp-m.vx)*k; m.vy+=(dy/d*sp-m.vy)*k; m.x+=m.vx*dt; m.y+=m.vy*dt;
+    }
+  }};
+// total health to send from fighter `from` to c.me, as three to six orbs
+function lifeOrbs(c,from,total){
+  if(!(total>=0.2)||c.me.hp<=0) return; const n=Math.max(3,Math.min(6,Math.round(total/0.7))), away=Math.sign(from.x-c.me.x)||1;
+  for(let i=0;i<n;i++){ const a=Math.PI/2-away*(0.15+(n>1?i/(n-1):0.5)*1.1)+(c.rand()-0.5)*0.3, v=400+c.rand()*120;
+    if(c.mote({x:from.x,y:from.y+55*from.scale,vx:Math.cos(a)*v,vy:Math.sin(a)*v,n:total/n})) c.st.out=(c.st.out||0)+1; }
+}
+// The other wielder blocks. The five big ones cost 5.5 to 7.5 points and the two small ones (glide, extra jump) 2.5 to
+// 4.5, so with CUSTOM_BUDGET 10 a weapon holds one big one, or one big and one small, never two big. All of these
+// numbers are first guesses; none has been through the balance bench.
+// Glide: with the weapon in hand, falling is slow. Hold down to drop as usual. Attacks, dashes and being hit close it.
+CUSTOMS.glide={label:'Glide',axis:'wielder',cost:2.5,kinds:KINDS,
+  params:{fall:{from:230,to:110,def:150,pts:1}},
+  text:'You float down slowly while you hold it. Hold down to drop.',
+  tell:'the drawing opens into a canopy above the fighter, with cords to the shoulders and wind lines streaming up',
+  fires:'tick',
+  on:{ tick(c,dt){ const f=c.me, st=c.st;
+    st.on=c.held&&!f.ground&&f.vy<0&&!f.act&&f.dash<=0&&f.hurt<=0&&f.stun<=0&&f.trap<=0&&f.flung<=0&&f.hp>0&&!c.S.inp[c.side].d?1:0;
+    if(st.on){ f.grav=0.3; if(f.vy<-c.p.fall) f.vy+=Math.min(-c.p.fall-f.vy,2600*dt); } } },
+  view:c=>c.st.on&&!c.me.ground?1:0};
+// Extra jump: one (or two) more jumps in the air after the usual double jump.
+CUSTOMS.airjump={label:'Extra jump',axis:'wielder',cost:2.5,kinds:KINDS,
+  params:{jumps:{from:1,to:2,def:1,pts:2,step:1}},
+  text:'One more jump in mid-air while you hold it.',
+  tell:'a wide ring and a burst of spikes in the weapon’s colour under the feet on the extra jump',
+  fires:'jump',
+  on:{ jump(c,j){ if(j.ok||!j.air||j.n<2||j.n>=2+c.p.jumps) return; j.ok=true; j.vy=600; c.emit('jump',{x:Math.round(c.me.x),y:Math.round(c.me.y),n:j.n-1,snd:'zip'}); } }};
+// Dash on hit: a melee blow that lands carries the holder through the foe to their far side, facing them, and knocks
+// the foe back the way the holder came. Not through walls, and not again for `cd` seconds.
+CUSTOMS.dashhit={label:'Dash on hit',axis:'wielder',cost:5.5,kinds:['melee'],
+  params:{dist:{from:60,to:110,def:80,pts:1},cd:{from:2,to:0.8,def:1.2,pts:1}},
+  text:'A hit zips you through the enemy to their far side.',
+  tell:'a streak in the weapon’s colour from where the holder stood to where they reappear behind the foe',
+  fires:'hit',
+  on:{ tick(c,dt){ if(c.st.cd>0) c.st.cd=Math.max(0,c.st.cd-dt); },
+    hit(c,h){ const f=c.me, e=h.t, st=c.st; if(h.blocked||st.cd>0||f.hp<=0||e!==c.foe) return;
+      const dir=Math.sign(e.x-f.x)||f.face, to=Math.max(18,Math.min(c.width-18,e.x+dir*c.p.dist)); if((to-e.x)*dir<30||!c.free(to,f.y)||!c.free((to+e.x)/2,f.y)) return;
+      c.emit('zip',{x:Math.round(f.x),y:Math.round(f.y+52),x2:Math.round(to),snd:'slash'});
+      f.x=to; f.vx=0; f.face=-dir; h.kx=-h.kx; st.cd=c.p.cd; } }};
+// Armour while swinging: during an attack move of this weapon the first blow taken is mostly soaked up and does not
+// stagger or move the holder. Then the shell is gone for `cd` seconds.
+CUSTOMS.armour={label:'Armour',axis:'wielder',cost:5.5,kinds:['melee','ranged'],
+  params:{soak:{from:0.6,to:1,def:0.8,pts:1.5},cd:{from:4,to:2,def:3,pts:0.5}},
+  text:'Mid-attack, the first hit you take bounces off.',
+  tell:'an ink shell round the fighter while it is up; it flashes white and breaks into shards when it takes a blow',
+  fires:'struck',
+  on:{ tick(c,dt){ if(c.st.cd>0) c.st.cd=Math.max(0,c.st.cd-dt); },
+    struck(c,h){ const f=c.me, a=f.act; if(!a||a.k!==c.slot||a.m==='mine'||c.st.cd>0||h.blocked||!(h.dmg>0)) return;
+      h.dmg*=1-c.p.soak; h.firm=true; c.st.cd=c.p.cd; c.emit('crack',{x:Math.round(f.x),y:Math.round(f.y+50),snd:'block'}); } },
+  view:c=>{ const a=c.me.act; return a&&a.k===c.slot&&a.m!=='mine'&&!(c.st.cd>0)?1:0; }};
+// Combo growth: every blow in a row with this weapon makes it bigger: more reach and more damage, up to `max` steps. It
+// snaps back when no blow lands for 1.8 s, when the holder is staggered, or when they put it away.
+CUSTOMS.grow={label:'Combo growth',axis:'wielder',cost:5.5,kinds:['melee'],
+  params:{step:{from:0.04,to:0.09,def:0.06,pts:1},max:{from:3,to:5,def:4,pts:1,step:1}},
+  text:'Each hit in a row makes it bigger and stronger.',
+  tell:'the held weapon swells with every hit of a combo (a counter pops over it) and snaps back with a puff when the combo drops',
+  fires:'landed',
+  on:{ landed(c,h){ const st=c.st; if(h.blocked||!c.held) return; st.t=1.8; if((st.n||0)<c.p.max){ st.n=(st.n||0)+1; c.emit('up',{x:Math.round(c.me.x+c.me.face*30),y:Math.round(c.me.y+84),n:st.n}); } },
+    tick(c,dt){ const st=c.st; if(!st.n) return; st.t-=dt; if(st.t<=0||!c.held||c.me.hp<=0){ st.n=0; c.emit('drop',{x:Math.round(c.me.x+c.me.face*30),y:Math.round(c.me.y+70)}); } },
+    took(c,h){ const st=c.st; if(st.n&&h.stun>0&&!h.firm&&!h.blocked&&h.dmg>0){ st.n=0; c.emit('drop',{x:Math.round(c.me.x+c.me.face*30),y:Math.round(c.me.y+70)}); } },
+    swing(c,w){ const n=c.st.n||0; w.dmg*=1+c.p.step*n; w.reach*=1+0.06*n; } },
+  view:c=>c.st.n||0};
+// Rage: under `at` of full health, with the weapon in hand, the holder runs and attacks faster.
+CUSTOMS.rage={label:'Rage',axis:'wielder',cost:5.5,kinds:KINDS,
+  params:{boost:{from:1.1,to:1.3,def:1.2,pts:1.5},at:{from:0.25,to:0.4,def:0.33,pts:0.5}},
+  text:'When your health is low you run and attack faster.',
+  tell:'the fighter turns magenta with a spiky aura and rising steam for as long as it lasts, with a burst when it starts',
+  fires:'tick',
+  on:{ tick(c,dt){ const f=c.me, st=c.st, on=c.held&&f.hp>0&&f.hp<c.p.at*HP?1:0;
+      if(on&&!st.on) c.emit('on',{x:Math.round(f.x),y:Math.round(f.y+50),snd:'ult'}); st.on=on; if(on) f.run*=c.p.boost; },
+    move(c,a){ if(c.st.on) a.rate*=c.p.boost; } },
+  view:c=>c.st.on?1:0};
+/* CUSTOMS:wielder END */
+//
+/* CUSTOMS:trigger START */
+// May this block fire now? c is the context, c.entry.when the trigger chosen for it (or nothing). Until the trigger
+// axis is built there are no triggers, and every block always may.
+function customWhen(c,hook,arg){ return true; }
+/* CUSTOMS:trigger END */
+//
+/* CUSTOMS:cost START */
+// Charge what firing costs and say whether it could be paid. c.entry.cost is the cost chosen (or nothing). Until the
+// cost axis is built firing is free.
+function customPay(c,hook,arg){ return true; }
+/* CUSTOMS:cost END */
+//
+/* CUSTOMS:summon START */
+/* CUSTOMS:summon END */
+//
+/* CUSTOMS:arena START */
+/* CUSTOMS:arena END */
+//
+/* CUSTOMS:transform START */
+/* CUSTOMS:transform END */
+//
 // Words that give away what something is for, used when the reader's answer does not name one of the kinds or styles.
 const KIND_HINTS=[['bomb',/bomb|explo|grenade|dynamite|mine|firework|flask|meteor|molotov/],['shield',/shield|armou?r|wall|helmet|umbrella|barrier|door|lid|block|protect|defen/],
   ['heal',/heal|heart|food|snack|drink|fruit|apple|pizza|burger|cake|bandage|medic|medkit|soup|candy/],['dash',/wing|rocket|boot|shoe|skate|wheel|bike|jet|speed|spring|lightning|horse|move|mobility|dash/],
@@ -638,6 +884,7 @@ function validItem(o,strokes){
   spec.traits=traitChoices(kind,Array.isArray(o.traits)?o.traits:[o.trait],name||said); spec.trait=spec.traits[0];
   // What flies out of something that shoots: the reader says, and if it does not, the name is a hint. It only changes the look.
   if(kind==='ranged'){ const am=txt('ammo'); spec.ammo=AMMO.includes(am)?am:(AMMO_HINTS.find(h=>h[1].test(said))||['bullet'])[0]; }
+  if(Array.isArray(o.customs)) spec.customs=fitCustoms(o.customs,kind,style);       // customizations, if the answer names any (see CUSTOMS)
   return spec;
 }
 function nameFor(spec){
@@ -975,7 +1222,7 @@ const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet s
 // A recording holds about LOG_ROOM characters of commands (some forty long matches' worth). When it is full it stops:
 // the match goes on, the log is marked full, and it replays up to the tick it stopped at.
 const LOG_ROOM=2e6;
-const LOG_V=1, COMMANDS=['setItem','tweak','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold'];
+const LOG_V=1, COMMANDS=['setItem','tweak','setCustoms','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold'];
 const INPUT_KEYS=['l','r','d','j','a','b','m','q','h','u'], viaJSON=v=>JSON.parse(JSON.stringify(v)), round1=v=>Math.round(v*10)/10;
 const packInput=i=>{ const o={}; for(const k of INPUT_KEYS){ const v=i?i[k]:undefined; o[k]=k==='l'||k==='r'||k==='d'?(v?1:0):v===undefined?null:v; } return viaJSON(o); };   // held buttons as 0 or 1, press counts as given, a missing one as null
 const unpackInput=o=>{ const i={}; for(const k of INPUT_KEYS) if(o[k]!==null&&o[k]!==undefined) i[k]=o[k]; return i; };
@@ -1055,10 +1302,11 @@ function createDuel(opts){
   // In a layout with an art board the fighters start inside it; otherwise in the middle of the arena.
   const fresh=side=>({side,x:BOARD?BOARD.x0+(BOARD.x1-BOARD.x0)*(side?0.8:0.2):W/2+(side?260:-260),y:BOARD?BOARD.floor:0,vx:0,vy:0,face:side?-1:1,hp:HP,ground:true,jumps:0,jq:0,buf:[0,0],cd:[0,0],cdMax:[1,1],
     act:null,shield:0,hurt:0,burn:0,burnDps:0,slow:0,dash:0,dashHit:false,dashItem:null,drop:0,uses:[3,3],held:0,
-    ink2:100,od:0,stun:0,trap:0,flung:0,flungBy:-1,overclock:0,scale:1,scaleGoal:1,bubble:null,mcd:0,mbuf:0});
+    ink2:100,od:0,stun:0,trap:0,flung:0,flungBy:-1,overclock:0,scale:1,scaleGoal:1,bubble:null,mcd:0,mbuf:0,
+    cu:{},run:1,grav:1});       // customizations (see CUSTOMS): each block's state for this fighter, and the two multipliers a block may set per tick
   const S={phase:'draw',t:45,round:1,wins:[0,0],ready:[false,false],items:[[null,null],[null,null]],f:[fresh(0),fresh(1)],pr:[],events:[],
     winner:-1,champ:-1,ver:0,practice:!!(opts&&opts.practice),inp:[{l:0,r:0,d:0},{l:0,r:0,d:0}],cnt:[{j:0,a:0,b:0,m:0,q:0,u:0},{j:0,a:0,b:0,m:0,q:0,u:0}],
-    objs:[],fields:[],groups:[null,null],hack:null,effects:[],broken:null,breached:false,cells:[],time:0,stop:0};
+    objs:[],fields:[],groups:[null,null],hack:null,effects:[],broken:null,breached:false,cells:[],time:0,stop:0,motes:[],cuFault:null};
   // The match's own dice and clock. seed: where the dice start (given, or picked fresh). rand(): the next number, 0 up to 1.
   // tickN: how many 1/120 s ticks have been played. Whatever comes in from outside lands between two ticks.
   S.seed=seedFrom(opts&&opts.seed); S.rand=mulberry32(S.seed); S.tickN=0;
@@ -1196,6 +1444,48 @@ function createDuel(opts){
   // fighter still takes damage but is not staggered, knocked back, flung, disarmed or stunned out of it, and cannot swap
   // their own weapon or dash away by drawing. Only a knockout ends it early.
   const casting=f=>!!(f.act&&MOVES[f.act.m].ult);
+  /* ---------- wielder customizations: the match's side of CUSTOMS (see the guide above that table) ----------
+     cfire(moment,f,slot,arg) runs that moment's handler of every block on fighter f's item in `slot` (-1: both items).
+     Nothing fires while an ultimate plays or for a fighter who is casting one. S.motes are the free-flying things
+     blocks make (lifesteal's orbs); S.cuFault is the last handler that threw, null if none ever did. */
+  const cuState=(f,slot,id,it)=>{ const key=id+slot; let st=f.cu[key]; if(!st||st.v!==it.ver) st=f.cu[key]={v:it.ver}; return st; };
+  const cuFail=(id,hook,err)=>{ if(!S.cuFault) S.events.push({e:'log',side:-1,msg:'block '+id+' failed in '+hook}); S.cuFault={id,hook,msg:String(err&&err.message||err)}; };
+  function addMote(id,side,slot,o){ if(S.motes.length>=CUSTOM_MOTES) return null; const m=Object.assign({x:0,y:0,vx:0,vy:0},o,{id:nextId++,c:id,side,slot,t:0}); S.motes.push(m); return m; }
+  function cuCtx(f,slot,it,en){
+    const id=en.id, foe=S.f[1-f.side];
+    return {S,id,entry:en,p:en.params||{},me:f,foe,side:f.side,slot,item:it,held:f.held===slot,st:cuState(f,slot,id,it),width:W,rand:S.rand,casting,
+      emit:(k,o)=>{ S.events.push(Object.assign({e:'cu',c:id,k,side:f.side,slot},o)); },
+      mote:o=>addMote(id,f.side,slot,o),
+      // could a fighter stand with their feet at x, y: inside the arena and not in anything solid
+      free:(x,y)=>x>=18&&x<=W-18&&!SOL.some(o=>x+11>o.x0&&x-11<o.x1&&y+88>o.y0&&y<o.y1-4),
+      shot:o=>{ if(S.ult>=0) return null; const p=Object.assign({k:'shot',st:it.style,side:f.side,slot,x:f.x+f.face*20,y:f.y+60,vx:f.face*660,vy:0,grav:0,dmg:it.st.dmg||4,el:it.el,kb:80,stun:0.1,life:1,ttl:1},o,{id:nextId++,nocu:1}); S.pr.push(p); return p; },
+      hurt:(who,dmg,o)=>{ dmg=+dmg; if(S.ult>=0||!(dmg>0)||(who!==f&&who!==foe)) return; o=o||{}; hurt(who,dmg,ELS.includes(o.el)?o.el:'none',+o.kx||0,+o.ky||0,who===foe?f:null,f.x,o.stun>0?+o.stun:0); },
+      heal:(who,n)=>{ n=+n; if(!(n>0)||(who!==f&&who!==foe)||who.hp<=0) return 0; n=Math.min(n*(who.burn>0?0.5:1),HP-who.hp); if(!(n>0)) return 0; who.hp+=n; return n; }};
+  }
+  function cfire(hook,f,slot,arg){
+    if(hook!=='round'&&(S.ult>=0||casting(f))) return;
+    for(const k of slot<0?[0,1]:[slot]){
+      const it=S.items[f.side][k], list=it&&it.customs; if(!list||!list.length) continue;
+      for(const en of list){ const def=CUSTOMS[en.id], fn=def&&def.on&&def.on[hook]; if(!fn) continue;
+        try{ const c=cuCtx(f,k,it,en); if(customFires(def,hook)&&!(customWhen(c,hook,arg)&&customPay(c,hook,arg))) continue; fn(c,arg); }catch(err){ cuFail(en.id,hook,err); } }
+    }
+  }
+  // One step for every mote. A mote whose item is gone goes too; one from an item that does not carry the block (plant
+  // ink's orbs) gets the block's default parameters.
+  function stepMotes(dt){
+    if(!S.motes.length) return; const cur=S.motes; S.motes=[];
+    for(const m of cur){ const def=CUSTOMS[m.c], fn=def&&def.on&&def.on.mote, it=S.items[m.side][m.slot]; if(!fn||!it) continue;
+      const en=(it.customs||[]).find(e=>e.id===m.c)||{id:m.c,params:customParams(def.params,null)}; m.t+=dt; let keep=false;
+      try{ keep=fn(cuCtx(S.f[m.side],m.slot,it,en),m,dt)!==false; }catch(err){ cuFail(m.c,'mote',err); }
+      if(keep&&m.t<12&&Number.isFinite(m.x)&&Number.isFinite(m.y)) S.motes.push(m); }
+  }
+  // What the page needs of each block every frame: {id: value} for the blocks on this fighter's two items that have a
+  // `view` and something to show (the item in hand wins if both carry the same block). undefined when there is nothing.
+  function cuView(f){
+    let out; for(const k of [1-f.held,f.held]){ const it=S.items[f.side][k]; if(it&&it.customs) for(const en of it.customs){ const def=CUSTOMS[en.id]; if(!def||!def.view) continue;
+      try{ const val=def.view(cuCtx(f,k,it,en)); if(val){ out=out||{}; out[en.id]=val; } }catch(err){ cuFail(en.id,'view',err); } } }
+    return out;
+  }
   // An ultimate stops the fight for everyone else. From the moment it starts until its last piece has landed or faded,
   // the other fighter hangs exactly where they are (mid-air, mid-swing), their shots hang in the air, drawn shapes, hacks
   // and the stage wait, and the round clock stops. Nothing either player presses or draws in that time counts. Only the
@@ -1217,18 +1507,21 @@ function createDuel(opts){
     const style=styleOf(spec.kind,spec.style), tune=Math.max(-2,Math.min(2,Math.round(+spec.tune||0)));
     const raw={power:clampStat(spec.power),range:clampStat(spec.range),speed:clampStat(spec.speed)}, stats=balanceStats(raw,tune);
     const traits=traitChoices(spec.kind,spec.traits,spec.name), trait=traits.includes(spec.trait)?spec.trait:traits[0];
-    return {name:spec.name||nameFor(spec),kind:spec.kind,style,el:spec.element,cost,raw,tune,stats,trait,traits,ammo:AMMO.includes(spec.ammo)?spec.ammo:undefined,st:itemStats(spec.kind,spec.element,cost,stats),ver:++S.ver};
+    return {name:spec.name||nameFor(spec),kind:spec.kind,style,el:spec.element,cost,raw,tune,stats,trait,traits,ammo:AMMO.includes(spec.ammo)?spec.ammo:undefined,st:itemStats(spec.kind,spec.element,cost,stats),ver:++S.ver,customs:fitCustoms(spec.customs,spec.kind,style)};
   }
   // Change an item that is already made, while still drawing: what it is, which of its two traits it uses, or its tuning.
   S.tweak=(side,k,ch)=>{
     const it=S.items[side][k]; if(!it||!ch||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
-    const spec={name:it.name,kind:it.kind,style:it.style,element:it.el,power:it.raw.power,range:it.raw.range,speed:it.raw.speed,traits:it.traits,trait:it.trait,tune:it.tune};
+    const spec={name:it.name,kind:it.kind,style:it.style,element:it.el,power:it.raw.power,range:it.raw.range,speed:it.raw.speed,traits:it.traits,trait:it.trait,tune:it.tune,customs:ch.customs!==undefined?ch.customs:it.customs};
     if(ch.kind!==undefined){ if(!KINDS.includes(ch.kind)) return null; spec.kind=ch.kind; spec.style=String(ch.style||''); }
     if(typeof ch.name==='string'){ const nm=ch.name.replace(/[<>&"']/g,'').trim().slice(0,22); if(nm) spec.name=nm; }
     if(ch.trait!==undefined) spec.trait=String(ch.trait);
     if(ch.tune!==undefined) spec.tune=ch.tune;
     return S.setItem(side,k,spec,it.cost);
   };
+  // wielder customizations: give a made item its blocks (see CUSTOMS): a list of ids or {id, params}; fitCustoms cleans it
+  // and keeps it within the points budget. Allowed when tweak is (the draw phase, or any time in practice). [] clears.
+  S.setCustoms=(side,k,list)=>S.tweak(side,k,{customs:Array.isArray(list)?list:[]});
   const usesFor=side=>[0,1].map(k=>{ const it=S.items[side][k]; return it&&it.kind==='heal'?it.st.uses+(it.trait==='feast'?1:0):3; });
   const carries=(side,tr)=>S.items[side].some(it=>it&&it.trait===tr);
   // Replace the platforms mid-match (the desktop overlay does this as real windows move). Platforms may carry an id and
@@ -1310,7 +1603,11 @@ function createDuel(opts){
       dmg*=tr==='pierce'?0.6:0.15; kx*=0.3; ky*=0.3;
     } else if(el==='water') kx*=1.45;
     // A hit with no stun only nudges: it adds to the target's speed instead of replacing it, and does not lift them.
-    const firm=casting(t);   // a fighter casting an ultimate takes the damage and stands their ground
+    // wielder customizations: the attacker's item's blocks, then the blocks of what the target holds, may change the blow (see CUSTOMS)
+    let H=null;
+    if(tr!=='fleet'&&S.ult<0){ H={dmg,kx,ky,stun,el,tr,blocked,fin:!!fin,firm:false,slot,by,t}; if(by&&by!==t&&slot>=0) cfire('hit',by,slot,H); cfire('struck',t,t.held,H);
+      if(H.dmg>=0) dmg=H.dmg; if(Number.isFinite(H.kx)) kx=H.kx; if(Number.isFinite(H.ky)) ky=H.ky; if(H.stun>=0) stun=H.stun; }
+    const firm=casting(t)||!!(H&&H.firm);   // a fighter casting an ultimate takes the damage and stands their ground
     t.hp-=dmg; if(tr==='fleet') S.ultDmg+=dmg; if(!firm){ if(stun>0) t.vx=kx; else{ t.vx+=kx*0.25; ky=0; } if(ky>0){ t.vy=ky; t.ground=false; } else if(ky<0&&!t.ground) t.vy=ky; }
     // Hit-stop: a hit that staggers freezes the whole fight (both fighters, shots, the clock) for a few frames, longer the
     // harder it lands. Nothing moves, so it changes how a hit feels and not who wins. w is the hit's weight, 0 to 1.
@@ -1321,18 +1618,20 @@ function createDuel(opts){
       if(stun>0&&!firm){ t.hurt=Math.max(t.hurt,stun); t.act=null; t.dash=0; }
       if(el==='fire'){ t.burn=2.5; t.burnDps=dmg*0.12; }          // burning also halves any healing
       if(el==='water') t.slow=1.8;
-      if(el==='plant'&&by&&by.hp>0){ const grow=t.slow>0; if(grow&&!tag) tag='grow'; by.hp=Math.min(HP,by.hp+dmg*0.3*(grow?2:1)*(by.burn>0?0.5:1)); }   // plants drink from a soaked target
+      if(el==='plant'&&by&&by.hp>0){ const grow=t.slow>0; if(grow&&!tag) tag='grow'; const k=slot>=0?slot:by.held, pit=S.items[by.side][k], n=dmg*0.3*(grow?2:1);   // plants drink from a soaked target
+        if(pit&&by!==t) lifeOrbs(cuCtx(by,k,pit,{id:'lifesteal',params:{}}),t,n); else by.hp=Math.min(HP,by.hp+n*(by.burn>0?0.5:1)); }      // wielder: the healing travels as orbs (see CUSTOMS.lifesteal) and lands when they arrive
     }
     if(tr==='flurry'&&!blocked) for(const dy of [44,66]) S.events.push({e:'hit',x:Math.round(t.x),y:Math.round(t.y+dy),n:Math.max(1,Math.round(dmg/2)),el,side:t.side,hap:hap||'thud',dir:kx<0?'L':'R'});
     else S.events.push({e:blocked?'block':'hit',x:Math.round(t.x),y:Math.round(t.y+52),n:Math.max(1,Math.round(dmg)),el,side:t.side,hap:hap||'thud',dir:kx<0?'L':'R',tag:tag||undefined,w:+w.toFixed(2),fin:fin&&!blocked?1:0,ult:tr==='fleet'?1:0,d:tr==='fleet'?+dmg.toFixed(2):undefined});
     if(tr==='blast'&&!blocked) S.events.push({e:'boom',x:Math.round(t.x),y:Math.round(t.y+45),n:26,el,s:1});
+    if(H){ H.dmg=dmg; H.stun=stun; if(by&&by!==t&&slot>=0) cfire('landed',by,slot,H); cfire('took',t,t.held,H); }      // wielder customizations
     if(pushes){ const q=pushes; pushes=null; for(const go of q) go(); }
   }
   // Begin a move: the fighter is committed until it ends or chains.
   function startMove(f,k,m){
     const it=m==='mine'?PICK:itemOf(f.side,k), M=MOVES[m], p=it.st.p;
     f.act={k,m,v:ALT.includes(m)&&S.rand()<0.5?1:0,t:0,dur:M.dur,rate:(f.overclock>0?1/0.7:1)*(it.st.rate||1)/(it.kind==='ranged'?0.75+0.25*p:0.85+0.15*p),done:0,lunged:false};
-    f.buf[k]=0; f.held=k;
+    f.buf[k]=0; f.held=k; if(m!=='mine') cfire('move',f,k,f.act);      // wielder customizations
     if(M.carry) f.vx=f.face*Math.max(Math.abs(f.vx),M.carry);
     if(M.dive&&!f.ground){ f.vy=-M.dive; f.vx=f.face*Math.max(Math.abs(f.vx),M.dive*0.5); }
     if(M.hop&&f.ground){ f.vy=M.hop; f.ground=false; f.jumps=1; } else if(M.hop) f.vy=Math.max(f.vy,M.hop);
@@ -1343,12 +1642,13 @@ function createDuel(opts){
     return it.style+(!f.ground?'_air':inp.d?'_power':'_shot');
   }
   function use(f,k){
-    const it=itemOf(f.side,k), st=it.st; f.buf[k]=0; f.held=k;
+    const it=itemOf(f.side,k), st=it.st; f.buf[k]=0; f.held=k; cfire('use',f,k,{kind:it.kind});      // wielder customizations
     const cool=s=>{ f.cd[k]=f.cdMax[k]=s; };
     if(it.kind==='melee'||it.kind==='ranged') startMove(f,k,firstMove(f,it));
     else if(it.kind==='bomb'){
       startMove(f,k,'throw'); cool(st.cd);
-      S.pr.push({id:nextId++,k:'bomb',side:f.side,slot:k,x:f.x+f.face*14,y:f.y+72,vx:f.face*340*(st.toss||1)+f.vx*0.4,vy:420,dmg:st.dmg,el:it.el,kb:st.kb,radius:st.radius,grav:1100,tr:it.trait,ttl:3});
+      const bomb={id:nextId++,k:'bomb',side:f.side,slot:k,x:f.x+f.face*14,y:f.y+72,vx:f.face*340*(st.toss||1)+f.vx*0.4,vy:420,dmg:st.dmg,el:it.el,kb:st.kb,radius:st.radius,grav:1100,tr:it.trait,ttl:3};
+      cfire('shot',f,k,bomb); S.pr.push(bomb);      // wielder customizations
     }else if(it.kind==='shield'){ f.shield=st.dur; f.shieldMove=st.move; f.shieldTr=it.trait; f.shieldK=k; cool(st.cd+st.dur); }
     else if(it.kind==='dash'){ f.dash=0.2; f.dashHit=false; f.dashItem=it; f.vx=f.face*st.speed; cool(st.cd); S.events.push({e:'dash',x:Math.round(f.x),y:Math.round(f.y+40),side:f.side}); }
     else{
@@ -1412,17 +1712,19 @@ function createDuel(opts){
     while(a.done<marks.length&&a.t>=marks[a.done]){
       if(M.hits){
         if(M.mine&&!a.mined){ a.mined=true; mineHit(f); }
-        const dx=(e.x-f.x)*f.face, reach=st.reach*(M.reach||1)*sty.reach;
+        const sw={reach:st.reach*(M.reach||1)*sty.reach,dmg:st.dmg*M.dmg*sty.dmg,kb:M.kb*sty.kb*(0.7+0.3*st.p)*(st.push||1),m:a.m}; if(!M.mine) cfire('swing',f,k,sw);      // wielder customizations may change the swing
+        const dx=(e.x-f.x)*f.face, reach=sw.reach;
         if(M.quake&&!a.quaked){ a.quaked=true; S.events.push({e:'quake',x:Math.round(f.x+f.face*reach*0.7),y:Math.round(f.y),n:Math.round(reach)}); }
-        if(dx>-14&&dx<reach+14&&Math.abs(e.y-f.y)<(M.tall||72)){ a.done++; hurt(e,st.dmg*M.dmg*sty.dmg,it.el,f.face*M.kb*sty.kb*(0.7+0.3*st.p)*(st.push||1),M.lift,f,f.x,undefined,it.trait,undefined,M.end&&!M.mine&&a.done>=marks.length?1:0,M.mine?undefined:k); continue; }
+        if(dx>-14&&dx<reach+14&&Math.abs(e.y-f.y)<(M.tall||72)){ a.done++; hurt(e,sw.dmg,it.el,f.face*sw.kb,M.lift,f,f.x,undefined,it.trait,undefined,M.end&&!M.mine&&a.done>=marks.length?1:0,M.mine?undefined:k); continue; }
         if(a.t<marks[a.done]+0.07) break;      // the blade stays dangerous for a moment
         a.done++;
       }else{
         const aim=M.aims?M.aims[a.done]:M.aim||0, mz=(M.mzs&&M.mzs[a.done])||M.mz||MUZZLE[it.style]||MUZZLE.gun; a.done++;
         // A shot flies as far as the item's range allows (a charged shot a third further), then fades.
         const sp=M.speed*(st.fly||1), life=Math.min(1.6,(st.dist||900)*(M.kbMul?1.35:1)/sp);
-        S.pr.push({id:nextId++,k:'shot',st:it.style,big:M.big||0,side:f.side,slot:k,x:f.x+f.face*mz[0],y:f.y+mz[1],
-          vx:f.face*sp*Math.cos(aim),vy:-sp*Math.sin(aim),grav:M.grav||0,dmg:st.dmg*M.dmg*sty.dmg,el:it.el,kb:st.kb*(M.kbMul||1),stun:M.stun,tr:it.trait,fin:M.kbMul?1:0,life,ttl:life});
+        const shot={id:nextId++,k:'shot',st:it.style,big:M.big||0,side:f.side,slot:k,x:f.x+f.face*mz[0],y:f.y+mz[1],
+          vx:f.face*sp*Math.cos(aim),vy:-sp*Math.sin(aim),grav:M.grav||0,dmg:st.dmg*M.dmg*sty.dmg,el:it.el,kb:st.kb*(M.kbMul||1),stun:M.stun,tr:it.trait,fin:M.kbMul?1:0,life,ttl:life};
+        cfire('shot',f,k,shot); S.pr.push(shot);      // wielder customizations
         if(M.recoil) f.vx-=f.face*M.recoil;
         S.events.push({e:'shot',x:Math.round(f.x+f.face*(mz[0]+(it.style==='gun'||it.style==='akimbo'?14:4))),y:Math.round(f.y+mz[1]),st:it.style,side:f.side,f:f.face,el:it.el});
       }
@@ -1450,16 +1752,17 @@ function createDuel(opts){
       else{
         if(dir&&(!f.act||(MOVES[f.act.m]&&MOVES[f.act.m].shots))) f.face=dir;   // a fighter can turn mid-volley: the shots still to come follow
         // While committed to a move the fighter can only drift.
-        const max=RUN_SPEED*(f.slow>0?0.55:1)*(f.shield>0?(f.shieldMove||0.6):1)*(carries(f.side,'swift')?1.12:1)*(f.overclock>0?1.18:1)*(f.scale<0.85?0.85:1), a=(f.act?(f.ground?900:500):(f.ground?2600:1500))*dt, want=f.act?dir*max*0.3:dir*max;
+        const max=RUN_SPEED*(f.slow>0?0.55:1)*(f.shield>0?(f.shieldMove||0.6):1)*(carries(f.side,'swift')?1.12:1)*(f.overclock>0?1.18:1)*(f.scale<0.85?0.85:1)*f.run, a=(f.act?(f.ground?900:500):(f.ground?2600:1500))*dt, want=f.act?dir*max*0.3:dir*max;
         if(f.flung<=0) f.vx+=Math.max(-a,Math.min(a,want-f.vx));          // a flung fighter keeps its momentum
-        if(f.jq>0){ f.jq--; if(!f.act&&(f.ground||f.jumps<2)){ if(!f.ground) puff(f.x,-f.y,PCOLS[f.side],6); f.vy=f.ground?640:560; f.jumps=f.ground?1:2; f.ground=false; } }
+        if(f.jq>0){ f.jq--; if(!f.act){ const j={ok:f.ground||f.jumps<2,air:!f.ground,n:f.jumps,vy:f.ground?640:560}; cfire('jump',f,f.held,j);      // wielder customizations may allow another jump
+          if(j.ok){ if(!f.ground) puff(f.x,-f.y,PCOLS[f.side],6); f.vy=j.vy; f.jumps=f.ground?1:Math.max(2,f.jumps+1); f.ground=false; } } }
         if(inp.d&&f.ground&&f.y>0&&!f.act&&f.buf[0]<=0&&f.buf[1]<=0) f.drop=0.22;
         for(const k of [0,1]) if(f.buf[k]>0&&f.cd[k]<=0&&!f.act) use(f,k);
         if(f.mbuf>0&&f.mcd<=0&&!f.act){ f.mbuf=0; startMove(f,f.held,'mine'); }
       }
       // Casting the ultimate, the fighter drifts up and hangs in the air until the volley is nearly out.
       if(f.act&&f.act.m==='fleet'&&f.act.t<1.25){ f.vx*=Math.max(0,1-8*dt); f.vy=f.act.t<0.4?130*(1-f.act.t/0.4):0; }
-      else f.vy-=1750*dt;
+      else f.vy-=1750*dt*f.grav;
     }
     // Move, then push out of anything solid: art-board cells, drawn walls and blocks, crates and pop-ups.
     const hw=11, hh=88*f.scale, px=f.x, py=f.y; let land=false;
@@ -1483,7 +1786,7 @@ function createDuel(opts){
       if(f.y<=0){ down(0); f.on=null; }
       else if(f.vy<=0&&f.drop<=0) for(const p of oneWays()) if(py>=p.y&&f.y<=p.y&&f.x>=p.x0-6&&f.x<=p.x1+6){ down(p.y); f.on=p.id; break; }
     }
-    if(land){ f.vy=0; f.jumps=0; } f.ground=land;
+    if(land){ if(!f.ground) cfire('land',f,f.held,{vy:f.vy}); f.vy=0; f.jumps=0; } f.ground=land;
   }
   function projectiles(dt,only){
     for(const p of S.pr){
@@ -1521,7 +1824,7 @@ function createDuel(opts){
       if(e.bubble&&p.k!=='bomb'&&Math.hypot(p.x-e.x,p.y-(e.y+55))<e.bubble.r){ p.vx*=-1; p.vy*=-0.5; if(p.os===undefined) p.os=p.side; p.side=e.side; e.bubble.hp--; if(e.bubble.hp<=0) e.bubble=null; ring(p.x,-p.y,'#2bd'); log(e,'shield reflected a projectile'); continue; }
       if(touch&&e.shield>0&&shotRules('guard',p,e,e.shieldK)) continue;      // guard rules: it touches the foe's raised shield, before the block
       if(p.k!=='bomb'){
-        if(touch){ hurt(e,p.dmg,p.el,Math.sign(p.vx)*p.kb,p.lift||90,S.f[p.side],p.x-Math.sign(p.vx)*30,p.stun,p.tr,undefined,p.fin,p.k==='shot'&&p.os===undefined?p.slot:undefined); if(p.tr==='boomerang'&&!p.back) turn(); else p.ttl=0; }
+        if(touch){ hurt(e,p.dmg,p.el,Math.sign(p.vx)*p.kb,p.lift||90,S.f[p.side],p.x-Math.sign(p.vx)*30,p.stun,p.tr,undefined,p.fin,p.k==='shot'&&p.os===undefined&&!p.nocu?p.slot:undefined); if(p.tr==='boomerang'&&!p.back) turn(); else p.ttl=0; }
         else if(p.y<=0){ if(p.tr==='bounce'&&!p.hop){ p.hop=1; p.y=1; p.vy=Math.abs(p.vy)*0.7+170; } else p.ttl=0; }
         if(p.ttl<=0&&p.tr==='boomerang'&&!p.back) turn();
       }else if(p.tr==='bounce'&&!p.hop&&!touch&&!wall&&p.ttl>0&&p.y<=0){ p.hop=1; p.y=1; p.vy=Math.abs(p.vy)*0.55+150; p.vx*=0.8; }
@@ -1587,7 +1890,7 @@ function createDuel(opts){
     if(!idle&&S.cells.length) return;                                   // the board is not rebuilt in the middle of a fight
     if(L.w&&!S.sheet) W=Math.max(600,L.w);
     const b=S.sheet?null:L.board; BOARD=b&&b.x1-b.x0>300&&b.top-b.floor>180?{x0:rr(b.x0),x1:rr(b.x1),floor:Math.max(0,rr(b.floor)),top:rr(b.top)}:null;
-    S.f=[fresh(0),fresh(1)]; S.pr=[]; resetWorld();
+    S.f=[fresh(0),fresh(1)]; S.pr=[]; S.motes=[]; resetWorld();
   };
   const addObj=o=>{ o.id=oid++; S.objs.push(o);
     fx('obj',{o:{id:o.id,kind:o.kind,x:rr(o.x),y:rr(o.y),w:rr(o.w),h:rr(o.h||0),color:o.color,side:o.owner,dyn:o.dyn?1:0,perm:o.life===Infinity?1:0,msg:o.msg,strokes:(o.local||o.strokes||[]).map(st=>st.map(p=>[rr(p.x),rr(p.y)]))}}); return o; };
@@ -1789,7 +2092,7 @@ function createDuel(opts){
   // After a knockout nothing is decided any more, but the picture must not freeze: fighters finish falling and come to
   // rest (no buttons, no shots, no damage). settle is that, for the pause after a round and the first seconds of the end.
   function settle(dt){
-    SOL=solids(); S.pr.length=0; const keep=S.inp;
+    SOL=solids(); S.pr.length=0; S.motes.length=0; const keep=S.inp;
     S.inp=keep.map(i=>Object.assign({},i,{l:0,r:0,d:0}));
     for(const f of S.f){ f.buf[0]=f.buf[1]=0; f.jq=0; f.mbuf=0; if(f.act&&!f.ground) f.act=null; control(f,dt); }
     S.inp=keep;
@@ -1802,13 +2105,13 @@ function createDuel(opts){
     }
     if(S.phase==='fight'&&S.stop>0){ S.stop-=dt; if(S.ult>=0) S.ultT+=dt; return; }   // hit-stop: everything waits, the round clock included
     S.t-=dt;
-    if(S.phase==='draw'){ if((S.ready[0]&&S.ready[1])||S.t<=0){ S.phase='count'; S.t=3; S.stop=0; S.ult=-1; S.f=[fresh(0),fresh(1)]; for(const f of S.f) f.uses=usesFor(f.side); S.pr=[]; resetWorld(); resetRules(); } return; }
-    if(S.phase==='count'){ if(S.t<=0){ if(S.hold>0){ S.hold=Math.max(0,S.hold-dt); S.t=0; return; } S.phase='fight'; S.t=ROUND_TIME; S.events.push({e:'go'}); } return; }      // S.hold: see setHold
+    if(S.phase==='draw'){ if((S.ready[0]&&S.ready[1])||S.t<=0){ S.phase='count'; S.t=3; S.stop=0; S.ult=-1; S.f=[fresh(0),fresh(1)]; for(const f of S.f) f.uses=usesFor(f.side); S.pr=[]; S.motes=[]; resetWorld(); resetRules(); } return; }
+    if(S.phase==='count'){ if(S.t<=0){ if(S.hold>0){ S.hold=Math.max(0,S.hold-dt); S.t=0; return; } S.phase='fight'; S.t=ROUND_TIME; S.events.push({e:'go'}); for(const f of S.f) cfire('round',f,-1); } return; }      // S.hold: see setHold
     if(S.phase==='end'){
       settle(dt);
       if(S.t>0) return;
       if(S.winner>=0&&S.wins[S.winner]>=WINS){ S.phase='over'; S.champ=S.winner; }
-      else{ S.round++; S.phase='draw'; S.t=25; S.ready=[false,false]; S.f=[fresh(0),fresh(1)]; S.pr=[]; resetWorld(); }
+      else{ S.round++; S.phase='draw'; S.t=25; S.ready=[false,false]; S.f=[fresh(0),fresh(1)]; S.pr=[]; S.motes=[]; resetWorld(); }
       return;
     }
     const lk=ultLock();
@@ -1827,8 +2130,9 @@ function createDuel(opts){
       }
       S.time+=dt; SOL=solids();
       if(S.rules.length) ruleStep(dt);
+      for(const f of S.f){ f.run=1; f.grav=1; cfire('tick',f,-1,dt); }      // wielder customizations
       for(const f of S.f) control(f,dt);
-      projectiles(dt,-1); world(dt); if(S.sheet) sheetTick(dt);
+      projectiles(dt,-1); stepMotes(dt); world(dt); if(S.sheet) sheetTick(dt);
     }
     const a=S.f[0], b=S.f[1], d0=a.hp<=0, d1=b.hp<=0;
     if(!S.practice&&(d0||d1||S.t<=0)){
@@ -1844,12 +2148,13 @@ function createDuel(opts){
     hack:S.hack&&{by:S.hack.by,target:S.hack.target,name:S.hack.def.name,desc:S.hack.def.desc,t:+S.hack.t.toFixed(2),max:S.hack.max,counter:S.hack.counter},
     fxs:S.effects.map(e=>({by:e.by,target:e.target,counter:e.counter,name:e.name})),
     items:S.items.map(a=>a.map(it=>it&&{name:it.name,kind:it.kind,style:it.style,el:it.el,cost:Math.round(it.cost),ver:it.ver,sz:Math.round(it.st.size),
-      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune,am:it.ammo})),
+      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune,am:it.ammo,cu:it.customs&&it.customs.length?it.customs:undefined})),
     f:S.f.map(f=>({x:r1(f.x),y:r1(f.y),vx:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vx),vy:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vy),face:f.face,hp:Math.max(0,r1(f.hp)),g:f.ground?1:0,
       act:f.act?{k:f.act.k,m:f.act.m+(f.act.v?'_b':''),t:+f.act.t.toFixed(3),r:+f.act.rate.toFixed(2)}:null,
       sh:f.shield>0?1:0,hurt:f.hurt>0?1:0,burn:f.burn>0?1:0,slow:f.slow>0?1:0,dash:f.dash>0?1:0,held:f.held,
       cd:[+(f.cd[0]/f.cdMax[0]).toFixed(2),+(f.cd[1]/f.cdMax[1]).toFixed(2)],uses:f.uses,
-      ink2:Math.round(f.ink2),od:Math.round(f.od),stun:f.stun>0?1:0,trap:f.trap>0?1:0,bub:f.bubble?Math.round(f.bubble.r):0,oc:f.overclock>0?1:0,sc:+f.scale.toFixed(2),fl:f.flung>0?1:0})),
+      ink2:Math.round(f.ink2),od:Math.round(f.od),stun:f.stun>0?1:0,trap:f.trap>0?1:0,bub:f.bubble?Math.round(f.bubble.r):0,oc:f.overclock>0?1:0,sc:+f.scale.toFixed(2),fl:f.flung>0?1:0,cv:cuView(f)})),
+    mo:S.motes.map(m=>({id:m.id,c:m.c,side:m.side,slot:m.slot,x:r1(m.x),y:r1(m.y),vx:Math.round(m.vx),vy:Math.round(m.vy),d:m.d})),      // wielder customizations: cu (an item's blocks), cv (what each shows on its fighter), mo (motes)
     pr:S.pr.map(p=>({id:p.id,k:p.k,st:p.st,big:p.big,side:p.side,slot:p.slot,x:r1(p.x),y:r1(p.y),vx:Math.round(p.vx),vy:Math.round(p.vy),el:p.el,o:p.os,h:p.hover?1:undefined,a:p.st==='fleet'?+p.ang.toFixed(2):undefined,z:S.ult>=0&&!(p.tr==='fleet'&&p.side===S.ult)?1:undefined})),
     ev:S.events.splice(0)});
   // A fingerprint of where the match stands: the phase, clock, round and wins, and everything about every fighter and
@@ -1867,6 +2172,7 @@ function createDuel(opts){
     };
     for(const f of S.f) put(f,0);
     for(const p of S.pr) put(p,0);
+    for(const m of S.motes) put(m,0);
     return fnv1a(out.join(','));
   };
   if(S.sheet) sheetReset();
@@ -2599,6 +2905,7 @@ function buildDesks(){
       else if(b.dataset.trait) tweak(d,{trait:b.dataset.trait});
       else if(b.dataset.tune) tweak(d,{tune:it.tn+ +b.dataset.tune});
       else if(b.dataset.kind) tweak(d,{kind:b.dataset.kind,style:b.dataset.style});
+      else if(b.dataset.cu){ const on=(it.cu||[]).map(e=>e.id), id=b.dataset.cu; tweak(d,{customs:on.includes(id)?on.filter(x=>x!==id):[id,...on]}); }      // wielder customizations: the newest first, so it is the one kept if both do not fit
     };
     el.querySelector('.ready').onclick=()=>{ if(sim) sim.setReady(side); else post({type:'ready'}); };
     const pos=e=>{ const r=d.pad.getBoundingClientRect(); return [Math.round((e.clientX-r.left)*PAD_W/r.width),Math.round((e.clientY-r.top)*PAD_H/r.height)]; };
@@ -2659,11 +2966,18 @@ const STAT_NAMES={melee:['Power','Range','Speed'],ranged:['Power','Range','Speed
   shield:['Block time','Mobility','Recharge'],dash:['Impact','Distance','Recharge'],heal:['Healing','Helpings','Recharge']};
 const statBars=it=>['pw','rg','sp'].map((k,n)=>[k,(STAT_NAMES[it.kind]||STAT_NAMES.melee)[n]]).map(([k,l])=>`<div class="stat ${k}"><span>${l}</span><div class="sbar"><i style="width:${Math.round(it[k]*100/9)}%"></i></div><b>${it[k].toFixed(1)}</b></div>`).join('');
 const FIXES=[['melee','blade','Sword'],['melee','spear','Spear or whip'],['melee','hammer','Hammer'],['melee','fist','Fists'],['melee','dual','Twin blades'],['ranged','bow','Bow'],['ranged','gun','Gun'],['ranged','akimbo','Twin guns'],['ranged','staff','Magic'],['ranged','hurl','Thrown'],['bomb','','Bomb'],['shield','','Shield'],['dash','','Speed'],['heal','','Healing']];
+// wielder customizations: the blocks that suit this item, to switch on and off (at most CUSTOM_MAX, within CUSTOM_BUDGET points)
+const customNames=it=>(it.cu||[]).map(e=>CUSTOMS[e.id]?CUSTOMS[e.id].label:e.id);
+function cardCustoms(it,off){
+  const ids=Object.keys(CUSTOMS).filter(id=>fitCustoms([id],it.kind,it.style).length), on=(it.cu||[]).map(e=>e.id); if(!ids.length) return '';
+  return `<details class="fix"${on.length?' open':''}><summary>Special${on.length?': '+esc(customNames(it).join(' + ')):''} (${customsTotal(it.cu)}/${CUSTOM_BUDGET} points)</summary><div>${ids.map(id=>`<button data-cu="${id}" title="${esc(CUSTOMS[id].text)}" aria-pressed="${on.includes(id)}" ${off}>${esc(CUSTOMS[id].label)}</button>`).join('')}</div></details>`;
+}
 function cardHTML(it,locked,showStock){
   const off=locked?'disabled':'', weapon=it.kind==='melee'||it.kind==='ranged';
   return `<div class="stats">${statBars(it)}</div>
     <div class="traits">${it.trs.map(t=>`<button class="trait" data-trait="${t}" aria-pressed="${t===it.tr}" ${off}><b>${TRAITS[t].label}</b></button>`).join('')}</div>
     <div class="tune"><button data-tune="-1" ${locked||it.tn<=-2?'disabled':''}>◀ ${weapon?'Faster':'Sooner'}</button><button data-tune="1" ${locked||it.tn>=2?'disabled':''}>Stronger ▶</button></div>
+    ${cardCustoms(it,off)}
     <details class="fix"><summary>Change</summary><div>${FIXES.map(([k,s,l])=>`<button data-kind="${k}" data-style="${s}" aria-pressed="${it.kind===k&&(it.style||'')===s}" ${off}>${l}</button>`).join('')}</div></details>
     <button class="more">${showStock?'Hide ready-made':'Ready-made'}</button>`;
 }
@@ -3006,6 +3320,7 @@ function sfxHear(p,v){
       case 'boom': X.play('boom',{pan,small:!!e.s}); break;
       case 'block': case 'quake': case 'dash': case 'heal': case 'zip': case 'ult': case 'slash': case 'ko': case 'go': case 'del': case 'forge': case 'recycle': case 'restore': X.play(e.e,{pan}); break;
       case 'obj': X.play('glyph',{pan:sfxPan(e.o&&e.o.x)}); break;
+      case 'cu': if(e.snd) X.play(e.snd,{pan}); break;      // wielder customizations: a block names the sound of its event
     }
   }
   if(!p||!p.f||!v.f) return;
@@ -3028,6 +3343,7 @@ function accept(v){
     if(e.e==='rule') e.txt=forgeCallout(e,forge,forgeSaid,e.t0,FORGE_LIMITS.sayEvery*1000);      // a match rule fired: its shout, or its name
     if(e.e==='rulefault'&&forge){ forgeOff[e.id]=1; drawForge(); }
     if(e.e==='quake') shake=Math.max(shake,9);
+    if(e.e==='cu'&&TELLS[e.c]&&TELLS[e.c].event) TELLS[e.c].event(e);      // wielder customizations
     if(e.e==='hit'&&ANIM.rig&&anim[e.side]&&anim[e.side].rig) ANIM.rig.kick(anim[e.side].rig,(e.dir==='L'?-1:1)*(view?view.f[e.side].face:1),e.n);
     const now=e.t0, soft=CALM?0.3:1;
     if(e.e==='boom') shake=Math.max(shake,(e.s?4:8)*soft);
@@ -3297,7 +3613,7 @@ function syncUI(){
   if(ls!==loSig){ loSig=ls; lo.hidden=!showLo;
     if(showLo) lo.innerHTML=[0,1].map(s=>`<div class="lo" style="border-color:${PCOL[s]}"><h3>${NAME[s]}</h3>${v.items[s].map((it,k)=>{
       if(!it) return `<div class="loitem empty">${'AB'[k]}: nothing yet</div>`; const a=art[s][k];
-      return `<div class="loitem"><div class="top">${a&&a.ver===it.ver?`<img alt="" src="${a.sprite.cv.toDataURL()}">`:''}<div class="nm">${esc(it.name)}<small>${TRAITS[it.tr]?TRAITS[it.tr].label:''} · ${it.cost} ink</small></div></div>${statBars(it)}</div>`; }).join('')}</div>`).join(''); }
+      return `<div class="loitem"><div class="top">${a&&a.ver===it.ver?`<img alt="" src="${a.sprite.cv.toDataURL()}">`:''}<div class="nm">${esc(it.name)}<small>${TRAITS[it.tr]?TRAITS[it.tr].label:''}${it.cu?' · '+esc(customNames(it).join(' + ')):''} · ${it.cost} ink</small></div></div>${statBars(it)}</div>`; }).join('')}</div>`).join(''); }
   document.querySelectorAll('.tc').forEach(el=>{ const s=+el.dataset.side;
     { const q=el.querySelector('[data-k="q"]'), od=v.f[s].od||0; if(q){ q.style.setProperty('--cd',1-od/100); const nm=padView?INK.HACKS[FXI.hackSel].id:INK.HACKS[FXI.hackSel].name.replace('.exe',''), sm=q.querySelector('small'); if(sm.textContent!==nm) sm.textContent=nm; }
       const u=el.querySelector('[data-k="u"]'); if(u){ const un=ultOf(v.items[s][v.f[s].held]||v.items[s][1-v.f[s].held]).name.toLowerCase(), us=u.querySelector('small'); if(us.textContent!==un) us.textContent=un; u.style.setProperty('--cd',1-od/100); u.classList.toggle('full',od>=100&&v.phase==='fight'&&!!(v.items[s][0]||v.items[s][1])); } }
@@ -3394,11 +3710,106 @@ function pickClip(v,i,st,age){
   if(v.phase==='fight'||v.phase==='count') return [ranged?it.style+'_stance':it&&it.style==='dual'&&ANIM.clips.dual_stance?'dual_stance':(!it||it.style==='fist')&&ANIM.clips.fist_stance?'fist_stance':'fight_idle'];
   return ['idle'];
 }
+/* ---------- wielder customizations on screen: the tells (rules: CUSTOMS) ----------
+   Every block must be SEEN. TELLS[id] may have any of:
+     back(g,e) / front(g,e)   drawn behind / in front of the fighter every frame, for each block on either of their items.
+                              e: {v, side, slot, f (the fighter in the snapshot), item, entry, p (parameters), held, val
+                              (what the block's view() sent: f.cv[id]), col (the weapon's colour), x, base (the feet, on
+                              screen), sc (body scale), now, dt, mem (an object kept per fighter and block, for easing)}
+     weapon(e)                a number: how much larger to draw the held weapon (1 = as it is)
+     tint(e)                  a colour for the whole fighter, or nothing
+     fx(g,ev,a,e)             an event the block sent with c.emit, drawn for 700 ms; a runs 0 to 1; e: {now, v, y (on screen), col}
+     event(ev)                once, when that event arrives (a shake, say)
+     mote(g,m,e)              one of the block's motes; e: {x, y (on screen), now, v, col}
+   All of this is display only: the rules and the server never see it. */
+const TELLS={}, TELL_HEAL='#2f9e56', TELL_RAGE='#d4107a';
+const tellCol=(v,side,slot)=>{ const it=v&&v.items[side]&&v.items[side][slot]; return it&&it.el!=='none'?PEN[it.el]:PCOL[side]; };
+// every block on fighter i's two items that has a tell: fn(tell, e)
+function tellsOf(v,i,st,fn){
+  const f=v.f[i]; if(net&&v.phase==='draw'&&i!==net.side&&net.side>=0) return;       // the other player's gear is not shown while they draw
+  for(const k of [0,1]){ const it=v.items[i][k]; if(!it||!it.cu) continue;
+    for(const en of it.cu){ const T=TELLS[en.id]; if(!T) continue; const mem=st.tell||(st.tell={}), key=en.id+k;
+      fn(T,{v,side:i,slot:k,f,item:it,entry:en,p:en.params||{},held:f.held===k,val:f.cv?f.cv[en.id]:undefined,col:tellCol(v,i,k),mem:mem[key]||(mem[key]={})}); } }
+}
+const tellTint=(v,i,st)=>{ let col=null; tellsOf(v,i,st,(T,e)=>{ if(T.tint) col=T.tint(e)||col; }); return col; };
+const tellWeapon=(v,i,st,now,dt)=>{ let k=1; tellsOf(v,i,st,(T,e)=>{ if(T.weapon&&e.held){ e.now=now; e.dt=dt; k*=T.weapon(e)||1; } }); return k; };
+function tellDraw(layer,v,i,st,x,base,now,dt){ tellsOf(v,i,st,(T,e)=>{ if(!T[layer]) return; Object.assign(e,{x,base,sc:e.f.sc||1,now,dt}); L.save(); T[layer](L,e); L.restore(); }); }
+const tellText=(g,txt,x,y,col,size)=>{ g.font='bold '+(size||24)+'px "Gochi Hand",cursive'; g.textAlign='center'; g.lineJoin='round'; g.lineWidth=5; g.strokeStyle='#fffdf6'; g.strokeText(txt,x,y); g.fillStyle=col; g.fillText(txt,x,y); };
+// Lifesteal (and plant ink): green orbs fly from the victim to the attacker; a ring where each lands, and the total once all are in.
+TELLS.lifesteal={
+  mote(g,m,e){ const sp=Math.hypot(m.vx,m.vy)||1, tl=Math.min(46,sp*0.07), ux=m.vx/sp, uy=-m.vy/sp, r=8.5+1.5*Math.sin(e.now/60+m.id);
+    g.lineCap='round'; g.strokeStyle=TELL_HEAL; g.globalAlpha=.4; g.lineWidth=10; g.beginPath(); g.moveTo(e.x-ux*tl,e.y-uy*tl); g.lineTo(e.x,e.y); g.stroke();
+    g.globalAlpha=1; g.shadowColor='#39d67a'; g.shadowBlur=14; g.fillStyle=TELL_HEAL; g.beginPath(); g.arc(e.x,e.y,r,0,7); g.fill(); g.shadowBlur=0;
+    g.lineWidth=1.5; g.strokeStyle='#0d4a25'; g.stroke(); g.fillStyle='#d9ffe6'; g.beginPath(); g.arc(e.x-1.5,e.y-1.5,r*0.45,0,7); g.fill(); },
+  fx(g,ev,a,e){ const u=Math.min(1,a*2.2);
+    g.globalAlpha=1-u; g.strokeStyle=TELL_HEAL; g.lineWidth=5*(1-u)+1; g.beginPath(); g.arc(ev.x,e.y,10+u*30,0,7); g.stroke();
+    g.lineWidth=3; g.lineCap='round'; g.beginPath(); g.moveTo(ev.x-7,e.y); g.lineTo(ev.x+7,e.y); g.moveTo(ev.x,e.y-7); g.lineTo(ev.x,e.y+7); g.stroke();
+    if(ev.total>=0.5){ g.globalAlpha=1-a; tellText(g,'+'+Math.round(ev.total),ev.x,e.y-58-a*30,TELL_HEAL,26); } }};
+// Glide: the drawing opens into a canopy over the fighter, corded to the shoulders, with wind lines streaming up past it.
+TELLS.glide={
+  front(g,e){ const m=e.mem; m.o=Math.max(0,Math.min(1,(m.o||0)+(e.val&&e.held?1:-1)*e.dt*7)); if(m.o<0.03) return;
+    const o=m.o*(2-m.o), w=62*o, h=44*o, cx=e.x, cy=e.base-122*e.sc-22*o+Math.sin(e.now/190)*2.5, sh=e.base-74*e.sc;
+    g.lineCap='round'; g.lineJoin='round'; g.strokeStyle='#111'; g.lineWidth=1.6; g.globalAlpha=.8*o;
+    for(const q of [-1,-0.34,0.34,1]){ g.beginPath(); g.moveTo(cx+q*w,cy); g.lineTo(cx+q*7,sh); g.stroke(); }
+    g.globalAlpha=1; g.beginPath(); g.moveTo(cx-w,cy); g.bezierCurveTo(cx-w,cy-h*1.5,cx+w,cy-h*1.5,cx+w,cy);
+    for(let n=2;n>=0;n--){ const x1=cx-w+(n+0.5)*w*2/3, x0=cx-w+n*w*2/3; g.quadraticCurveTo(x1,cy-h*0.28,x0,cy); }
+    g.closePath(); g.fillStyle=e.col; g.globalAlpha=.22*o; g.fill(); g.globalAlpha=o; g.strokeStyle=e.col; g.lineWidth=3.5; g.stroke();
+    g.lineWidth=1.5; g.globalAlpha=.5*o; for(const q of [-0.34,0.34]){ g.beginPath(); g.moveTo(cx+q*w,cy); g.quadraticCurveTo(cx+q*w*0.9,cy-h*0.7,cx,cy-h*1.12); g.stroke(); }
+    g.globalAlpha=o; g.save(); g.translate(cx,cy-h*0.6); sprite(e.side,e.slot,30*o); g.restore();
+    g.strokeStyle=e.col; g.lineWidth=2.5; for(let n=0;n<6;n++){ const ph=((e.now/4+n*53)%90)/90, wx=cx+(n-2.5)*30+(n%2?9:-6), wy=e.base-30-ph*150; g.globalAlpha=.55*o*Math.sin(ph*Math.PI); g.beginPath(); g.moveTo(wx,wy); g.lineTo(wx,wy-26); g.stroke(); } }};
+// Extra jump: a wide ring and a burst of spikes under the feet in the weapon's colour (the ordinary double jump is a small puff).
+TELLS.airjump={
+  fx(g,ev,a,e){ const u=Math.min(1,a*1.7), k=1-u; g.strokeStyle=e.col; g.fillStyle=e.col; g.lineCap='round';
+    g.globalAlpha=k; g.lineWidth=7*k+1.5; g.beginPath(); g.ellipse(ev.x,e.y+4,18+u*58,5+u*13,0,0,7); g.stroke();
+    g.lineWidth=3; g.beginPath(); g.ellipse(ev.x,e.y+4,8+u*30,3+u*7,0,0,7); g.stroke();
+    for(let n=0;n<9;n++){ const t=Math.PI*(0.08+n*0.105), r0=16+u*30, r1=r0+(n%2?16:30)*k; g.lineWidth=n%2?3:4.5; g.beginPath(); g.moveTo(ev.x+Math.cos(t)*r0*1.5,e.y+6+Math.sin(t)*r0*0.75); g.lineTo(ev.x+Math.cos(t)*r1*1.5,e.y+6+Math.sin(t)*r1*0.75); g.stroke(); }
+    g.globalAlpha=k*0.5; g.beginPath(); g.moveTo(ev.x-9,e.y); g.lineTo(ev.x,e.y-70*k); g.lineTo(ev.x+9,e.y); g.closePath(); g.fill(); }};
+// Dash on hit: a streak in the weapon's colour from where the holder stood to where they come out behind the foe.
+TELLS.dashhit={
+  fx(g,ev,a,e){ if(a>0.62) return; const k=1-a/0.62, x0=ev.x, x1=ev.x2, d=Math.sign(x1-x0)||1, y=e.y, hw=13*k+2;
+    g.globalAlpha=.9*k; g.fillStyle=e.col; g.beginPath(); g.moveTo(x0-d*34,y); g.lineTo((x0+x1)/2,y-hw); g.lineTo(x1+d*10,y-hw*0.7); g.lineTo(x1+d*30,y); g.lineTo(x1+d*10,y+hw*0.7); g.lineTo((x0+x1)/2,y+hw); g.closePath(); g.fill();
+    g.fillStyle='#fff'; g.beginPath(); g.moveTo(x0,y); g.lineTo((x0+x1)/2,y-hw*0.3); g.lineTo(x1+d*16,y); g.lineTo((x0+x1)/2,y+hw*0.3); g.closePath(); g.fill();
+    g.strokeStyle=e.col; g.lineCap='round'; g.lineWidth=3; for(let n=0;n<5;n++){ const yy=y-44+n*22, off=(n*37)%50; g.globalAlpha=.6*k; g.beginPath(); g.moveTo(x0+d*off,yy); g.lineTo(x0+d*(off+60+n*9),yy); g.stroke(); }
+    g.globalAlpha=.3*k; g.lineWidth=4; for(const q of [0.25,0.6]){ const gx=x0+(x1-x0)*q; g.beginPath(); g.moveTo(gx,y+48); g.lineTo(gx+d*8,y+10); g.lineTo(gx+d*2,y-34); g.stroke(); g.beginPath(); g.arc(gx+d*2,y-44,9,0,7); g.stroke(); } }};
+// Armour: an ink shell round the fighter while it is up; it flashes and breaks into shards when it takes the blow.
+TELLS.armour={
+  front(g,e){ const m=e.mem; m.o=Math.max(0,Math.min(1,(m.o||0)+(e.val?1:-1)*e.dt*14)); if(m.o<0.03) return;
+    const cx=e.x, cy=e.base-50*e.sc, rx=40*(1.25-0.25*m.o), ry=64*(1.25-0.25*m.o), spin=e.now/900;
+    g.globalAlpha=.1*m.o; g.fillStyle=e.col; g.beginPath(); g.ellipse(cx,cy,rx,ry,0,0,7); g.fill();
+    g.strokeStyle=e.col; g.lineCap='round'; g.lineWidth=4.5; g.globalAlpha=.9*m.o; for(let n=0;n<6;n++){ const a0=spin+n*Math.PI/3; g.beginPath(); g.ellipse(cx,cy,rx,ry,0,a0,a0+0.8); g.stroke(); }
+    g.lineWidth=2; g.strokeStyle='#111'; g.globalAlpha=.55*m.o; for(let n=0;n<6;n++){ const a0=spin+n*Math.PI/3+0.1; g.beginPath(); g.ellipse(cx,cy,rx+4,ry+4,0,a0,a0+0.6); g.stroke(); } },
+  event(ev){ if(ev.k==='crack') shake=Math.max(shake,5); },
+  fx(g,ev,a,e){ const cx=ev.x, cy=e.y, k=1-a; g.lineCap='round'; g.lineJoin='round';
+    if(a<0.16){ g.globalAlpha=1-a/0.16; g.fillStyle='#fff'; g.strokeStyle=e.col; g.lineWidth=7; g.beginPath(); g.ellipse(cx,cy,42,66,0,0,7); g.fill(); g.stroke(); }
+    g.strokeStyle=e.col; g.lineWidth=4.5; g.globalAlpha=k; for(let n=0;n<7;n++){ const t=n*0.9+0.3, r=a*95, px=cx+Math.cos(t)*(40+r), py=cy+Math.sin(t)*(62+r*0.8)+a*a*70; g.save(); g.translate(px,py); g.rotate(t+a*(n%2?5:-4)); g.beginPath(); g.moveTo(-11,4); g.lineTo(0,-6); g.lineTo(12,3); g.stroke(); g.restore(); }
+    g.strokeStyle='#111'; g.lineWidth=2.5; g.globalAlpha=Math.max(0,1-a*2.2); for(let n=0;n<5;n++){ const t=n*1.3+0.5; g.beginPath(); g.moveTo(cx+Math.cos(t)*8,cy+Math.sin(t)*12); g.lineTo(cx+Math.cos(t+0.25)*24,cy+Math.sin(t+0.25)*36); g.lineTo(cx+Math.cos(t-0.1)*40,cy+Math.sin(t-0.1)*62); g.stroke(); }
+    g.globalAlpha=k; tellText(g,'ARMOUR!',cx,cy-84-a*26,e.col,24); }};
+// Combo growth: the held weapon swells with each hit of the combo, with a count over it, and snaps back with a puff.
+TELLS.grow={
+  weapon(e){ const m=e.mem, want=1+0.24*(e.val||0); if(m.s===undefined) m.s=1; if(want>m.s+0.01&&!(m.want>=want)) m.pop=1; m.want=want;
+    m.s+=(want-m.s)*Math.min(1,e.dt*(want<m.s?26:16)); m.pop=Math.max(0,(m.pop||0)-e.dt*6); return m.s*(1+0.3*m.pop*m.pop); },
+  fx(g,ev,a,e){
+    if(ev.k==='up'){ const pop=1+0.9*Math.exp(-a*9); g.globalAlpha=1-a*a; tellText(g,'\u00d7'+ev.n,ev.x,e.y-20-a*26,e.col,Math.round((20+ev.n*4)*pop));
+      g.strokeStyle=e.col; g.lineWidth=3; g.globalAlpha=Math.max(0,1-a*2.5); g.beginPath(); g.arc(ev.x,e.y,12+a*70,0,7); g.stroke(); }
+    else{ const u=Math.min(1,a*2); g.globalAlpha=1-u; g.strokeStyle='#7b8294'; g.lineCap='round'; g.lineWidth=3; for(let n=0;n<8;n++){ const t=n*Math.PI/4+0.3, r0=44*(1-u)+8, r1=r0+16; g.beginPath(); g.moveTo(ev.x+Math.cos(t)*r1,e.y+Math.sin(t)*r1); g.lineTo(ev.x+Math.cos(t)*r0,e.y+Math.sin(t)*r0); g.stroke(); } } }};
+// Rage: the fighter turns magenta inside a spiky aura with steam rising, for as long as it lasts; a burst when it starts.
+TELLS.rage={
+  tint(e){ return e.val&&e.held?TELL_RAGE:null; },
+  back(g,e){ if(!e.val) return; const cx=e.x, cy=e.base-52*e.sc, N=18; g.beginPath();
+    for(let n=0;n<=N*2;n++){ const t=n*Math.PI/N, out=n%2?1.34+0.2*Math.sin(e.now/70+n*1.7):1, px=cx+Math.cos(t)*38*out, py=cy+Math.sin(t)*64*out-(n%2?8:0); n?g.lineTo(px,py):g.moveTo(px,py); }
+    g.closePath(); g.fillStyle=TELL_RAGE; g.globalAlpha=.16+.06*Math.sin(e.now/90); g.fill(); g.globalAlpha=.75; g.strokeStyle=TELL_RAGE; g.lineWidth=2.5; g.lineJoin='round'; g.stroke(); },
+  front(g,e){ if(!e.val) return; g.strokeStyle=TELL_RAGE; g.lineCap='round'; g.lineWidth=3;
+    for(let n=0;n<4;n++){ const ph=((e.now/7+n*47)%100)/100, sx=e.x-24+n*16, sy=e.base-104*e.sc-ph*46; g.globalAlpha=.8*Math.sin(ph*Math.PI); g.beginPath(); g.moveTo(sx,sy); g.bezierCurveTo(sx+7,sy-6,sx-7,sy-12,sx,sy-18); g.stroke(); } },
+  event(ev){ if(ev.k==='on') shake=Math.max(shake,6); },
+  fx(g,ev,a,e){ const u=Math.min(1,a*1.6), k=1-u; g.strokeStyle=TELL_RAGE; g.lineCap='round'; g.globalAlpha=k;
+    for(let n=0;n<16;n++){ const t=n*Math.PI/8+0.2, r0=30+u*90, r1=r0+(n%2?22:44)*k; g.lineWidth=n%2?3:5; g.beginPath(); g.moveTo(ev.x+Math.cos(t)*r0,e.y+Math.sin(t)*r0); g.lineTo(ev.x+Math.cos(t)*r1,e.y+Math.sin(t)*r1); g.stroke(); }
+    g.globalAlpha=1-a; tellText(g,'RAGE!',ev.x,e.y-88-a*24,TELL_RAGE,34); }};
+/* ---------- end of the wielder tells ---------- */
 function drawFighter(v,i,now,age,dt){
   // While the other fighter's ultimate plays this one is held: drawn in grey, pose and place frozen.
   const held=!!(v.ul&&v.ul[0]!==i&&v.phase==='fight'); if(held){ dt=0; age=0; }
   // During hit-stop the fighter who was hit rattles in place and pales.
-  const f=v.f[i], rattle=v.hs&&f.hurt&&v.phase==='fight', col=impactLive(now)?'#000':rattle&&!CALM?PFLASH[i]:held?'#7b8294':PCOL[i], d=f.face, fight=v.phase==='fight', st=anim[i];
+  const f=v.f[i], rattle=v.hs&&f.hurt&&v.phase==='fight', col=impactLive(now)?'#000':rattle&&!CALM?PFLASH[i]:held?'#7b8294':tellTint(v,i,anim[i])||PCOL[i], d=f.face, fight=v.phase==='fight', st=anim[i];
   const x=f.x+(fight?f.vx*age:0)+(rattle?Math.sin(now*0.9)*2.6:0), base=GY-Math.max(0,f.y+(fight&&!f.g?f.vy*age:0));
   const hideItems=net&&v.phase==='draw'&&i!==net.side&&net.side>=0, items=v.items[i];
   const k=f.held, it=hideItems?null:items[k], kind=it?it.kind:'melee';
@@ -3438,10 +3849,12 @@ function drawFighter(v,i,now,age,dt){
   // contact shadow
   L.fillStyle='rgba(0,0,0,.09)'; L.beginPath(); L.ellipse(f.x,GY-shadowY(f)+4,28,3.5,0,0,7); L.fill();
   const KS=K*(f.sc||1);
+  tellDraw('back',v,i,st,x,base,now,dt);      // wielder customizations
   L.save(); L.translate(x,base); L.scale(d*KS,KS);
   // speed smear behind a dash
   if(f.dash&&!RG) for(const [off,al] of [[-70,.12],[-36,.25]]){ L.save(); L.translate(off,0); L.globalAlpha=al; ANIM.draw(L,s,{col,noodle:true}); L.restore(); }
-  const wlen=it&&kind==='melee'?U(it.sz*STYLE[it.style].reach):0, two=!!it&&PAIRED.includes(it.style), gsz=it?U(it.sz)*(two?0.82:1):0;
+  const wk=it?tellWeapon(v,i,st,now,dt):1;      // wielder customizations: a block may draw the held weapon larger
+  const wlen=it&&kind==='melee'?U(it.sz*STYLE[it.style].reach)*wk:0, two=!!it&&PAIRED.includes(it.style), gsz=it?U(it.sz)*(two?0.82:1)*wk:0;
   // weapon smear: everything the weapon swept in the last moments of an attack
   if(wlen&&it.style!=='fist'&&f.act){ ANIM.smear(L,clip,st.t,it.style==='spear'?wlen*0.96:wlen,it.el==='none'?col:PEN[it.el],0.2);
     if(two) ANIM.smear(L,clip,st.t,wlen,it.el==='none'?col:PEN[it.el],0.2,true); }
@@ -3470,6 +3883,7 @@ function drawFighter(v,i,now,age,dt){
     L.strokeStyle=PEN[it.el]; L.globalAlpha=.5; L.lineWidth=5; L.beginPath(); L.arc(-20,0,U(it.sz*0.85),-1.1,1.1); L.stroke(); L.restore(); }
   if(RG&&RG.P.show) RG.debug(L,s);
   L.restore();
+  tellDraw('front',v,i,st,x,base,now,dt);      // wielder customizations
   // his status visuals: shield bubble, trap rings, stun stars, overclock glow
   { const cyy=base-55*(f.sc||1), T2=Math.PI*2, tm=now/1000;
     if(f.bub){ L.save(); L.strokeStyle='#2bd'; L.globalAlpha=.5+.3*Math.sin(tm*12); L.lineWidth=3; L.setLineDash([8,5]); L.beginPath(); L.arc(x,cyy,f.bub,0,T2); L.stroke(); L.restore(); }
@@ -3918,6 +4332,7 @@ function render(now){
   }
   if(fleetSeen.size>40) for(const id of [...fleetSeen.keys()]) if(!v.pr.some(p=>p.id===id)) fleetSeen.delete(id);
   drawFighter(v,1,now,age,dt); drawFighter(v,0,now,age,dt);
+  if(v.mo) for(const m of v.mo){ const T=TELLS[m.c], ma=v.ul?0:age; if(T&&T.mote){ L.save(); T.mote(L,m,{x:m.x+m.vx*ma,y:GY-(m.y+m.vy*ma),now,v,col:tellCol(v,m.side,m.slot)}); L.restore(); } }      // wielder customizations: motes, over the fighters
   worldFront(v,now);
   if(v.sheet) sheetFront(v,now);
   hpGhostStep(v,now,dt);
@@ -3938,6 +4353,7 @@ function render(now){
       L.lineWidth=3; for(let n=0;n<7;n++){ const dx=(n-3)*e.n*0.26*(0.5+a), h=(n%2?26:44)*Math.sin(Math.min(1,a*1.6)*Math.PI); L.beginPath(); L.moveTo(e.x+dx,y-4); L.lineTo(e.x+dx*1.15,y-4-h); L.stroke(); } }
     else if(e.e==='heal'){ L.font='26px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=PEN.plant; L.fillText('+'+e.n,e.x,y-a*30); }
     else if(e.e==='rule'){ if(e.txt){ L.save(); L.globalAlpha=Math.min(1,(1-a)*2.5); L.font='bold 25px "Gochi Hand",cursive'; L.textAlign='center'; L.lineJoin='round'; L.lineWidth=5; L.strokeStyle='#fffdf6'; L.strokeText(e.txt,e.x,y-44-a*34); L.fillStyle=PCOL[e.side]||'#111'; L.fillText(e.txt,e.x,y-44-a*34); L.restore(); } }      // a match rule's shout over its owner, in their colour
+    else if(e.e==='cu'){ const T=TELLS[e.c]; if(T&&T.fx){ L.save(); T.fx(L,e,a,{now,v,y,col:tellCol(v,e.side,e.slot)}); L.restore(); } }      // wielder customizations: a block's event
     else if(e.e==='boom'){ L.strokeStyle=e.el==='none'?'#e2a52d':PEN[e.el]; L.lineWidth=6*(1-a)+1; L.beginPath(); L.arc(e.x,y,e.n*(0.3+0.7*Math.min(1,a*2.2)),0,7); L.stroke();
       L.font='30px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=L.strokeStyle; L.fillText('BOOM',e.x,y-e.n*0.6-a*20); }
   }
@@ -3984,8 +4400,22 @@ if(RETRO) retroBuild();
 // works, so runs, jumps and combos can be tried by hand too.
 const LAB_STOCK={blade:'sword',spear:'spear',hammer:'hammer',fist:'gloves',dual:'twins',bow:'bow',gun:'gun',akimbo:'pistols',staff:'staff',hurl:'star'};
 const LAB_NAME={blade:'Sword',spear:'Spear',hammer:'Hammer',fist:'Fists',dual:'Twin blades',bow:'Bow',gun:'Gun',akimbo:'Twin pistols',staff:'Staff',hurl:'Thrown'};
-const lab={style:'blade',el:'none',speed:1,loop:false,gap:220,last:null,idle:0};
-function labEquip(){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,st.spec,50); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0; if(desk[0]) updateDesk(desk[0]); }
+const lab={style:'blade',el:'none',speed:1,loop:false,gap:220,last:null,idle:0,customs:[],low:false,todo:[]};
+function labEquip(){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,Object.assign({},st.spec,{customs:lab.customs}),50); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0; if(desk[0]) updateDesk(desk[0]); labCustoms(); }
+// wielder customizations in the move tester: a button for every block in CUSTOMS, by axis, and a slider for every
+// parameter of the ones switched on. All of it is read from the table; a new block needs no line here.
+function labCustoms(){
+  const box=$('labCus'); if(!box) return; const it=sim.items[0][0], on=it?it.customs:[], axes=[...new Set(Object.values(CUSTOMS).map(d=>d.axis))];
+  lab.customs=on.map(e=>Object.assign({},e));
+  box.innerHTML=axes.map(ax=>`<div class="row"><b>${esc(ax)}</b>${Object.keys(CUSTOMS).filter(id=>CUSTOMS[id].axis===ax).map(id=>{ const d=CUSTOMS[id], fits=it&&fitCustoms([id],it.kind,it.style).length;
+      return `<button data-cu="${id}" class="${on.some(e=>e.id===id)?'on':''}" title="${esc(d.text+' Tell: '+d.tell)}" ${fits?'':'disabled'}>${esc(d.label)} <small>${customPoints(fitCustoms([id],d.kinds?d.kinds[0]:'melee',d.styles?d.styles[0]:'blade')[0])}</small></button>`; }).join('')}</div>`).join('')
+    +`<div class="row"><b>Points</b><span>${customsTotal(on)} of ${CUSTOM_BUDGET}${on.length?'':' (none switched on)'}</span>`
+    +on.map(e=>Object.keys(CUSTOMS[e.id].params||{}).map(k=>{ const q=CUSTOMS[e.id].params[k], lo=Math.min(q.from,q.to), hi=Math.max(q.from,q.to);
+      return `<label>${esc(CUSTOMS[e.id].label)} ${k} <input type="range" data-cu="${e.id}" data-p="${k}" min="${lo}" max="${hi}" step="${q.step||(hi-lo)/20}" value="${e.params[k]}"><span>${e.params[k]}</span></label>`; }).join('')).join('')+'</div>'
+    +on.map(e=>`<p style="margin:2px 0"><b>${esc(CUSTOMS[e.id].label)}:</b> ${esc(CUSTOMS[e.id].text)} <i>You should see: ${esc(CUSTOMS[e.id].tell)}.</i></p>`).join('');
+  box.querySelectorAll('button[data-cu]').forEach(b=>b.onclick=()=>{ b.blur(); const id=b.dataset.cu; lab.customs=lab.customs.some(e=>e.id===id)?lab.customs.filter(e=>e.id!==id):[{id},...lab.customs]; labEquip(); });
+  box.querySelectorAll('input[data-cu]').forEach(r=>r.onchange=()=>{ const e=lab.customs.find(e=>e.id===r.dataset.cu); if(e){ e.params=Object.assign({},e.params,{[r.dataset.p]:+r.value}); labEquip(); } });
+}
 function labPlace(gap){ const a=sim.f[0], b=sim.f[1], g=gap||lab.gap, x0=Math.max(60,Math.min(ARENA_W-60-g,ARENA_W/2-g/2-60));
   for(const f of [a,b]){ f.y=0; f.vx=f.vy=0; f.ground=true; f.act=null; f.hurt=0; f.stun=0; f.dash=0; f.burn=0; f.slow=0; f.shield=0; f.hp=HP; }
   a.x=x0; b.x=x0+g; a.face=1; b.face=-1; sim.pr.length=0; }
@@ -3993,15 +4423,21 @@ function labPlay(m,alt){
   if(!sim||sim.phase!=='fight') return; lab.last=[m,alt]; lab.idle=0;
   document.querySelectorAll('#labMoves button').forEach(b=>b.classList.toggle('on',b.dataset.m===m&&(b.dataset.alt||'')===(alt===undefined?'':String(alt))));
   if(m==='hit'||m==='bighit'){ labPlace(48); sim.play(1,m==='hit'?'fist1':'fist4'); return; }   // the dummy hits back, to see the reactions
+  // wielder customizations: three set pieces for blocks that a single move does not show
+  if(m==='trade'){ labPlace(56); sim.play(1,'fist1'); const first=Object.keys(MOVES).find(n=>n.indexOf(lab.style)===0&&MOVES[n].hits&&!MOVES[n].ult); if(first) sim.play(0,first); return; }      // both swing: the dummy's blow lands mid-attack
+  if(m==='drop'){ labPlace(); const f=sim.f[0]; f.y=330; f.vy=0; f.ground=false; f.jumps=2; return; }                             // fall from high up
+  if(m==='jump3'){ labPlace(); lab.todo=[0,0.3,0.6].map(t=>({t,go:()=>{ sim.f[0].jq=1; }})); return; }                           // three jumps in a row
   labPlace(); const f=sim.f[0];
   if(m==='ult'){ f.od=100; sim.startUlt(0); } else sim.play(0,m,alt);
 }
-function labTick(dt){ const f=sim.f[0], e=sim.f[1]; lab.idle=f.act||e.act||sim.pr.length||f.hurt>0||e.hurt>0||!f.ground||!e.ground?0:lab.idle+dt; if(lab.loop&&lab.last&&lab.idle>0.6) labPlay(lab.last[0],lab.last[1]); }
+function labTick(dt){ const f=sim.f[0], e=sim.f[1];
+  if(lab.low){ f.hp=Math.min(f.hp,HP*0.2); f.rest=0; }      // "Low health": for blocks that wake up when the fighter is nearly out
+  for(const q of lab.todo){ q.t-=dt; if(q.t<=0) q.go(); } lab.todo=lab.todo.filter(q=>q.t>0); lab.idle=f.act||e.act||sim.pr.length||f.hurt>0||e.hurt>0||!f.ground||!e.ground?0:lab.idle+dt; if(lab.loop&&lab.last&&lab.idle>0.6) labPlay(lab.last[0],lab.last[1]); }
 function labMoves(){
   const st=lab.style, re=new RegExp('^'+st+'(\\d|_)'), box=$('labMoves'), label=m=>m.replace(st+'_','').replace(st,'hit ').replace('_',' ');
   const list=Object.keys(MOVES).filter(m=>re.test(m)), btn=(m,text,alt,cls)=>`<button data-m="${m}" data-alt="${alt===undefined?'':alt}" class="${cls||''}">${text}</button>`;
   box.innerHTML=list.map(m=>btn(m,label(m),ALT.includes(m)?0:undefined)+(ALT.includes(m)?btn(m,label(m)+' (alt)',1):'')).join('')
-    +btn('ult','Ultimate: '+ULTS[st].name,undefined,'ult')+btn('hit','Take a hit')+btn('bighit','Take a big hit');
+    +btn('ult','Ultimate: '+ULTS[st].name,undefined,'ult')+btn('hit','Take a hit')+btn('bighit','Take a big hit')+btn('trade','Trade blows')+btn('drop','Drop from high')+btn('jump3','Jump \u00d73');
   box.querySelectorAll('button').forEach(b=>b.onclick=()=>{ b.blur(); labPlay(b.dataset.m,b.dataset.alt===''?undefined:+b.dataset.alt); });
 }
 function labBuild(){
@@ -4018,6 +4454,8 @@ function labBuild(){
   el.innerHTML=`<h2>Move tester</h2><p>Pick a weapon, then a move. The blue fighter does it on the red dummy, which never dies. Keys still work (A D move, W jump, J attack, U ultimate), so combos and running attacks can be tried by hand. <a href="/duel">Back to the game</a></p>
     <div class="row"><b>Weapon</b><span id="labStyles" class="row" style="margin:0"></span></div>
     <div class="row"><b>Move</b><span id="labMoves" class="row" style="margin:0"></span></div>
+    <div class="row"><b>Special</b><span style="font-size:13px;color:var(--muted)">Customizations for the weapon under test (one big one, or a big and a small one). Hover for what each does.</span>
+      <label><input type="checkbox" id="labLow"> Low health</label></div><div id="labCus"></div>
     <div class="row"><b>Ink</b><span id="labEls" class="row" style="margin:0 14px 0 0"></span>
       <label>Speed <input type="range" id="labSpeed" min="0.1" max="1" step="0.05" value="1"><span id="labSpeedV">1.00×</span></label>
       <label>Distance <input type="range" id="labGap" min="40" max="520" step="10" value="220"></label>
@@ -4033,6 +4471,7 @@ function labBuild(){
   $('labSpeed').oninput=e=>{ lab.speed=+e.target.value; $('labSpeedV').textContent=lab.speed.toFixed(2)+'×'; };
   $('labGap').oninput=e=>{ lab.gap=+e.target.value; labPlace(); };
   $('labLoop').onchange=e=>{ lab.loop=e.target.checked; };
+  $('labLow').onchange=e=>{ lab.low=e.target.checked; };
   sim.step(0.05); pickEl('none'); pickStyle('blade');
 }
 if(REPLAY) setReplay(REPLAY);      // duel?replay=CODE: watch that room's match again
