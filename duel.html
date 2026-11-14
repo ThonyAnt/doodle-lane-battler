@@ -2794,7 +2794,8 @@ let wantBot=false;
 let cpuBrain='classic', cpuBrains=['classic'];
 function setBrain(b){
   cpuBrain=b==='net'&&cpuBrains.includes('net')?'net':'classic';
-  const el=$('cpuBrain'); el.hidden=!cpuBrains.includes('net'); el.textContent='CPU: '+(cpuBrain==='net'?'trained':'classic'); el.setAttribute('aria-pressed',cpuBrain==='net');
+  const el=$('cpuBrain'); el.hidden=!cpuBrains.includes('net')||!!REPLAY;      // no CPU to choose while watching a replay
+  el.textContent='CPU: '+(cpuBrain==='net'?'trained':'classic'); el.setAttribute('aria-pressed',cpuBrain==='net');
 }
 $('cpuBrain').onclick=()=>setBrain(cpuBrain==='net'?'classic':'net');
 function startMatch(bot){
