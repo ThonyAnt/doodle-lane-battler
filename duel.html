@@ -319,6 +319,10 @@ input{font:600 16px var(--body);border:2px solid var(--ink);border-radius:10px;p
 .oswin{background:#000;border:2px solid var(--ink);border-radius:10px;padding:6px 8px;font:12px/1.4 "Courier New",monospace;color:#3f3}
 body.retro .oswin{border:0;border-radius:0;margin:0}
 body.playing .oswin,body.handheld .oswin,body.replay .oswin{display:none}
+body.retro.playing .oswin{display:block}
+/* the terminal when nothing is happening in it, and all through a fight: its last line and the prompt, nothing more */
+.oswin.compact .oslog{height:17px;overflow:hidden}
+.oswin.compact .osl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .oslog{height:150px;overflow-y:auto;white-space:pre-wrap;overflow-wrap:anywhere}
 .osl.cmd{color:#fff}.osl.dim{color:#2a9a2a}.osl.bad{color:#f66}.osl.ok{color:#9f9}.osl.big{font-weight:700;color:#ff6}.osl.who{color:#6cf}.osl.say{color:#fff}
 .osl.plan .completed{color:#2a9a2a}.osl.plan .in_progress{color:#ff6}
@@ -601,7 +605,7 @@ Q     hack</div>
   <div id="hackMenu" hidden></div>
   <div id="stripbar" hidden><button id="hackPick" aria-haspopup="true" aria-expanded="false">Hack: <b id="hackName"></b> ▾</button><span id="stripInk"></span></div>
   <section class="tcs" id="tcs" hidden></section>
-  <section class="oswin" id="oswin"><div class="oslog" id="osLog"><div class="osl dim">INK-OS 2.0 ready. Type what the machine should change, like: make the floor lava. Against the bot it studies you; tell it who you are: name ben</div></div>
+  <section class="oswin" id="oswin"><div class="oslog" id="osLog"><div class="osl dim">Try: make the floor lava  ·  name ben</div></div>
     <form class="osrow" id="osForm"><span>C:\&gt;</span><input id="osIn" maxlength="140" autocomplete="off" spellcheck="false" placeholder="low gravity   |   reset" aria-label="Tell the machine what to change"><button id="osGo">Run</button></form></section>
   <section class="desks" id="desks"></section>
 
@@ -4234,8 +4238,8 @@ let replayNow=null;
    passes it to the OS agent (os-agent/: a deep agent with a designer, an engineer and a tester) and sends its progress
    back a line at a time. What comes out is an update: match settings and world rules (MODS in the rules). In a room the
    server installs it for everyone and says so (event `os`); in a match played in this page it is installed here. */
-let osPatch=null, osBusy=false, osToast=null, osPlanEl=null, osPhase='', osLive=null;      // osLive: the update in force, for its look
-function osLine(html,cls){ const log=$('osLog'), d=document.createElement('div'); d.className='osl '+(cls||''); d.innerHTML=html; log.appendChild(d); while(log.children.length>140) log.firstChild.remove(); log.scrollTop=log.scrollHeight; return d; }
+let osPatch=null, osBusy=false, osToast=null, osPlanEl=null, osPhase='', osLive=null, osActive=0;      // osActive: until when the terminal stays opened up after its last line      // osLive: the update in force, for its look
+function osLine(html,cls){ osActive=performance.now()+12000; const log=$('osLog'), d=document.createElement('div'); d.className='osl '+(cls||''); d.innerHTML=html; log.appendChild(d); while(log.children.length>140) log.firstChild.remove(); log.scrollTop=log.scrollHeight; return d; }
 function osShow(e){
   if(e.type==='plan'){ if(!osPlanEl) osPlanEl=osLine('','plan'); osPlanEl.innerHTML=e.todos.map(t=>'<span class="'+esc(t.status)+'">'+(t.status==='completed'?'[x] ':t.status==='in_progress'?'[&gt;] ':'[ ] ')+esc(t.text)+'</span>').join('\n'); $('osLog').scrollTop=1e6; }
   else if(e.type==='delegate') osLine('<b>'+esc(e.to)+'</b> &lt;- '+esc(e.task),'who');
@@ -4259,7 +4263,8 @@ async function osRun(text){
     for(;;){ const {value,done}=await rd.read(); if(done) break; buf+=dec.decode(value,{stream:true}); let k;
       while((k=buf.indexOf('\n'))>=0){ const raw=buf.slice(0,k); buf=buf.slice(k+1); if(raw.trim()) try{ osShow(JSON.parse(raw)); }catch(err){} } }
   }catch(err){ osLine('ERROR: the machine did not answer','bad'); }
-  osBusy=false; if(sim) sim.setWait(false); $('osIn').disabled=false; $('osGo').disabled=false; $('osIn').focus();
+  osBusy=false; if(sim) sim.setWait(false); $('osIn').disabled=false; $('osGo').disabled=false;
+  if(view&&(view.phase==='count'||view.phase==='fight')) $('osIn').blur(); else $('osIn').focus();      // mid-fight the keys go back to the fighters
 }
 // A room's update, told by the server to every device; and, each frame, an update for a match played in this page.
 function osHear(d){ osLive=d&&d.state==='installed'&&d.patch?d.patch:null; osToast=osLive?{name:osLive.name,notes:osLive.notes||[],until:view&&view.phase==='fight'?performance.now()+4200:0}:null; }
@@ -5281,7 +5286,7 @@ if(deskLike()){
   if(host) host.onMenu(()=>{ deskMenu=!(deskMenu||document.body.classList.contains('menu'))?true:false; });
 }
 /* ---------- retro desktop: Alex's InkShop, with this game wired into it ---------- */
-const rwin={}; let rTop=20, rEdgesSent='', rLayoutSent='', rTick=7;       // 7: measure the layout on the very first frame
+const rwin={}; let rState='', rMenuWas=false, rTop=20, rEdgesSent='', rLayoutSent='', rTick=7;       // 7: measure the layout on the very first frame
 const mySide1=()=>local[0]?0:local[1]?1:-1;
 function makeDraggable(w,bar){
   let grab=null;
@@ -5388,21 +5393,23 @@ function retroBuild(){
     on.parentElement.title='Off: afterimages only during a dash. On: always.';
   }
   { const sk=document.querySelector('#s-diff').parentElement; sk.classList.add('cpuskill'); sk.id='cpuSkill'; $('cpuRow').appendChild(sk); }
-  document.querySelector('#start').onclick=()=>{ if(view&&view.phase!=='draw'&&view.phase!=='over') deskMenu=!deskMenu; };
+  document.querySelector('#start').onclick=()=>{ deskMenu=!deskMenu; };      // Start opens and closes Game setup, at any time
   $('deskHint').textContent='Esc or Start: this window';
   retroWindow('game','Game setup',document.querySelector('header'),{left:'calc(50% - 60px)',top:'70px',transform:'translateX(-50%)'});
-  retroWindow('sketch','Sketchbook \u2014 draw your two weapons',$('desks'),{left:'calc(50% - 60px)',top:'196px',transform:'translateX(-50%)',width:'min(760px,80vw)'});
+  retroWindow('sketch','Sketchbook \u2014 draw your two weapons',$('desks'),{left:'calc(50% - 60px)',top:'96px',transform:'translateX(-50%)',width:'min(760px,80vw)'});
   // the sketchbook grew a stats card; keep the window above the taskbar and let it scroll on a short screen
-  Object.assign(rwin.sketch.w.querySelector('.rbody').style,{maxHeight:'calc(100vh - 262px)',overflowY:'auto'});
+  Object.assign(rwin.sketch.w.querySelector('.rbody').style,{maxHeight:'calc(100vh - 162px)',overflowY:'auto'});
   retroWindow('net','NetLink \u2014 join',$('overlay'),{left:'calc(50% - 60px)',top:'120px',transform:'translateX(-50%)',minWidth:'360px'},true);
   rwin.net.w.hidden=true;
   // on a big screen, what each player has made (with its stats) is a window too
   { const pre=document.createElement('pre'); pre.id='nemFile'; pre.style.cssText='margin:0;font:12px/1.45 "Courier New",monospace;white-space:pre-wrap;color:#000;max-height:300px;overflow:auto';
-    retroWindow('file','subject.txt \u2014 Notepad',pre,{left:'74px',top:'150px',width:'400px'},true); }
-  retroWindow('os','INK-OS \u2014 talk to the machine',$('oswin'),{right:'8px',bottom:'40px',top:'auto',left:'auto',height:'auto',width:'372px'});
-  retroWindow('load','Loadouts \u2014 what each player has made',$('loadouts'),{left:'calc(50% - 60px)',top:'196px',transform:'translateX(-50%)',width:'min(760px,80vw)'},true);
+    retroWindow('file','subject.txt \u2014 Notepad',pre,{left:'calc(50% - 60px)',top:'268px',transform:'translateX(-50%)',width:'440px'},true); }      // under the winner's box
+  retroWindow('os','INK-OS \u2014 talk to the machine',$('oswin'),{right:'8px',bottom:'40px',top:'auto',left:'auto',height:'auto',width:'300px'});
+  rwin.game.min=true; $('oswin').classList.add('compact');
+  retroWindow('load','Loadouts \u2014 what each player has made',$('loadouts'),{left:'calc(50% - 60px)',top:'96px',transform:'translateX(-50%)',width:'min(760px,80vw)'},true);
   rwin.load.w.hidden=true;
-  for(const w of document.querySelectorAll('#inkos .win.small')) makeDraggable(w,w.querySelector('.titlebar'));
+  for(const w of document.querySelectorAll('#inkos .win.small')){ makeDraggable(w,w.querySelector('.titlebar')); w.hidden=true; }      // his NetLink 98 and keys.txt are put away: the room code is in the status bar and the keys under the arena
+  document.querySelectorAll('#taskbar>.task').forEach((t,i)=>{ if(i>0&&!Object.values(rwin).some(o=>o.task===t)) t.hidden=true; });
   // his NetLink and notes windows, with this game's real rooms and controls
   document.querySelector('#net-go').onmousedown=e=>{ e.stopPropagation(); setMode('online'); };
 
@@ -5426,7 +5433,7 @@ function retroBuild(){
 }
 // Window tops that nothing in front covers, in screen pixels: his small windows and this game's own.
 function retroEdges(){
-  const ws=[...document.querySelectorAll('.rwin,#inkos .win.small')].filter(w=>!w.hidden&&w.style.display!=='none').map(w=>({id:w.id,z:+w.style.zIndex||0,r:w.getBoundingClientRect()})).sort((a,b)=>b.z-a.z), out=[];
+  const ws=[...document.querySelectorAll('.rwin,#inkos .win.small')].filter(w=>!w.hidden&&w.style.display!=='none'&&w.id!=='rw-os').map(w=>({id:w.id,z:+w.style.zIndex||0,r:w.getBoundingClientRect()})).sort((a,b)=>b.z-a.z), out=[];
   ws.forEach((w,i)=>{
     const y=w.r.top; if(y<8) return;
     let parts=[[Math.max(0,w.r.left),Math.min(innerWidth,w.r.right)]];
@@ -5448,9 +5455,20 @@ function retroSync(menu){
   $('cpuSkill').hidden=net?!net.bot:mode==='2p'||mode==='practice';
   $('playBot').setAttribute('aria-pressed',!!(net&&net.bot)); $('playPvp').setAttribute('aria-pressed',!!(net&&!net.bot));
   { const show=!!nemFile&&view.phase==='over'&&(nemFile.builds.length>0||nemFile.notes.length>0); rwin.file.want=show; if(show){ const t=nemFileText(view), el=$('nemFile'); if(el.textContent!==t){ el.textContent=t; rwin.file.w.querySelector('.rname').textContent=nemFile.player.toLowerCase().replace(/[^a-z0-9]+/g,'_')+'.txt \u2014 Notepad'; rwin.file.w.style.zIndex=++rTop; } } }
-  rwin.os.want=menu; rwin.game.want=menu; rwin.sketch.want=menu&&side>=0; rwin.net.want=!$('overlay').hidden; rwin.load.want=!$('loadouts').hidden;
+  // One thing at a time. Each moment of a match opens one window by itself: the start box or the room's code (lobby), the
+  // sketchbook (draw; on a big screen, what the players have made), nothing (fight), the winner and the machine's file
+  // (over). Game setup opens only when asked for (Start, Esc, its taskbar button); the terminal is a one-line bar that
+  // opens up while something is happening in it, and never during a fight.
+  { const ph=v.phase, fighting=ph==='count'||ph==='fight'||ph==='end', st=ph==='over'?'over':!$('overlay').hidden?'lobby':fighting?'fight':'draw';
+    if(st!==rState){ rState=st; deskMenu=false; }
+    if(deskMenu!==rMenuWas) rwin.game.min=!deskMenu; else if(rwin.game.min===deskMenu) deskMenu=!rwin.game.min;      // the window and the pause are one switch
+    rMenuWas=deskMenu;
+    rwin.game.want=true; rwin.net.want=!$('overlay').hidden; rwin.load.want=!$('loadouts').hidden;
+    rwin.sketch.want=side>=0&&(st==='draw'||(st==='fight'&&deskMenu&&!!v.practice)); rwin.os.want=(st==='draw'||st==='fight')&&mode!=='replay';      // (practice: the sketchbook comes with the menu, to draw and try)
+    const open=!fighting&&(osBusy||nemBusy||performance.now()<osActive||document.activeElement===$('osIn')), ow=$('oswin');
+    if(ow.classList.contains('compact')===open){ ow.classList.toggle('compact',!open); $('osLog').scrollTop=1e6; } }
   for(const id in rwin){ const o=rwin[id], show=o.want&&!o.min; if(o.w.hidden===show){ o.w.hidden=!show; if(show) o.w.style.zIndex=++rTop; } o.task.hidden=!o.want; o.task.classList.toggle('on',show&&+o.w.style.zIndex===rTop); if(!o.want) o.min=false; }
-  rwin.net.w.querySelector('.rname').textContent=net?'NetLink \u2014 room '+net.code:'NetLink \u2014 join';
+  { const t=v.phase==='over'&&!(net&&net.gone)?'Match over':net?'NetLink \u2014 room '+net.code:'Doodle Duel \u2014 start', nm=rwin.net.w.querySelector('.rname'); if(nm.textContent!==t){ nm.textContent=t; rwin.net.task.textContent=t; } }      // the one box in the middle says what it is
   // Fighters panel, score, timeline, status bar (his hud(), reading this match)
   [[0,'p1'],[1,'cp']].forEach(([s,p])=>{ const f=v.f[s], it=v.items[s][f.held];
     Q('#'+p+'hp').style.width=(v.phase==='draw'?100:f.hp*100/HP)+'%'; Q('#'+p+'ink').style.width=(f.ink2===undefined?100:f.ink2)+'%'; Q('#'+p+'od').style.width=(f.od||0)+'%'; Q('#'+p+'odb').classList.toggle('ready',f.od>=100);
