@@ -110,9 +110,9 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       if(!fs.existsSync(file)){ res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-cache'}); res.end('/* '+p+' is not written yet */'); return true; }
       res.writeHead(200,{'Content-Type':(p.endsWith('.html')?'text/html':p.endsWith('.css')?'text/css':'text/javascript')+'; charset=utf-8','Cache-Control':'no-cache'}); fs.createReadStream(file).pipe(res); return true;
     }
-    if(p!=='/duel'&&p!=='/duel.html'&&!p.startsWith('/duel/')) return false;
+    if(p!=='/duel'&&p!=='/duel.html'&&p!=='/moves'&&!p.startsWith('/duel/')) return false;   // /moves is the same page as a move tester
     const send=(code,obj)=>{ res.writeHead(code,{'Content-Type':'application/json','Cache-Control':'no-store'}); res.end(JSON.stringify(obj)); };
-    if(req.method==='GET'&&(p==='/duel'||p==='/duel.html')){
+    if(req.method==='GET'&&(p==='/duel'||p==='/duel.html'||p==='/moves')){
       res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-cache'}); fs.createReadStream(page).pipe(res); return true;
     }
     // Single-device modes: classify one drawing.

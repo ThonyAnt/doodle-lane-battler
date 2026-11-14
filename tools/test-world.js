@@ -89,4 +89,26 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
   c.od=100; d.x=c.x+40; d.face=-1; inp(S2,0,{u:1}); run(S2,0.5); inp(S2,1,{a:1}); run(S2,0.5);
   ok('a hit during the wind-up breaks it off and gives half the bar back',!c.act&&c.od>=50&&!S2.pr.some(p=>p.st==='fleet'),{od:Math.round(c.od),pr:S2.pr.length});
 }
+{ // 8. every weapon style has its own ultimate, and each is worth the same
+  const cast=(kind,style,gap,prep)=>{ const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,{kind,style,element:'none',name:style||kind},60);
+    b.x=a.x+gap; a.od=100; if(prep) prep(S,a,b); const hp=b.hp, ok0=S.startUlt(0), m=a.act&&a.act.m, u=a.act&&a.act.u; let low=hp; for(let i=0;i<192;i++){ S.step(1/60); low=Math.min(low,b.hp); }   // practice mode heals a rested fighter, so take the lowest health seen
+    return {ok:ok0,m,u,lost:+(hp-low).toFixed(1),clear:!a.act&&!S.pr.length,S}; };
+  const full=[['melee','blade',300,'fan'],['melee','spear',300,'rain'],['ranged','hurl',300,'ring'],['ranged','staff',300,'meteor'],['melee','hammer',150,'quake'],
+    ['melee','fist',180,'rush'],['melee','dual',260,'cross'],['ranged','bow',320,'pierce'],['ranged','gun',300,'storm'],['ranged','akimbo',260,'fire']];
+  for(const [kind,style,gap,u] of full){ const r=cast(kind,style,gap);
+    ok(style+': its ultimate is "'+u+'" and a foe who stands still takes the full 30',r.ok&&r.u===u&&Math.abs(r.lost-30)<0.6&&r.clear,{u:r.u,m:r.m,lost:r.lost,clear:r.clear}); }
+  ok('a drawing that is not a weapon uses the fan of copies',cast('shield','',300).u==='fan');
+  // the ways out
+  { const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,{kind:'melee',style:'hammer',element:'none',name:'Hammer'},60); b.x=a.x+150; a.od=100; const hp=b.hp; S.startUlt(0);
+    run(S,0.45); inp(S,1,{j:1}); run(S,2.5); ok('jumping clears the hammer\'s shock wave',b.hp===hp,{lost:+(hp-b.hp).toFixed(1)}); }
+  ok('the fist rush whiffs on a foe who is too far away',cast('melee','fist',520).lost===0);
+  ok('the dual blink does not reach a foe across the stage',cast('melee','dual',560).lost===0);
+  { const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,{kind:'ranged',style:'bow',element:'none',name:'Bow'},60); b.x=a.x+320; a.od=100; const hp=b.hp; S.startUlt(0);
+    run(S,0.62); inp(S,1,{j:1}); run(S,0.2); inp(S,1,{j:2}); run(S,2); ok('a double jump clears the big arrow',b.hp===hp,{lost:+(hp-b.hp).toFixed(1)}); }
+  { const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,{kind:'ranged',style:'staff',element:'none',name:'Staff'},60); b.x=a.x+300; a.od=100; const hp=b.hp; S.startUlt(0);
+    run(S,0.66); inp(S,1,{r:1}); run(S,2.5); ok('walking away from the mark gets clear of most of the meteor',hp-b.hp<30,{lost:+(hp-b.hp).toFixed(1)}); }
+  { const S=fresh(), a=S.f[0], b=S.f[1]; S.setItem(0,0,{kind:'melee',style:'dual',element:'none',name:'Twins'},60); S.setItem(1,0,{kind:'melee',style:'fist',element:'none',name:'Gloves'},30);
+    b.x=a.x+40; b.face=-1; a.od=100; S.startUlt(0); run(S,0.12); inp(S,1,{a:1}); run(S,0.4);
+    ok('any ultimate is broken off by a hit before its cast, for half the bar',!a.act&&a.od>=50,{od:Math.round(a.od)}); }
+}
 console.log(bad?bad+' failed':'all world rules pass'); process.exit(bad?1:0);

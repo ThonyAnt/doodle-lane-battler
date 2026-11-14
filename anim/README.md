@@ -17,7 +17,7 @@ Fighter animation for `duel.html` is authored as data: keyframed skeleton poses 
 | `hurl.js` | Thrown weapons (shuriken, knives, rocks). |
 | `dual.js` | A one-handed weapon in each hand (twin swords, daggers). |
 | `akimbo.js` | A pistol in each hand. |
-| `ultimate.js` | The ultimate (`fleet`): float up, command the copies forward. |
+| `ultimate.js` | The casting moves of the ultimates: `fleet` (float up, command the copies), `ult_slam`, `ult_rush`, `ult_dash`, `ult_shoot`, `ult_akimbo`. |
 
 ## Style target
 
