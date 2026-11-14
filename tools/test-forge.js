@@ -154,4 +154,108 @@ function blueHits(S){
     ok('sane notices health over the top, a number that is not one, and anything far outside',!high&&!nan&&!out&&!shot&&S.sane()); }
 }
 
+// A projectile owned by side/slot, 40 px in front of the other fighter and flying at them, with the fields of a gun shot.
+let shotId=9000;
+function shotAt(S,side,slot,speed){
+  const e=S.f[1-side], it=S.items[side][slot];
+  const p={id:shotId++,k:'shot',st:it.style,big:0,side,slot,x:e.x+e.face*40,y:e.y+71,vx:-e.face*speed,vy:0,grav:0,dmg:it.st.dmg*0.55,el:it.el,kb:it.st.kb,stun:0.1,tr:it.trait,fin:0,life:1,ttl:1};
+  S.pr.push(p); return p;
+}
+const press=(S,side)=>inp(S,side,{a:(S._i?S._i[side].a:0)+1});
+// Press that side's attack and step to the move's first hit mark.
+function swing(S,side){ const f=S.f[side]; press(S,side); for(let i=0;i<120;i++){ S.step(1/120); const M=f.act&&D.MOVES[f.act.m]; if(M&&M.hits&&f.act.t>=M.hits[0]) return true; } return false; }
+const calm=S=>{ for(let i=0;i<60&&S.stop>0;i++) S.step(1/120); };      // let a hit-stop pass: nothing moves while it lasts
+function raiseShield(S,side){ const f=S.f[side]; press(S,side); for(let i=0;i<60&&!(f.shield>0);i++) S.step(1/120); return f.shield>0; }
+
+{ // 5. shot rules, near, the effects and the countdown hold
+  { const S=duo(SWORD,BALL); S.addRule({name:'Return',blurb:'',a:[0,0],b:[1,0],on:'swat',cooldown:0.4,run:h=>{ h.shot.reflect(9); }}); swing(S,0); const p=shotAt(S,1,0,600); const hp=S.f[0].hp; run(S,0.5);
+    ok('a swat rule sends the ball back at 1.5x at most',p.side===0&&Math.abs(Math.hypot(p.vx,p.vy)-900)<5&&S.f[0].hp===hp,{side:p.side,v:Math.hypot(p.vx,p.vy)}); }
+  { const S=duo(SWORD,BALL); let runs=0; S.addRule({name:'R',blurb:'',a:[0,0],b:[1,0],on:'swat',cooldown:0.25,run:()=>{ runs++; }}); shotAt(S,1,0,600); run(S,0.5); ok('no swing, no swat',runs===0); }
+  { const S=duo(SWORD,BALL); let runs=0; S.addRule({name:'R',blurb:'',a:[0,0],b:[1,0],on:'swat',cooldown:0.25,run:h=>{ runs++; h.shot.slow(0.5); }}); swing(S,0); shotAt(S,1,0,300); run(S,0.6); ok('one projectile triggers shot rules once',runs===1); }
+  { const S=duo(SHIELD,BALL); S.addRule({name:'Ric',blurb:'',a:[0,0],b:[1,0],on:'guard',cooldown:0.4,run:h=>{ h.shot.destroy(); }}); raiseShield(S,0); const p=shotAt(S,1,0,600); run(S,0.4); ok('a guard rule can destroy the shot',p.ttl<=0); }
+  { const S=duo(SWORD,SWORD); S.f[1].x=S.f[0].x+150; let runs=0; S.addRule({name:'N',blurb:'',a:[0,0],b:[1,0],on:'near',cooldown:0.5,run:h=>{ runs++; h.soak(h.foe,9); h.push(h.foe,9999,9999); h.say('ABCDEFGHIJKLMNOPQRSTUVWXYZ'); }}); run(S,2.1);
+    const ev=S.snapshot().ev.filter(e=>e.e==='rule');
+    ok('near runs on its cooldown and clamps soak, push and say',runs>=4&&runs<=5&&S.f[1].slow<=2&&Math.abs(S.f[1].vx)<=520&&ev[0].say.length===18&&ev.filter(e=>e.say).length<=2,{runs}); }
+  { const S=duo(SWORD,SWORD); S.f[1].x=S.f[0].x+150; S.addRule({name:'N',blurb:'',a:[0,0],b:[1,0],on:'near',cooldown:0.25,run:h=>{ h.stun(h.foe,0/0); h.heal(h.me,1/0); }}); run(S,1.2); ok('non-finite arguments do nothing and count as faults',S.rules[0].off&&S.sane()); }
+  { const S=D.createDuel(); S.setItem(0,0,SWORD,45); S.setItem(1,0,SWORD,45); S.setReady(0); S.setReady(1); S.step(1/60); S.setHold(99); run(S,6.5); const held=S.phase; run(S,1); ok('the countdown waits for the hold, 4 s at most',held==='count'&&S.phase==='fight',held); }
+  // beyond the plan
+  const rule=(on,fn,o)=>Object.assign({name:'T',blurb:'',a:[0,0],b:[1,0],on,cooldown:0.25,run:fn||(()=>{})},o), evs=(S,e)=>S.snapshot().ev.filter(v=>v.e===e), base=blueHits(duo(SWORD,SWORD));
+  const BOMB={kind:'bomb',style:'',element:'none',name:'Bomb'}, bombAt=(S,o)=>{ const p=Object.assign({id:shotId++,k:'bomb',side:1,slot:0,x:S.f[0].x+40,y:60,vx:-300,vy:-100,dmg:10,el:'none',kb:200,radius:70,grav:1100,tr:'swift',ttl:3},o); S.pr.push(p); return p; };
+  // a real match (no practice healing), in its fight, the two fighters 150 px apart
+  const arena=(aSpec,bSpec)=>{ const S=D.createDuel(); S.setItem(0,0,plain(aSpec),45); S.setItem(1,0,plain(bSpec),45); S.setReady(0); S.setReady(1); for(let i=0;i<900&&S.phase!=='fight';i++) S.step(1/60); place(S,150); S.snapshot(); return S; };
+  { const S=D.createDuel(); S.setItem(0,0,SWORD,45); S.setItem(1,0,SWORD,45); S.setReady(0); S.setReady(1); S.step(1/60); const none=S.hold; S.setHold(-5); const neg=S.hold; S.setHold('x'); const junk=S.hold; S.setHold(2.5); const some=S.hold; S.setHold(4);
+    run(S,2.5); const early=S.phase, left=S.hold; run(S,1.5); const holding=S.phase, t=S.snapshot().t; S.setHold(0); run(S,0.1);
+    ok('the hold is 0 unless asked for, never runs before the countdown is over, and setHold(0) lets go',none===0&&neg===0&&junk===0&&some===2.5&&early==='count'&&left===4&&holding==='count'&&t===0&&S.phase==='fight',{early,left,holding,t,now:S.phase}); }
+  { const S=D.createDuel(); S.setItem(0,0,SWORD,45); S.setItem(1,0,SWORD,45); S.setReady(0); S.setReady(1); run(S,3.1); ok('with no hold the countdown is the usual three seconds',S.phase==='fight'); }
+  { const S=duo(SWORD,BALL); S.addRule(rule('swat',h=>{ h.shot.reflect(1); })); let strikes=0; S.addRule(rule('strike',()=>{ strikes++; })); swing(S,0); strikes=0; place(S,200); S.snapshot(); const p=shotAt(S,1,0,600); p.x=S.f[0].x+40; p.vx=-600; const hp=S.f[1].hp; let low=hp, o;
+    for(let i=0;i<60;i++){ S.step(1/120); low=Math.min(low,S.f[1].hp); const q=S.snapshot().pr.find(q=>q.id===p.id); if(q&&q.side===0) o=q.o; }
+    ok('a returned shot hits its thrower, is nobody\'s strike, and still says whose it was',p.side===0&&p.os===1&&o===1&&low<hp&&strikes===0&&p.ttl<=0,{low,hp,strikes,o}); }
+  { const S=duo(SWORD,BALL); let runs=0; S.addRule(rule('swat',()=>{ runs++; })); swing(S,0); calm(S); const a=S.f[0];
+    const behind=shotAt(S,1,0,600); behind.x=a.x-40; behind.vx=600; const high=shotAt(S,1,0,0); high.x=a.x+40; high.y=a.y+140; high.vx=0; const far=shotAt(S,1,0,0); far.x=a.x+140; far.vx=0; far.y=a.y+50;
+    S.step(1/120); S.step(1/120); const out=runs; const edge=shotAt(S,1,0,0); edge.x=a.x+95; edge.vx=0; edge.y=a.y+50; S.step(1/120); S.step(1/120);
+    ok('a swat needs the shot inside the swing: not behind, not overhead, not out of reach',out===0&&runs===1,{out,runs,reach:S.items[0][0].st.reach}); }
+  { const S=duo(SWORD,BALL); let runs=0; S.addRule(rule('swat',()=>{ runs++; })); swing(S,0); run(S,0.5); const late=shotAt(S,1,0,600); run(S,0.3); ok('a swat needs the swing to be live: 0.1 s after the last hit mark it is over',runs===0&&late.ttl<=0); }
+  { const S=duo(SWORD,BALL); let runs=0; S.addRule(rule('swat',()=>{ runs++; })); S.addRule(rule('guard',()=>{ runs++; })); swing(S,0); const a=S.f[0];
+    const fleet=shotAt(S,1,0,600); fleet.tr='fleet'; const bolt=shotAt(S,1,0,600); bolt.k='bolt'; const mineBack=shotAt(S,1,0,600); mineBack.os=0; run(S,0.4);
+    ok('an ultimate\'s shot, a drawn bolt and a shot already sent back trigger no shot rule',runs===0); }
+  { const S=duo(SWORD,BOMB); S.addRule(rule('swat',h=>{ h.shot.reflect(1); h.say(h.shot.bomb?'BOMB':'SHOT'); })); swing(S,0); calm(S); S.snapshot(); const hp=S.f[0].hp, p=bombAt(S,{}), v0=Math.hypot(p.vx,p.vy); S.step(1/120); S.step(1/120); S.step(1/120);
+    const ev=S.snapshot().ev; ok('a swat rule can send a bomb back before it bursts',p.side===0&&p.vx>0&&p.vy>0&&Math.abs(Math.hypot(p.vx,p.vy)-v0)<30&&p.ttl>2&&S.f[0].hp===hp&&!ev.some(e=>e.e==='boom')&&ev.some(e=>e.e==='rule'&&e.say==='BOMB'),{vx:p.vx,vy:p.vy,ttl:p.ttl}); }
+  { const S=duo(SHIELD,BALL); let seen=null; S.addRule(rule('guard',h=>{ seen=h.shot; h.shot.reflect(0.8); },{cooldown:0.4})); raiseShield(S,0); S.snapshot(); const p=shotAt(S,1,0,600), hp=S.f[0].hp; run(S,0.2);
+    const ev=S.snapshot().ev; ok('a guard rule sends a shot back off the shield instead of blocking it',p.side===0&&Math.abs(Math.hypot(p.vx,p.vy)-480)<5&&S.f[0].hp===hp&&!ev.some(e=>e.e==='block')&&ev.some(e=>e.e==='rule'&&e.id===1)&&!!seen&&seen.speed===600&&seen.vx===-600&&seen.bomb===false&&seen.element==='none'&&seen.damage>0,seen&&{speed:seen.speed,vx:seen.vx}); }
+  { const S=duo(SHIELD,BALL); let runs=0; S.addRule(rule('guard',h=>{ runs++; h.say('TING'); })); raiseShield(S,0); S.snapshot(); const p=shotAt(S,1,0,600); run(S,0.2); const ev=S.snapshot().ev;
+    ok('a guard rule that leaves the shot alone is followed by the normal block',runs===1&&p.ttl<=0&&p.side===1&&ev.some(e=>e.e==='block')&&ev.some(e=>e.e==='rule'&&e.say==='TING')); }
+  { const S=duo(SHIELD,BALL); let runs=0; S.addRule(rule('guard',()=>{ runs++; })); const p0=shotAt(S,1,0,600); run(S,0.2); const down=runs; raiseShield(S,0); const p=shotAt(S,1,0,600); p.x=S.f[0].x-40; p.vx=600; run(S,0.2);
+    ok('guard needs the shield up; it is not asked which way the shield faces',down===0&&runs===1,{down,runs}); }
+  { const S=duo(SHIELD,BOMB); S.addRule(rule('guard',h=>{ h.shot.reflect(0.8); })); raiseShield(S,0); S.snapshot(); const p=bombAt(S,{x:S.f[0].x+10,y:50,vx:-200,vy:0}); S.step(1/120); S.step(1/120);
+    ok('a guard rule can bounce a bomb off the shield',p.side===0&&p.vx>0&&p.ttl>2&&!S.snapshot().ev.some(e=>e.e==='boom')); }
+  { const S=duo(SWORD,BALL); let seen=[]; S.addRule(rule('swat',h=>{ h.shot.slow(0.01); h.shot.power(9); h.shot.power(9); h.shot.turn(9999); }));  S.addRule(rule('swat',h=>{ seen=[h.shot.speed,h.shot.damage,h.shot.vx,h.shot.vy]; h.shot.slow(0.5); h.shot.reflect(1.5); h.shot.reflect(1.5); h.shot.power(0.01); }));
+    swing(S,0); calm(S); const p=shotAt(S,1,0,600), d0=p.dmg; S.step(1/120); S.step(1/120); S.step(1/120);
+    ok('slow, power and turn are clamped, one by one and all a shot\'s rules together',Math.abs(seen[0]-180)<1e-6&&Math.abs(seen[1]-d0*1.5)<1e-9&&seen[2]>179&&Math.abs(seen[3])<1e-6&&p.side===0&&Math.abs(Math.hypot(p.vx,p.vy)-600*0.3*1.5*1.5)<1e-6&&Math.abs(p.dmg-d0*0.75)<1e-9&&p.ruled===1,{seen,v:Math.hypot(p.vx,p.vy),dmg:p.dmg/d0}); }
+  { const S=duo(SWORD,BALL); S.addRule(rule('swat',h=>{ h.shot.turn(30); })); swing(S,0); calm(S); const p=shotAt(S,1,0,600); S.step(1/120); S.step(1/120); S.step(1/120); const up=p.vy>0&&p.vx<0&&Math.abs(Math.hypot(p.vx,p.vy)-600)<1e-6;
+    const S2=duo(SWORD,BALL); S2.addRule(rule('swat',h=>{ h.shot.turn(30); })); swing(S2,0); calm(S2); const q=shotAt(S2,1,0,0); q.vx=300; q.x=S2.f[0].x+20; S2.step(1/120); S2.step(1/120); S2.step(1/120);
+    ok('a positive turn bends a shot upwards whichever way it flies',up&&q.vy>0&&q.vx>0,{l:[p.vx,p.vy],r:[q.vx,q.vy]}); }
+  { const S=duo(SWORD,SWORD); S.addRule(rule('strike',h=>{ h.push(h.foe,-400,0); })); place(S,60); press(S,0); const b=S.f[1], hp=b.hp; let vx=0; for(let i=0;i<120;i++){ S.step(1/120); if(b.hp<hp){ vx=b.vx; break; } }
+    const S2=duo(SWORD,SWORD); place(S2,60); press(S2,0); const b2=S2.f[1]; let vx2=0; for(let i=0;i<120;i++){ S2.step(1/120); if(b2.hp<hp){ vx2=b2.vx; break; } }
+    ok('a push from a strike rule is not undone by the blow\'s own knock-back',vx<=-380&&vx>=-400&&vx2>0,{vx,vx2}); }
+  { const S=arena(SWORD,SWORD), a=S.f[0], b=S.f[1]; a.hp=100; S.addRule(rule('near',h=>{ h.heal(h.me,99); h.spark(h.me.x,h.me.y+50); h.spark(1/1e-300,-5); h.spark(1,1); h.spark(1,1); h.spark(1,1); h.spark(1,1); })); run(S,0.3); const sparks=evs(S,'spark'); run(S,3);
+    ok('heal is capped per call and by the round budget; a run shows four sparks at most, inside the arena',Math.abs(a.hp-124)<1e-9&&b.hp===HP0&&sparks.length===4&&sparks[1].x===960&&sparks[1].yd===0&&S.rules[0].faults===0,{hp:a.hp,sparks:sparks.length}); }
+  { const S=arena(SWORD,SWORD), a=S.f[0], b=S.f[1]; b.hp=HP0-0.5; S.addRule(rule('near',h=>{ h.heal(h.foe,8); })); run(S,1); ok('heal stops at full health',b.hp===HP0); }
+  { const S=arena(SWORD,SWORD), a=S.f[0], b=S.f[1]; a.hp=100; S.addRule(rule('near',h=>{ for(let i=0;i<40;i++){ h.hurt(h.foe,0.1); h.heal(h.me,0.05); } })); run(S,0.3); const ev=S.snapshot().ev;
+    ok('however many calls a run makes, it shows one number per fighter',Math.abs(HP0-b.hp-4)<1e-9&&Math.abs(a.hp-102)<1e-9&&ev.filter(e=>e.e==='hit').length===1&&ev.find(e=>e.e==='hit').n===4&&ev.filter(e=>e.e==='heal').length===1&&ev.find(e=>e.e==='heal').n===2&&ev.filter(e=>e.e==='rule').length===1,ev.map(e=>e.e)); }
+  { const S=arena(SWORD,SWORD), b=S.f[1]; S.addRule(rule('near',h=>{ h.burn(h.foe,99); })); run(S,1); const lit=b.burn>0&&b.burn<=2, early=HP0-b.hp; run(S,29);
+    ok('a rule\'s fire burns at most 2 s a call and its damage comes out of the 24 hp budget',lit&&early>0.5&&early<2&&Math.abs(HP0-b.hp-24)<0.3&&!(b.burn>0),{early,lost:HP0-b.hp}); }
+  { const S=arena(SWORD,SWORD), b=S.f[1]; S.addRule(rule('near',h=>{ h.stun(h.foe,99); })); let ticks=0, longest=0; for(let i=0;i<120*8;i++){ S.step(1/120); if(b.stun>0) ticks++; longest=Math.max(longest,b.stun); }
+    ok('stun is 0.6 s a call and 1.5 s a round',longest<=0.6&&Math.abs(ticks/120-1.5)<0.05,{secs:ticks/120,longest}); }
+  { const S=arena(SWORD,SWORD), a=S.f[0], b=S.f[1]; S.addRule(rule('near',h=>{ h.hurt(h.foe,8); })); b.hp=10; run(S,1); const end=S.phase, w=S.wins[0];
+    ok('a rule can land the last blow, and the round ends as usual',end==='end'&&w===1&&S.winner===0&&S.sane(),{end,w,hp:b.hp}); }
+  { const S=arena(SWORD,SWORD), a=S.f[0], b=S.f[1]; let runs=0; S.addRule(rule('near',()=>{ runs++; })); a.x=400; b.x=700; run(S,1); const far=runs; b.x=600; S.f[1].held=1; run(S,1); const other=runs; S.f[1].held=0; run(S,1.01);
+    ok('near needs the two within 260 px and holding the two items; it is tried four times a second',far===0&&other===0&&runs===4,{far,other,runs}); }
+  { const S=arena(SWORD,SWORD), a=S.f[0]; let seen=[]; S.addRule(rule('near',h=>{ seen.push(h.time); h.say('A'); },{cooldown:1})); S.addRule(rule('near',h=>{ h.say('B'); },{a:[1,0],b:[0,0],cooldown:1})); run(S,3.6); const ev=evs(S,'rule');
+    ok('each side has its own rules; a call-out is rationed per rule, the firing is not',seen.length===4&&Math.abs(seen[1]-seen[0]-1)<0.02&&ev.length===8&&ev.filter(e=>e.id===1&&e.side===0).length===4&&ev.filter(e=>e.say==='A').length===2&&ev.filter(e=>e.say==='B').length===2&&ev.every(e=>e.say===undefined||typeof e.say==='string'),{seen,n:ev.length}); }
+  { const S=arena(SWORD,SWORD); S.addRule(rule('near',h=>{ h.push(h.foe,0,520); })); S.addRule(rule('near',h=>{ h.push(h.foe,0,520); },{a:[1,0],b:[0,0]})); let top=0, sane=true; for(let i=0;i<120*10;i++){ S.step(1/120); top=Math.max(top,S.f[0].y,S.f[1].y); sane=sane&&S.sane(); }
+    ok('rules cannot juggle a fighter up and out of the arena',top>100&&top<400&&sane,{top}); }
+  { const S=duo(SWORD,BALL); S.addRule(rule('swat',h=>{ h.shot.reflect(1.5); h.shot.turn(90); })); swing(S,0); calm(S); const p=shotAt(S,1,0,900); p.life=p.ttl=1.6; let top=0, sane=true; for(let i=0;i<240;i++){ S.step(1/120); top=Math.max(top,p.y); sane=sane&&S.sane(); }
+    ok('a shot a rule sends straight up is gone once it is out of the arena',p.vy>1300&&top>900&&top<1000&&p.ttl<=0&&sane,{top,vy:p.vy}); }
+  { // the rule of the Design section and the four built-in bodies, from source, through the checker, into a fight
+    const live=(on,code)=>{ const p=FS.parse(code); return p.ok&&FS.check(p.ast,D.FORGE_API[on]).length===0?FS.compile(p.ast):null; };
+    const racket=live('swat',"if (shot.speed > 100) { shot.reflect(1.2); say('RETURN!'); }"), deflect=live('swat',"shot.reflect(0.9); say('DEFLECT!');"), ricochet=live('guard',"shot.reflect(0.8); say('RICOCHET!');");
+    const clash=live('strike',"if (foe.attacking) { hit.scale(0.8); push(foe, me.face * 260, 120); spark(foe.x, foe.y + 50); say('CLASH!'); }"), wind=live('near',"if (me.hp < foe.hp - 40 && chance(0.5)) { heal(me, 2); say('SECOND WIND'); }");
+    ok('the Design\'s rule and the four built-in bodies pass the checker for their event',!!(racket&&deflect&&ricochet&&clash&&wind));
+    { const S=duo(SWORD,BALL); S.addRule(rule('swat',racket,{cooldown:0.4})); swing(S,0); S.snapshot(); const p=shotAt(S,1,0,600); run(S,0.1);
+      ok('Return Serve: a swung racket returns the ball',p.side===0&&Math.abs(Math.hypot(p.vx,p.vy)-720)<1e-6&&evs(S,'rule')[0].say==='RETURN!'&&S.rules[0].faults===0); }
+    { const S=duo(SWORD,BALL); S.addRule(rule('swat',deflect,{cooldown:1.2})); swing(S,0); const p=shotAt(S,1,0,600); run(S,0.1); const S2=duo(SHIELD,BALL); S2.addRule(rule('guard',ricochet,{cooldown:1.5})); raiseShield(S2,0); const q=shotAt(S2,1,0,600); run(S2,0.2);
+      ok('Deflect and Ricochet send a shot back',p.side===0&&Math.abs(Math.hypot(p.vx,p.vy)-540)<1e-6&&q.side===0&&Math.abs(Math.hypot(q.vx,q.vy)-480)<1e-6&&S.rules[0].faults+S2.rules[0].faults===0); }
+    { const S=duo(SWORD,SWORD); S.addRule(rule('strike',clash,{cooldown:0.8})); const calm=blueHits(S); const b=S.f[1]; place(S,60); press(S,1); press(S,0); const hp=b.hp; let d=0, vx=0; for(let i=0;i<120&&!d;i++){ S.step(1/120); d=hp-b.hp; vx=b.vx; }
+      ok('Clash: only when the foe is mid-swing, the blow lands softer and shoves them back',Math.abs(calm-base)<1e-9&&Math.abs(d/base-0.8)<0.02&&vx>250&&vx<=260&&S.rules[0].faults===0&&S.rules[0].fired===1,{calm,d,vx}); }
+    { const S=arena(SWORD,SWORD), a=S.f[0]; S.addRule(rule('near',wind,{cooldown:2})); run(S,3); const even=S.rules[0].fired; a.hp=60; run(S,20);
+      ok('Second Wind: heals the one who is well behind, a little at a time',even===0&&S.rules[0].fired>=3&&a.hp>60&&a.hp<=84&&S.rules[0].faults===0,{fired:S.rules[0].fired,hp:a.hp}); }
+  }
+  { // a hostile rule: everything at once, with numbers as bad as they come; then a long bot fight with rules that never rest
+    const S=arena(SWORD,BALL), nasty=h=>{ const v=[1e308,-1e308,1e-320,5e-324,-0]; for(const who of [h.me,h.foe]) for(const n of v){ h.push(who,n,n); h.burn(who,n); h.soak(who,n); h.stun(who,n); h.heal(who,n); h.hurt(who,n); h.spark(n,n); }
+      h.say('\u0000\n<img src=x onerror=1>'.repeat(40)); if(h.shot) for(const n of v){ h.shot.reflect(n); h.shot.slow(n); h.shot.turn(n); h.shot.power(n); } if(h.hit) for(const n of v) h.hit.scale(n); };
+    for(const on of ['near','strike','swat','guard']) for(const side of [0,1]) S.addRule(rule(on,nasty,{a:[side,0],b:[1-side,0]}));
+    let sane=true, said=[]; for(let i=0;i<120*6;i++){ if(i%40===0){ press(S,0); press(S,1); } S.step(1/120); sane=sane&&S.sane(); for(const e of S.snapshot().ev) if(e.e==='rule'&&e.say) said.push(e.say); }
+    ok('a rule that asks for everything, with the worst numbers, leaves the match in one piece',sane&&S.rules.every(r=>r.faults===0&&r.hp<=24+1e-9&&r.stun<=1.5+1e-9)&&said.length>0&&said.every(t=>t.length<=18&&!/[\x00-\x1f]/.test(t)),{said:said.length,hp:[S.f[0].hp,S.f[1].hp]}); }
+}
+
 console.log(bad?bad+' failed':'all forge tests pass'); process.exit(bad?1:0);
