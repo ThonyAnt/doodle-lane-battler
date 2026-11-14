@@ -1222,7 +1222,7 @@ const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet s
 // A recording holds about LOG_ROOM characters of commands (some forty long matches' worth). When it is full it stops:
 // the match goes on, the log is marked full, and it replays up to the tick it stopped at.
 const LOG_ROOM=2e6;
-const LOG_V=1, COMMANDS=['setItem','tweak','setCustoms','targetSet','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold'];
+const LOG_V=1, COMMANDS=['setItem','tweak','setCustoms','targetSet','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold','trigSet'];
 const INPUT_KEYS=['l','r','d','j','a','b','m','q','h','u'], viaJSON=v=>JSON.parse(JSON.stringify(v)), round1=v=>Math.round(v*10)/10;
 const packInput=i=>{ const o={}; for(const k of INPUT_KEYS){ const v=i?i[k]:undefined; o[k]=k==='l'||k==='r'||k==='d'?(v?1:0):v===undefined?null:v; } return viaJSON(o); };   // held buttons as 0 or 1, press counts as given, a missing one as null
 const unpackInput=o=>{ const i={}; for(const k of INPUT_KEYS) if(o[k]!==null&&o[k]!==undefined) i[k]=o[k]; return i; };
@@ -1321,6 +1321,95 @@ function targetCustom(c,kind){
 const targetCost=list=>Array.isArray(list)?list.reduce((n,c)=>n+(c&&Object.prototype.hasOwnProperty.call(TARGET_FX,c.id)?TARGET_FX[c.id].cost:0),0):0;
 // Has this fighter's left and right been swapped for at least `after` seconds? (How the bots notice: see makeBot.)
 const targetMirrored=(f,after)=>{ const e=f.tfx&&f.tfx.mirror; return !!(e&&e.t>0&&e.d-e.t>=after); };
+/* ---------- triggers: WHEN a weapon's special power fires (the "trigger" axis of the customizations) ----------
+   Other axes say WHAT a power is. Here the payoff is always the same simple one, an empowered hit (empower() in
+   createDuel), so that the triggers can be tried on their own; anything else can be put behind them later.
+   A trigger is plain data, {when:'third', ...params}, that a customization carries: it.customs=[{id:'empower',when:{...}}].
+   Its state is one small record of numbers per fighter per item slot (f.trg[slot], see trigState; new every round).
+   Two functions are the whole interface, and neither touches the match:
+     trigFires(w,st,f)        does the power fire now? Reads only.
+     trigStep(w,st,f,dt,ev)   advances the state by dt seconds, or (dt 0) by one thing that happened:
+                              'land'  a blow of this item landed without the power,   'fire'  the power was let off,
+                              'hurt' / 'block'  the holder was hit / blocked a hit,   'blood' somebody was hit this round.
+   f is the holder (ground, hp, ink2, vx, act, hurt, stun, dash are read; 'fire' on the ink trigger spends ink2).
+   p: each parameter as [least, most, default]. boost is how hard the empowered hit lands (times damage).
+   cost: a first guess at the points for this trigger with the empowered hit. duty: a guess at the share of blows that
+   fire, for pricing some other payoff behind the same trigger. Neither number has been through a simulation. */
+const TRIGGERS={
+  third:{name:'Third strike',tip:'Every third hit landed is empowered. Pips over the head count the first two.',cost:3,duty:0.33,p:{boost:[1.2,2.5,1.8],n:[2,5,3]}},
+  charge:{name:'Charge',tip:'Stand still for about a second: a ring fills round the weapon and the next attack is empowered.',cost:3,duty:0.3,p:{boost:[1.2,2.5,1.9],secs:[0.4,2,0.9],keep:[0.5,5,2.5]}},
+  air:{name:'Airborne',tip:'Attacks made off the ground are empowered. The weapon trails while its holder is in the air.',cost:3,duty:0.3,p:{boost:[1.1,2,1.45]}},
+  last:{name:'Last stand',tip:'Below about a third of health every attack is empowered. An aura burns the whole time.',cost:4,duty:0.3,p:{boost:[1.1,2,1.4],below:[0.15,0.5,0.34]}},
+  counter:{name:'Counter',tip:'The first attack soon after being hit or blocking is empowered. A ring shrinks as the moment passes.',cost:2,duty:0.2,p:{boost:[1.2,2.5,1.8],win:[0.6,3,1.6]}},
+  ink:{name:'Full ink',tip:'While the ink meter is nearly full, attacks are empowered and each one spends ink.',cost:3,duty:0.3,p:{boost:[1.2,2.5,1.6],above:[60,100,90],spend:[10,60,25]}},
+  first:{name:'First blood',tip:'The first hit of the round is empowered, if this weapon lands it. It glows from the countdown until blood is drawn.',cost:1,duty:0.03,p:{boost:[1.2,3,2.2]}},
+};
+const TRIG_KINDS=['melee','ranged','bomb','dash'], TRIG_MAX=1;      // which kinds of item can carry a trigger; how many customizations an item holds
+const trigState=()=>({n:0,c:0,h:0,a:0,w:0,fb:1,on:0});              // n hits counted, c charge 0..1, h charge kept (s), a off the ground lately (s), w counter window (s), fb first blood still to draw, on: was armed last look
+// A trigger from outside, made safe: a known name, every parameter a number inside its range. null if it is not one. Never throws.
+function cleanTrigger(w){
+  try{
+    if(typeof w==='string') w={when:w};
+    if(!w||typeof w!=='object'||typeof w.when!=='string'||!Object.prototype.hasOwnProperty.call(TRIGGERS,w.when)) return null;
+    const P=TRIGGERS[w.when].p, out={when:w.when};
+    for(const k of Object.keys(P)){ const [lo,hi,def]=P[k], v=typeof w[k]==='number'?w[k]:typeof w[k]==='string'&&w[k].trim()?+w[k]:NaN; out[k]=Number.isFinite(v)?Math.max(lo,Math.min(hi,k==='n'?Math.round(v):Math.round(v*100)/100)):def; }
+    return out;
+  }catch(err){ return null; }
+}
+// The customizations an item of this kind may carry, from whatever was asked for. Here the only block is 'empower' (the
+// empowered hit behind a trigger); unknown ids, bad triggers and anything past TRIG_MAX are dropped. Never throws.
+function trigCustoms(list,kind){
+  const out=[]; if(!TRIG_KINDS.includes(kind)) return out;
+  try{ for(const c of Array.isArray(list)?list:[list]){ if(out.length>=TRIG_MAX) break; if(!c||typeof c!=='object'||c.id!=='empower') continue;
+    const when=cleanTrigger(c.when); if(when) out.push({id:'empower',when,cost:TRIGGERS[when.when].cost}); } }catch(err){ return []; }
+  return out;
+}
+// trigger: does the power fire now?
+function trigFires(w,st,f){
+  switch(w.when){
+    case 'third': return st.n>=w.n-1;
+    case 'charge': return st.c>=1;
+    case 'air': return st.a>0;
+    case 'last': return f.hp>0&&f.hp<=HP*w.below;
+    case 'counter': return st.w>0;
+    case 'ink': return f.ink2>=w.above;
+    case 'first': return st.fb>0;
+  }
+  return false;
+}
+// trigger: advance the state, by time (dt) or by an event (ev, with dt 0).
+function trigStep(w,st,f,dt,ev){
+  const k=w.when;
+  if(ev){
+    if(k==='third'){ if(ev==='fire') st.n=0; else if(ev==='land') st.n=Math.min(w.n-1,st.n+1); }
+    else if(k==='charge'){ if(ev==='fire'||ev==='hurt'){ st.c=0; st.h=0; } }                 // being hit knocks the charge out
+    else if(k==='counter'){ if(ev==='hurt'||ev==='block') st.w=w.win; else if(ev==='fire') st.w=0; }
+    else if(k==='ink'){ if(ev==='fire') f.ink2=Math.max(0,f.ink2-w.spend); }
+    else if(k==='first'){ if(ev==='fire'||ev==='blood') st.fb=0; }
+    return;
+  }
+  if(k==='air') st.a=f.ground?Math.max(0,st.a-dt):0.15;      // a blow that lands just as its holder touches down still counts
+  else if(k==='counter') st.w=Math.max(0,st.w-dt);
+  else if(k==='charge'&&!f.act){                              // mid-move the charge neither grows nor fades
+    const still=f.ground&&Math.abs(f.vx)<40&&!(f.hurt>0)&&!(f.stun>0)&&!(f.dash>0);
+    if(still){ if(st.c>=1) st.h=Math.min(w.keep,st.h+dt); else{ st.c=Math.min(1,st.c+dt/w.secs); if(st.c>=1) st.h=w.keep; } }      // (standing again tops the kept time up slowly, so wiggling does not hold a charge for ever)
+    else if(st.c>=1){ st.h-=dt; if(st.h<=0){ st.c=0; st.h=0; } }       // a full charge is kept for a while on the move
+    else st.c=Math.max(0,st.c-2*dt/w.secs);
+  }
+}
+// trigger: how far along it is, 0 to 1, for the picture (pips, rings, the aura fading in).
+function trigLevel(w,st,f){
+  switch(w.when){
+    case 'third': return st.n/(w.n-1);
+    case 'charge': return st.c;
+    case 'air': return st.a>0?1:0;
+    case 'last': return Math.max(0,Math.min(1,1-(f.hp/HP-w.below)/0.25));
+    case 'counter': return st.w/w.win;
+    case 'ink': return Math.min(1,f.ink2/w.above);
+    case 'first': return st.fb>0?1:0;
+  }
+  return 0;
+}
 function createDuel(opts){
   if(opts&&opts.record) opts=viaJSON(opts);       // a recorded match keeps its own copy of what it was made with (see S.log)
   let acc=0, nextId=1; const STEP=1/120, r1=round1;
@@ -1330,7 +1419,7 @@ function createDuel(opts){
   const fresh=side=>({side,x:BOARD?BOARD.x0+(BOARD.x1-BOARD.x0)*(side?0.8:0.2):W/2+(side?260:-260),y:BOARD?BOARD.floor:0,vx:0,vy:0,face:side?-1:1,hp:HP,ground:true,jumps:0,jq:0,buf:[0,0],cd:[0,0],cdMax:[1,1],
     act:null,shield:0,hurt:0,burn:0,burnDps:0,slow:0,dash:0,dashHit:false,dashItem:null,drop:0,uses:[3,3],held:0,
     ink2:100,od:0,stun:0,trap:0,flung:0,flungBy:-1,overclock:0,scale:1,scaleGoal:1,bubble:null,mcd:0,mbuf:0,
-    cu:{},run:1,grav:1,tfx:{}});       // customizations (see CUSTOMS): each block's state for this fighter, and the two multipliers a block may set per tick
+    cu:{},run:1,grav:1,tfx:{},trg:[trigState(),trigState()]});       // customizations (see CUSTOMS): each block's state for this fighter, and the two multipliers a block may set per tick
   const S={phase:'draw',t:45,round:1,wins:[0,0],ready:[false,false],items:[[null,null],[null,null]],f:[fresh(0),fresh(1)],pr:[],events:[],
     winner:-1,champ:-1,ver:0,practice:!!(opts&&opts.practice),inp:[{l:0,r:0,d:0},{l:0,r:0,d:0}],cnt:[{j:0,a:0,b:0,m:0,q:0,u:0},{j:0,a:0,b:0,m:0,q:0,u:0}],
     objs:[],fields:[],groups:[null,null],hack:null,effects:[],broken:null,breached:false,cells:[],time:0,stop:0,motes:[],cuFault:null};
@@ -1549,6 +1638,60 @@ function createDuel(opts){
   // wielder customizations: give a made item its blocks (see CUSTOMS): a list of ids or {id, params}; fitCustoms cleans it
   // and keeps it within the points budget. Allowed when tweak is (the draw phase, or any time in practice). [] clears.
   S.setCustoms=(side,k,list)=>S.tweak(side,k,{customs:Array.isArray(list)?list:[]});
+  /* ---------- triggers in the match (see TRIGGERS above createDuel) ----------
+     trigTick runs once a tick per fighter (from control); trigStrike is asked in hurt() whether a blow is empowered;
+     trigShot marks a shot or a bomb as it leaves the hand; trigAfter tells both fighters' triggers what a blow did.
+     An ultimate's blows are never empowered and never advance its caster's triggers. They do count as "being hit" for
+     the fighter on the receiving end (a counter opens, first blood is drawn). */
+  let trgP=null;                                              // the shot or bomb that projectiles() is working on
+  const trigOf=it=>(it&&it.customs&&it.customs.find(c=>c.when))||null;
+  // Set an item's customizations (trigger and all). Like S.tweak: while drawing, or any time in practice. Whatever is
+  // given is cleaned by trigCustoms; the answer is the list the item now carries (empty if nothing valid), or null.
+  S.trigSet=(side,k,list)=>{
+    if((side!==0&&side!==1)||(k!==0&&k!==1)) return null;
+    const it=S.items[side][k]; if(!it||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
+    const cu=trigCustoms(list,it.kind); if(cu.length) it.customs=cu; else delete it.customs;
+    S.f[side].trg[k]=trigState(); return cu;
+  };
+  // The payoff every trigger lets off here: an empowered hit. c = {hit:{dmg,kx,ky}, target, slot, boost, when}. Change
+  // c.hit and say so with an event; a later block can stand in for this function.
+  function empower(by,it,c){
+    const b=c.boost, h=c.hit; h.dmg*=b; h.kx*=1+(b-1)*0.9; if(h.ky>=0) h.ky=Math.max(h.ky,150)*(1+(b-1)*0.5);
+    S.stop=Math.max(S.stop,0.06);
+    S.events.push({e:'emp',side:by.side,slot:c.slot,w:c.when,x:Math.round(c.target.x),y:Math.round(c.target.y+52)});
+  }
+  // The armed light: an event the moment a trigger becomes ready (not for 'air', which is ready on every jump).
+  function trigSync(f,k,w,st){
+    const on=trigFires(w,st,f)?1:0;
+    if(on&&!st.on&&w.when!=='air'&&S.phase==='fight') S.events.push({e:'trg',side:f.side,slot:k,w:w.when,x:Math.round(f.x),y:Math.round(f.y+60)});
+    st.on=on;
+  }
+  function trigTick(f,dt){ for(const k of [0,1]){ const cu=trigOf(S.items[f.side][k]); if(!cu) continue; trigStep(cu.when,f.trg[k],f,dt); trigSync(f,k,cu.when,f.trg[k]); } }
+  // A blow of by's item in slot is about to land on t: is it empowered? Returns the changed {dmg,kx,ky}, or null.
+  function trigStrike(by,t,tr,slot,dmg,kx,ky){
+    if(!by||by===t||tr==='fleet'||!(slot>=0)) return null;
+    const it=S.items[by.side][slot], cu=trigOf(it); if(!cu) return null;
+    const w=cu.when, st=by.trg[slot], p=trgP&&trgP.side===by.side&&trgP.slot===slot?trgP:null; let boost=0;
+    if(p) boost=p.emp||0;                                     // a shot or a bomb: settled when it left the hand
+    else if(trigFires(w,st,by)){ boost=w.boost; trigStep(w,st,by,0,'fire'); }
+    if(!boost){ trigStep(w,st,by,0,'land'); trigSync(by,slot,w,st); return null; }
+    const hit={dmg,kx,ky}; empower(by,it,{hit,target:t,slot,boost,when:w.when}); trigSync(by,slot,w,st); return hit;
+  }
+  function trigShot(f,k,p){
+    const cu=trigOf(S.items[f.side][k]); if(!cu||!p) return;
+    if(trigFires(cu.when,f.trg[k],f)){ p.emp=cu.when.boost; trigStep(cu.when,f.trg[k],f,0,'fire'); trigSync(f,k,cu.when,f.trg[k]); }
+  }
+  function trigAfter(t,by,blocked){
+    if(!by||by===t) return;
+    for(const k of [0,1]){ const cu=trigOf(S.items[t.side][k]); if(cu){ trigStep(cu.when,t.trg[k],t,0,blocked?'block':'hurt'); trigSync(t,k,cu.when,t.trg[k]); } }
+    if(!blocked) for(const f of S.f) for(const k of [0,1]){ const cu=trigOf(S.items[f.side][k]); if(cu){ trigStep(cu.when,f.trg[k],f,0,'blood'); trigSync(f,k,cu.when,f.trg[k]); } }
+  }
+  // What the picture needs, per item slot: {w: which trigger, on: armed, p: level 0..1, n and c: pips, h: charge kept 0..1}.
+  function trigView(f){
+    let any=0; const out=[0,1].map(k=>{ const cu=trigOf(S.items[f.side][k]); if(!cu) return null; any=1; const w=cu.when, st=f.trg[k];
+      return {w:w.when,on:trigFires(w,st,f)?1:0,p:+trigLevel(w,st,f).toFixed(2),n:w.n,c:w.n?st.n:undefined,h:w.when==='charge'&&st.c>=1?+(st.h/w.keep).toFixed(2):undefined}; });
+    return any?out:undefined;
+  }
   const usesFor=side=>[0,1].map(k=>{ const it=S.items[side][k]; return it&&it.kind==='heal'?it.st.uses+(it.trait==='feast'?1:0):3; });
   const carries=(side,tr)=>S.items[side].some(it=>it&&it.trait===tr);
   // Replace the platforms mid-match (the desktop overlay does this as real windows move). Platforms may carry an id and
@@ -1612,6 +1755,7 @@ function createDuel(opts){
     if(tr==='heavy') kx*=1.6;
     if(tr==='pull') kx*=-0.85;
     if(tr==='launch') ky=ky>0?ky*1.5:ky===0?240:ky;
+    { const tg=trigStrike(by,t,tr,slot,dmg,kx,ky); if(tg){ dmg=tg.dmg; kx=tg.kx; ky=tg.ky; } }      // trigger: an empowered hit
     t.od=Math.min(100,t.od+dmg*0.9); if(by&&tr!=='fleet') by.od=Math.min(100,by.od+dmg*1.3);
     if(t.act&&itemOf(t.side,t.act.k).trait==='guard') dmg*=0.92;
     // Elements against each other: fire beats plant, plant beats water, water beats fire. What counts is the item the
@@ -1653,6 +1797,7 @@ function createDuel(opts){
     else S.events.push({e:blocked?'block':'hit',x:Math.round(t.x),y:Math.round(t.y+52),n:Math.max(1,Math.round(dmg)),el,side:t.side,hap:hap||'thud',dir:kx<0?'L':'R',tag:tag||undefined,w:+w.toFixed(2),fin:fin&&!blocked?1:0,ult:tr==='fleet'?1:0,d:tr==='fleet'?+dmg.toFixed(2):undefined});
     if(tr==='blast'&&!blocked) S.events.push({e:'boom',x:Math.round(t.x),y:Math.round(t.y+45),n:26,el,s:1});
     if(H){ H.dmg=dmg; H.stun=stun; if(by&&by!==t&&slot>=0) cfire('landed',by,slot,H); cfire('took',t,t.held,H); }      // wielder customizations
+    trigAfter(t,by,blocked);      // trigger: counters open, first blood is drawn
     if(pushes){ const q=pushes; pushes=null; for(const go of q) go(); }
   }
   // Begin a move: the fighter is committed until it ends or chains.
@@ -1677,6 +1822,7 @@ function createDuel(opts){
       startMove(f,k,'throw'); cool(st.cd);
       const bomb={id:nextId++,k:'bomb',side:f.side,slot:k,x:f.x+f.face*14,y:f.y+72,vx:f.face*340*(st.toss||1)+f.vx*0.4,vy:420,dmg:st.dmg,el:it.el,kb:st.kb,radius:st.radius,grav:1100,tr:it.trait,ttl:3};
       cfire('shot',f,k,bomb); S.pr.push(bomb);      // wielder customizations
+      trigShot(f,k,S.pr[S.pr.length-1]);      // trigger: and throws an empowered bomb
     }else if(it.kind==='shield'){ f.shield=st.dur; f.shieldMove=st.move; f.shieldTr=it.trait; f.shieldK=k; cool(st.cd+st.dur); }
     else if(it.kind==='dash'){ f.dash=0.2; f.dashHit=false; f.dashItem=it; f.vx=f.face*st.speed; cool(st.cd); S.events.push({e:'dash',x:Math.round(f.x),y:Math.round(f.y+40),side:f.side}); }
     else{
@@ -1753,6 +1899,7 @@ function createDuel(opts){
         const shot={id:nextId++,k:'shot',st:it.style,big:M.big||0,side:f.side,slot:k,x:f.x+f.face*mz[0],y:f.y+mz[1],
           vx:f.face*sp*Math.cos(aim),vy:-sp*Math.sin(aim),grav:M.grav||0,dmg:st.dmg*M.dmg*sty.dmg,el:it.el,kb:st.kb*(M.kbMul||1),stun:M.stun,tr:it.trait,fin:M.kbMul?1:0,life,ttl:life};
         cfire('shot',f,k,shot); S.pr.push(shot);      // wielder customizations
+        trigShot(f,k,S.pr[S.pr.length-1]);      // trigger: an armed weapon fires an empowered shot
         if(M.recoil) f.vx-=f.face*M.recoil;
         S.events.push({e:'shot',x:Math.round(f.x+f.face*(mz[0]+(it.style==='gun'||it.style==='akimbo'?14:4))),y:Math.round(f.y+mz[1]),st:it.style,side:f.side,f:f.face,el:it.el});
       }
@@ -1769,6 +1916,7 @@ function createDuel(opts){
     for(const k of ['stun','trap','flung','overclock','mcd','mbuf']) if(f[k]>0) f[k]=Math.max(0,f[k]-dt);
     if(f.bubble){ f.bubble.t-=dt; if(f.bubble.t<=0) f.bubble=null; }
     f.scale+=(f.scaleGoal-f.scale)*Math.min(1,dt*8); f.ink2=Math.min(100,f.ink2+7*dt);
+    trigTick(f,dt);      // trigger: conditions build and fade
     if(f.act) act(f,dt);
     if(f.dash>0){
       f.dash-=dt; f.vy=0;
@@ -1819,7 +1967,7 @@ function createDuel(opts){
   function projectiles(dt,only){
     for(const p of S.pr){
       if(only>=0&&!(p.tr==='fleet'&&p.side===only)) continue;     // an ultimate is playing: everything else hangs in the air
-      const e=S.f[1-p.side];
+      const e=S.f[1-p.side]; trgP=p;
       if(p.hover){
         // A copy from the ultimate, waiting in the fan. ang is where it points (0 = right, positive = up).
         const o=p.own, a=o.act;
@@ -1867,6 +2015,7 @@ function createDuel(opts){
       }
       if(p.x<-30||p.x>W+30||(p.ruled&&p.y>900)) p.ttl=0;      // out of the arena; a rule may have sent it up and out as well
     }
+    trgP=null;
     S.pr=S.pr.filter(p=>p.ttl>0);
   }
   /* ---------- InkShop world (adapted from Alex's prototype) ----------
@@ -2241,14 +2390,14 @@ function createDuel(opts){
     hack:S.hack&&{by:S.hack.by,target:S.hack.target,name:S.hack.def.name,desc:S.hack.def.desc,t:+S.hack.t.toFixed(2),max:S.hack.max,counter:S.hack.counter},
     fxs:S.effects.map(e=>({by:e.by,target:e.target,counter:e.counter,name:e.name})),
     items:S.items.map(a=>a.map(it=>it&&{name:it.name,kind:it.kind,style:it.style,el:it.el,cost:Math.round(it.cost),ver:it.ver,sz:Math.round(it.st.size),
-      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune,am:it.ammo,cu:it.customs&&it.customs.length?it.customs:undefined,cu:it.customs})),
+      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune,am:it.ammo,cu:it.customs&&it.customs.length?it.customs:undefined,cu:it.customs,cu:it.customs})),
     f:S.f.map(f=>({x:r1(f.x),y:r1(f.y),vx:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vx),vy:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vy),face:f.face,hp:Math.max(0,r1(f.hp)),g:f.ground?1:0,
       act:f.act?{k:f.act.k,m:f.act.m+(f.act.v?'_b':''),t:+f.act.t.toFixed(3),r:+f.act.rate.toFixed(2)}:null,
       sh:f.shield>0?1:0,hurt:f.hurt>0?1:0,burn:f.burn>0?1:0,slow:f.slow>0?1:0,dash:f.dash>0?1:0,held:f.held,
       cd:[+(f.cd[0]/f.cdMax[0]).toFixed(2),+(f.cd[1]/f.cdMax[1]).toFixed(2)],uses:f.uses,
-      ink2:Math.round(f.ink2),od:Math.round(f.od),stun:f.stun>0?1:0,trap:f.trap>0?1:0,bub:f.bubble?Math.round(f.bubble.r):0,oc:f.overclock>0?1:0,sc:+f.scale.toFixed(2),fl:f.flung>0?1:0,cv:cuView(f),ts:targetView(f)})),
+      ink2:Math.round(f.ink2),od:Math.round(f.od),stun:f.stun>0?1:0,trap:f.trap>0?1:0,bub:f.bubble?Math.round(f.bubble.r):0,oc:f.overclock>0?1:0,sc:+f.scale.toFixed(2),fl:f.flung>0?1:0,cv:cuView(f),ts:targetView(f),tg:trigView(f)})),
     mo:S.motes.map(m=>({id:m.id,c:m.c,side:m.side,slot:m.slot,x:r1(m.x),y:r1(m.y),vx:Math.round(m.vx),vy:Math.round(m.vy),d:m.d})),      // wielder customizations: cu (an item's blocks), cv (what each shows on its fighter), mo (motes)
-    pr:S.pr.map(p=>({id:p.id,k:p.k,st:p.st,big:p.big,side:p.side,slot:p.slot,x:r1(p.x),y:r1(p.y),vx:Math.round(p.vx),vy:Math.round(p.vy),el:p.el,o:p.os,h:p.hover?1:undefined,a:p.st==='fleet'?+p.ang.toFixed(2):undefined,z:S.ult>=0&&!(p.tr==='fleet'&&p.side===S.ult)?1:undefined})),
+    pr:S.pr.map(p=>({id:p.id,k:p.k,st:p.st,big:p.big,side:p.side,slot:p.slot,x:r1(p.x),y:r1(p.y),vx:Math.round(p.vx),vy:Math.round(p.vy),el:p.el,o:p.os,h:p.hover?1:undefined,a:p.st==='fleet'?+p.ang.toFixed(2):undefined,em:p.emp?1:undefined,z:S.ult>=0&&!(p.tr==='fleet'&&p.side===S.ult)?1:undefined})),
     ev:S.events.splice(0)});
   // A fingerprint of where the match stands: the phase, clock, round and wins, and everything about every fighter and
   // every shot (numbers to the nearest 0.01). Two matches that agree tick for tick have the same one, so comparing a
@@ -3439,6 +3588,7 @@ function accept(v){
     if(e.e==='rulefault'&&forge){ forgeOff[e.id]=1; drawForge(); }
     if(e.e==='quake') shake=Math.max(shake,9);
     if(e.e==='cu'&&TELLS[e.c]&&TELLS[e.c].event) TELLS[e.c].event(e);      // wielder customizations
+    if(e.e==='emp') shake=Math.max(shake,CALM?4:13);      // trigger: an empowered hit
     if(e.e==='hit'&&ANIM.rig&&anim[e.side]&&anim[e.side].rig) ANIM.rig.kick(anim[e.side].rig,(e.dir==='L'?-1:1)*(view?view.f[e.side].face:1),e.n);
     const now=e.t0, soft=CALM?0.3:1;
     if(e.e==='boom') shake=Math.max(shake,(e.s?4:8)*soft);
@@ -3965,6 +4115,78 @@ function targetFx(e,a){
     L.fillStyle=col; word(D.say||'SWAP!',mx,my-h*0.5-34-a*18,30); }
   L.restore();
 }
+/* ---------- trigger tells (see TRIGGERS in the rules) ----------
+   Every trigger shows its condition building, then armed, then firing. Building and armed are drawn from the snapshot
+   (f.tg[slot] = {w,on,p,n,c,h}) for the item in the hand; firing is the 'emp' event, becoming armed the 'trg' event.
+   Whose it is: rings, pips and bursts are in the holder's colour; gold means "armed". */
+const TRIG_GOLD='#f5a800', TRIG_WORD={third:'THIRD STRIKE!',charge:'CHARGED HIT!',air:'AIR STRIKE!',last:'LAST STAND!',counter:'COUNTER!',ink:'INK BURST!',first:'FIRST BLOOD!'},
+  TRIG_READY={third:'NEXT HIT!',charge:'CHARGED',last:'LAST STAND',counter:'COUNTER!',ink:'INK FULL',first:'FIRST BLOOD?'};
+const trigSeen=(f,k)=>(f.tg&&f.tg[k])||null;
+// Inside the weapon's own drawing space, just before its sprite: an armed weapon glows gold.
+function trigGlow(c,f,k,it,wlen,now){
+  const g=trigSeen(f,k); if(!g||!g.on) return;
+  const pulse=0.5+0.5*Math.sin(now/85), axis=it.kind==='melee'&&it.style!=='fist', staff=it.style==='staff', n=staff?it.sz*2.3/K:wlen, x0=staff?-n*0.38:it.style==='spear'?-wlen*0.22:0, x1=staff?n*0.62:wlen;
+  c.save(); c.lineCap='round';
+  if(axis||staff){ c.strokeStyle=TRIG_GOLD; c.globalAlpha=0.25+0.2*pulse; c.lineWidth=24; c.beginPath(); c.moveTo(x0,0); c.lineTo(x1,0); c.stroke();
+    c.strokeStyle='#ffe58a'; c.globalAlpha=0.55; c.lineWidth=11; c.beginPath(); c.moveTo(x0,0); c.lineTo(x1,0); c.stroke(); }
+  else{ const r=Math.max(16,it.sz*0.5/K), cx=it.kind==='ranged'&&it.style!=='bow'&&it.style!=='hurl'?r*0.5:0; c.fillStyle=TRIG_GOLD; c.globalAlpha=0.25+0.2*pulse; c.beginPath(); c.arc(cx,0,r*1.25,0,7); c.fill();
+    c.fillStyle='#ffe58a'; c.globalAlpha=0.55; c.beginPath(); c.arc(cx,0,r*0.8,0,7); c.fill(); }
+  c.restore(); c.shadowColor=TRIG_GOLD; c.shadowBlur=14+10*pulse;      // the sprite drawn next carries a halo
+}
+// Round the fighter, on the stage: pips, rings, the aura, the trail.
+function trigTell(v,i,f,x,base,now,s,d,KS){
+  const st=anim[i], g=f.hp>0&&(v.phase==='fight'||v.phase==='count')?trigSeen(f,f.held):null;
+  if(!g){ st.trgTrail=null; return; }
+  const col=PCOL[i], T2=Math.PI*2, tm=now/1000, p=s.p, H=ANIM.xf(s,p[12],p[13]), hx=x+H[0]*KS*d, hy=base+H[1]*KS, hd=ANIM.xf(s,p[0],p[1]), top=base+hd[1]*K-(RETRO||DESK?64:46), cy=base-55*(f.sc||1);
+  L.save(); L.lineCap='round'; L.lineJoin='round';
+  if(g.w==='third'){        // pips over the head: one per hit counted; all gold when the next hit is the big one
+    const n=Math.max(1,(g.n||3)-1), gap=27, x0=x-(n-1)*gap/2;
+    for(let j=0;j<n;j++){ const full=j<(g.c||0), r=g.on?10.5+1.5*Math.sin(tm*14+j):9; L.beginPath(); L.arc(x0+j*gap,top-4,r,0,T2); L.fillStyle=g.on?TRIG_GOLD:full?col:'#fffdf6'; L.fill(); L.lineWidth=3; L.strokeStyle=g.on?'#111':col; L.stroke(); }
+    if(g.on){ L.font='bold 26px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle='#111'; L.fillText('!',x0+n*gap-4,top+5); }
+  }else if(g.w==='charge'){ // a ring round the weapon hand fills; full, it turns gold and sparks, and drains while the holder is on the move
+    if(g.p>0){ const r=32; L.lineWidth=3; L.strokeStyle='rgba(17,17,17,.16)'; L.beginPath(); L.arc(hx,hy,r,0,T2); L.stroke();
+      L.lineWidth=g.on?9:8; L.strokeStyle=g.on?TRIG_GOLD:col; L.beginPath(); L.arc(hx,hy,r,-Math.PI/2,-Math.PI/2+T2*(g.on?Math.max(0.04,g.h===undefined?1:g.h):g.p)); L.stroke();
+      if(g.on){ L.lineWidth=3; L.strokeStyle=col; for(let n=0;n<4;n++){ const a=tm*5+n*T2/4; L.beginPath(); L.moveTo(hx+Math.cos(a)*(r+7),hy+Math.sin(a)*(r+7)); L.lineTo(hx+Math.cos(a)*(r+15),hy+Math.sin(a)*(r+15)); L.stroke(); } } }
+  }else if(g.w==='air'){    // the weapon leaves a ribbon while its holder is off the ground
+    const tip=ANIM.xf(s,p[12]+Math.cos(p[22])*42,p[13]+Math.sin(p[22])*42), tr=st.trgTrail=(st.trgTrail||[]).filter(q=>now-q.t<300);
+    if(g.on) tr.push({x:x+tip[0]*KS*d,y:base+tip[1]*KS,t:now});
+    for(let n=1;n<tr.length;n++){ const a=1-(now-tr[n].t)/300; L.globalAlpha=0.6*a; L.strokeStyle=n%2?col:TRIG_GOLD; L.lineWidth=3+11*a; L.beginPath(); L.moveTo(tr[n-1].x,tr[n-1].y); L.lineTo(tr[n].x,tr[n].y); L.stroke(); }
+    L.globalAlpha=1; if(g.on){ L.strokeStyle=col; L.lineWidth=3; for(const sx of [-1,1]){ L.beginPath(); L.moveTo(x+sx*10,base+6); L.lineTo(x+sx*24,base+16+4*Math.sin(tm*18)); L.stroke(); } }      // and two streaks under the feet
+  }else if(g.w==='last'){   // an aura of flames round the body: faint as health nears the line, steady below it
+    if(g.p>0){ const al=g.on?0.9:0.3*g.p; L.globalAlpha=al*0.45; L.strokeStyle=col; L.lineWidth=5; L.beginPath(); L.ellipse(x,cy,30+2*Math.sin(tm*9),60,0,0,T2); L.stroke();
+      L.globalAlpha=al; L.lineWidth=3.5; for(let n=0;n<11;n++){ const a=n/11*T2+0.3, bx=x+Math.cos(a)*31, by=cy+Math.sin(a)*60, h=(g.on?16:8)+9*Math.sin(tm*11+n*1.9); L.strokeStyle=n%2?'#e2552d':TRIG_GOLD; L.beginPath(); L.moveTo(bx-5,by); L.quadraticCurveTo(bx+3*Math.sin(tm*7+n),by-h*0.6,bx,by-h*1.5); L.quadraticCurveTo(bx+5,by-h*0.5,bx+5,by); L.stroke(); } }
+  }else if(g.w==='counter'){ // a ring round the body that shrinks and empties as the moment passes
+    if(g.on){ const r=34+18*g.p; L.lineWidth=3; L.strokeStyle='rgba(17,17,17,.16)'; L.beginPath(); L.arc(x,cy,r,0,T2); L.stroke(); L.lineWidth=7; L.strokeStyle=TRIG_GOLD; L.beginPath(); L.arc(x,cy,r,-Math.PI/2,-Math.PI/2+T2*g.p); L.stroke(); L.lineWidth=2.5; L.strokeStyle=col; L.beginPath(); L.arc(x,cy,r+6,-Math.PI/2,-Math.PI/2+T2*g.p); L.stroke(); }
+  }else if(g.w==='ink'){    // a gauge by the hand while the ink builds; full, drops of ink circle the weapon
+    const ink='#1c2541';
+    if(!g.on){ L.lineWidth=3; L.strokeStyle='rgba(17,17,17,.16)'; L.beginPath(); L.arc(hx,hy,29,0,T2); L.stroke(); L.lineWidth=7; L.strokeStyle=ink; L.setLineDash([9,6]); L.beginPath(); L.arc(hx,hy,29,-Math.PI/2,-Math.PI/2+T2*g.p); L.stroke(); L.setLineDash([]); }
+    else for(let n=0;n<3;n++){ const a=tm*6+n*T2/3, dx=hx+Math.cos(a)*27, dy=hy+Math.sin(a)*19; L.fillStyle=ink; L.beginPath(); L.moveTo(dx,dy-11); L.quadraticCurveTo(dx+8,dy+2,dx,dy+7); L.quadraticCurveTo(dx-8,dy+2,dx,dy-11); L.fill(); L.fillStyle=TRIG_GOLD; L.beginPath(); L.arc(dx-1.5,dy+1,2,0,T2); L.fill(); }
+  }else if(g.w==='first'){  // a drop of blood over the head until somebody draws it
+    if(g.on){ const by=top-4+3*Math.sin(tm*5); L.fillStyle='#c8102e'; L.strokeStyle='#111'; L.lineWidth=2; L.beginPath(); L.moveTo(x,by-15); L.quadraticCurveTo(x+12,by+2,x,by+9); L.quadraticCurveTo(x-12,by+2,x,by-15); L.fill(); L.stroke();
+      L.strokeStyle=TRIG_GOLD; L.lineWidth=2.5; L.globalAlpha=.5+.4*Math.sin(tm*8); L.beginPath(); L.arc(x,by-2,17,0,T2); L.stroke(); }
+  }
+  L.restore();
+}
+// An empowered shot or bomb in the air: a gold halo and a streak in its owner's colour.
+function trigShotGlow(p,x,y,ps,now){
+  const sp=Math.hypot(p.vx,p.vy)||1, ux=p.vx/sp, uy=-p.vy/sp; L.save(); L.lineCap='round';
+  L.globalAlpha=.5; L.strokeStyle=PCOL[ps]; L.lineWidth=9; L.beginPath(); L.moveTo(x-ux*70,y-uy*70); L.lineTo(x-ux*8,y-uy*8); L.stroke();
+  L.globalAlpha=.35+.2*Math.sin(now/60); L.fillStyle=TRIG_GOLD; L.beginPath(); L.arc(x,y,19,0,7); L.fill(); L.globalAlpha=.8; L.strokeStyle=TRIG_GOLD; L.lineWidth=3; L.beginPath(); L.arc(x,y,13,0,7); L.stroke(); L.restore();
+}
+// The events: 'emp' (an empowered hit lands: a star in the attacker's colour and the trigger's name) and 'trg' (armed).
+function trigFx(e,a,y){
+  const col=PCOL[e.side]||'#111'; L.save(); L.lineJoin='round'; L.lineCap='round';
+  if(e.e==='emp'){
+    const grow=Math.min(1,a*5), R=40+58*grow, star=(r,k)=>{ L.beginPath(); for(let n=0;n<20;n++){ const t=n*Math.PI/10+0.2, q=n%2?r*k:r*(n%4?1:0.82); n?L.lineTo(e.x+Math.cos(t)*q,y+Math.sin(t)*q):L.moveTo(e.x+Math.cos(t)*q,y+Math.sin(t)*q); } L.closePath(); };
+    L.globalAlpha=Math.max(0,1-a*1.6); L.fillStyle=col; star(R,0.5); L.fill(); L.fillStyle=TRIG_GOLD; star(R*0.7,0.5); L.fill(); L.fillStyle='#fff'; star(R*0.4,0.5); L.fill();
+    L.globalAlpha=1-a; L.strokeStyle=TRIG_GOLD; L.lineWidth=6*(1-a)+1; L.beginPath(); L.arc(e.x,y,30+110*a,0,7); L.stroke();
+    L.globalAlpha=Math.min(1,(1-a)*2.5); L.font='bold 32px "Gochi Hand",cursive'; L.textAlign='center'; L.lineWidth=7; L.strokeStyle='#fffdf6'; L.strokeText(TRIG_WORD[e.w]||'EMPOWERED!',e.x,y-78-a*30); L.fillStyle=col; L.fillText(TRIG_WORD[e.w]||'EMPOWERED!',e.x,y-78-a*30);
+  }else{
+    L.globalAlpha=1-a; L.strokeStyle=col; L.lineWidth=5*(1-a)+1; L.beginPath(); L.arc(e.x,y,24+70*a,0,7); L.stroke(); L.strokeStyle=TRIG_GOLD; L.lineWidth=3; L.beginPath(); L.arc(e.x,y,14+50*a,0,7); L.stroke();
+    L.globalAlpha=Math.min(1,(1-a)*2); L.font='bold 20px "Gochi Hand",cursive'; L.textAlign='center'; L.lineWidth=5; L.strokeStyle='#fffdf6'; L.strokeText(TRIG_READY[e.w]||'READY',e.x,y-96-a*14); L.fillStyle=col; L.fillText(TRIG_READY[e.w]||'READY',e.x,y-96-a*14);
+  }
+  L.restore();
+}
 function drawFighter(v,i,now,age,dt){
   // While the other fighter's ultimate plays this one is held: drawn in grey, pose and place frozen.
   const held=!!(v.ul&&v.ul[0]!==i&&v.phase==='fight'); if(held){ dt=0; age=0; }
@@ -4025,6 +4247,7 @@ function drawFighter(v,i,now,age,dt){
     weapon2:two?c=>{ if(kind==='melee') sprite(i,k,wlen,true,2); else{ c.translate(gsz*0.3,0); sprite(i,k,gsz,false,2); } }:null,
     weapon(c,ss){
       if(!it||(kind==='shield'&&f.sh)) return;
+      trigGlow(c,f,k,it,wlen,now);      // trigger: an armed weapon glows
       if(kind==='melee'&&it.style==='fist'){ c.rotate(-ss.p[22]); sprite(i,k,U(it.sz*0.5)); }
       else if(kind==='melee'&&it.style==='spear'){ c.translate(-wlen*0.22,0); sprite(i,k,wlen*1.22,true); }
       else if(kind==='melee') sprite(i,k,wlen,true,two?1:0);
@@ -4044,6 +4267,7 @@ function drawFighter(v,i,now,age,dt){
   if(RG&&RG.P.show) RG.debug(L,s);
   L.restore();
   tellDraw('front',v,i,st,x,base,now,dt);      // wielder customizations
+  trigTell(v,i,f,x,base,now,s,d,KS);      // trigger: pips, rings, aura, trail
   // his status visuals: shield bubble, trap rings, stun stars, overclock glow
   { const cyy=base-55*(f.sc||1), T2=Math.PI*2, tm=now/1000;
     if(f.bub){ L.save(); L.strokeStyle='#2bd'; L.globalAlpha=.5+.3*Math.sin(tm*12); L.lineWidth=3; L.setLineDash([8,5]); L.beginPath(); L.arc(x,cyy,f.bub,0,T2); L.stroke(); L.restore(); }
@@ -4452,6 +4676,7 @@ function render(now){
   // projectiles
   for(const p of v.pr){
     const pa=p.z?0:age, x=p.x+p.vx*pa, y=GY-(p.y+p.vy*pa), ps=shotOwner(p), it=v.items[ps][p.slot];      // ps: whose drawing it is, also once it has been sent back
+    if(p.em) trigShotGlow(p,x,y,ps,now);      // trigger: an empowered shot
     if(p.k==='bolt'){ const path=wBolt[p.id]=wBolt[p.id]||[]; path.push({x:x+(Math.random()-.5)*12,y:y+(Math.random()-.5)*12}); if(path.length>10) path.shift();
       L.save(); L.strokeStyle='#fc0'; L.shadowColor='#ff0'; L.shadowBlur=12; L.lineWidth=3; if(path.length>1) FXI.strokePath(path); L.restore(); continue; }
     if(p.st==='wave'){   // the hammer's shock wave: a crest of ink running along the ground, with grit thrown up behind it
@@ -4518,6 +4743,7 @@ function render(now){
     else if(e.e==='boom'){ L.strokeStyle=e.el==='none'?'#e2a52d':PEN[e.el]; L.lineWidth=6*(1-a)+1; L.beginPath(); L.arc(e.x,y,e.n*(0.3+0.7*Math.min(1,a*2.2)),0,7); L.stroke();
       L.font='30px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=L.strokeStyle; L.fillText('BOOM',e.x,y-e.n*0.6-a*20); }
     else if(e.e==='tg') targetFx(e,a);      // target: a status starts, ends, pays out, or two fighters trade places
+    else if(e.e==='emp'||e.e==='trg') trigFx(e,a,y);      // trigger: an empowered hit lands; a trigger becomes armed
   }
   L.globalAlpha=1; L.setTransform(VS,0,0,VS,OX*VS,OY);
   // the cut scene's front layer, then the impact frame over everything drawn so far (see impactFrame)
@@ -4562,8 +4788,8 @@ if(RETRO) retroBuild();
 // works, so runs, jumps and combos can be tried by hand too.
 const LAB_STOCK={blade:'sword',spear:'spear',hammer:'hammer',fist:'gloves',dual:'twins',bow:'bow',gun:'gun',akimbo:'pistols',staff:'staff',hurl:'star'};
 const LAB_NAME={blade:'Sword',spear:'Spear',hammer:'Hammer',fist:'Fists',dual:'Twin blades',bow:'Bow',gun:'Gun',akimbo:'Twin pistols',staff:'Staff',hurl:'Thrown'};
-const lab={style:'blade',el:'none',speed:1,loop:false,gap:220,last:null,idle:0,customs:[],low:false,todo:[],cu:[]};
-function labEquip(){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,Object.assign({},st.spec,{customs:lab.customs}),50); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0; if(desk[0]) updateDesk(desk[0]); labCustoms(); labTarget(); }
+const lab={style:'blade',el:'none',speed:1,loop:false,gap:220,last:null,idle:0,customs:[],low:false,todo:[],cu:[],trig:'',wound:false};
+function labEquip(){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,Object.assign({},st.spec,{customs:lab.customs}),50); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0; if(desk[0]) updateDesk(desk[0]); labCustoms(); labTarget(); labTrig(); }
 // wielder customizations in the move tester: a button for every block in CUSTOMS, by axis, and a slider for every
 // parameter of the ones switched on. All of it is read from the table; a new block needs no line here.
 function labCustoms(){
@@ -4604,7 +4830,15 @@ function labTarget(){
 }
 function labTick(dt){ const f=sim.f[0], e=sim.f[1];
   if(lab.low){ f.hp=Math.min(f.hp,HP*0.2); f.rest=0; }      // "Low health": for blocks that wake up when the fighter is nearly out
-  for(const q of lab.todo){ q.t-=dt; if(q.t<=0) q.go(); } lab.todo=lab.todo.filter(q=>q.t>0); lab.idle=f.act||e.act||sim.pr.length||f.hurt>0||e.hurt>0||!f.ground||!e.ground?0:lab.idle+dt; if(lab.loop&&lab.last&&lab.idle>0.6) labPlay(lab.last[0],lab.last[1]); }
+  for(const q of lab.todo){ q.t-=dt; if(q.t<=0) q.go(); } lab.todo=lab.todo.filter(q=>q.t>0); labTrigTick(f); lab.idle=f.act||e.act||sim.pr.length||f.hurt>0||e.hurt>0||!f.ground||!e.ground?0:lab.idle+dt; if(lab.loop&&lab.last&&lab.idle>0.6) labPlay(lab.last[0],lab.last[1]); }
+// trigger controls: put a trigger (with the empowered hit) on the weapon under test, and set up its condition.
+function labTrig(){ if(!sim||!sim.items[0][0]) return; sim.trigSet(0,0,lab.trig?[{id:'empower',when:{when:lab.trig}}]:[]);
+  const tip=$('labTrigTip'); if(tip) tip.textContent=lab.trig?TRIGGERS[lab.trig].tip+' ('+TRIGGERS[lab.trig].cost+' points)':'No trigger: the weapon hits as usual.'; }
+function labTrigTick(f){
+  if(lab.wound){ f.hp=Math.min(f.hp,HP*0.25); f.rest=0; }      // practice heals a rested fighter; this keeps blue hurt for Last stand
+  const out=$('labTrigV'), it=sim.items[0][0], cu=it&&it.customs&&it.customs[0]; if(!out) return;
+  out.textContent=cu?(trigFires(cu.when,f.trg[0],f)?'ARMED':'building '+Math.round(trigLevel(cu.when,f.trg[0],f)*100)+'%'):'';
+}
 function labMoves(){
   const st=lab.style, re=new RegExp('^'+st+'(\\d|_)'), box=$('labMoves'), label=m=>m.replace(st+'_','').replace(st,'hit ').replace('_',' ');
   const list=Object.keys(MOVES).filter(m=>re.test(m)), btn=(m,text,alt,cls)=>`<button data-m="${m}" data-alt="${alt===undefined?'':alt}" class="${cls||''}">${text}</button>`;
@@ -4632,7 +4866,10 @@ function labBuild(){
       <label>Speed <input type="range" id="labSpeed" min="0.1" max="1" step="0.05" value="1"><span id="labSpeedV">1.00×</span></label>
       <label>Distance <input type="range" id="labGap" min="40" max="520" step="10" value="220"></label>
       <label><input type="checkbox" id="labLoop"> Loop</label></div>
-    <div class="row"><b>On hit</b><span id="labTarget" class="row" style="margin:0"></span><span id="labTargetN" style="font-size:13px;color:var(--muted)"></span></div>`;
+    <div class="row"><b>On hit</b><span id="labTarget" class="row" style="margin:0"></span><span id="labTargetN" style="font-size:13px;color:var(--muted)"></span></div>
+    <div class="row"><b>Trigger</b><span id="labTrigs" class="row" style="margin:0"></span><b id="labTrigV" style="min-width:110px"></b></div>
+    <div class="row"><b></b><span id="labTrigTip" style="font-size:13px;color:var(--muted);flex:1 1 300px"></span>
+      <label><input type="checkbox" id="labWound"> Keep blue wounded</label><button id="labInk0">Empty blue's ink</button><button id="labRearm">Reset trigger</button></div>`;
   document.querySelector('.arenawrap').after(el);
   const styles=$('labStyles'), els=$('labEls');
   styles.innerHTML=Object.keys(LAB_STOCK).map(s=>`<button data-s="${s}">${LAB_NAME[s]}</button>`).join('');
@@ -4648,6 +4885,13 @@ function labBuild(){
   // target: one button per block; two at most stay on (TARGET_MAX), the oldest gives way
   $('labTarget').innerHTML=Object.keys(TARGET_FX).map(c=>`<button data-c="${c}" title="${TARGET_FX[c].cost} points">${TARGET_FX[c].name}</button>`).join('');
   $('labTarget').querySelectorAll('button').forEach(b=>b.onclick=()=>{ b.blur(); const c=b.dataset.c; lab.cu=lab.cu.includes(c)?lab.cu.filter(q=>q!==c):lab.cu.concat(c).slice(-TARGET_MAX); labTarget(); labPlace(); if(lab.last) labPlay(lab.last[0],lab.last[1]); });
+  // trigger controls
+  const trigs=$('labTrigs'); trigs.innerHTML='<button data-t="">None</button>'+Object.keys(TRIGGERS).map(t=>'<button data-t="'+t+'">'+TRIGGERS[t].name+'</button>').join('');
+  const pickTrig=t=>{ lab.trig=t; trigs.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.t===t)); labTrig(); };
+  trigs.querySelectorAll('button').forEach(b=>b.onclick=()=>{ b.blur(); pickTrig(b.dataset.t); });
+  $('labWound').onchange=e=>{ lab.wound=e.target.checked; if(!lab.wound) sim.f[0].hp=HP; };
+  $('labInk0').onclick=e=>{ e.target.blur(); sim.f[0].ink2=0; }; $('labRearm').onclick=e=>{ e.target.blur(); labTrig(); };
+  pickTrig('');
   sim.step(0.05); pickEl('none'); pickStyle('blade');
 }
 if(REPLAY) setReplay(REPLAY);      // duel?replay=CODE: watch that room's match again

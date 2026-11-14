@@ -291,4 +291,39 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
     ok('target: status clocks stop while an ultimate plays',went&&Math.abs(b.tfx.float.t-left)<1e-9,[left,b.tfx.float.t]); }
   { const {S}=mk([{id:'mark'}]), T=mk([{id:'mark'}]).S; swing(S); swing(T); const same=S.hash()===T.hash(); T.f[1].tfx.mark.t-=0.5; ok('target: S.hash covers the statuses',same&&S.hash()!==T.hash()); }
 }
+{ // triggers: when a weapon's empowered hit fires (TRIGGERS, S.trigSet)
+  const SW={kind:'melee',style:'blade',element:'none',name:'Sword',traits:['swift'],trait:'swift'};
+  const mk=(when,spec)=>{ const S=fresh(); S.setItem(0,0,spec||SW,50); if(when) S.trigSet(0,0,[{id:'empower',when}]); S.snapshot(); return S; };
+  // one swing at a foe placed in reach: the damage done and how many empowered hits were announced
+  const swing=(S,m)=>{ const a=S.f[0], b=S.f[1]; b.x=a.x+60; b.y=a.y; b.vx=b.vy=0; b.hurt=0; a.vx=0; b.hp=HP0; let low=HP0, emp=0; S.play(0,m||'blade1');
+    for(let i=0;i<90;i++){ S.step(1/120); low=Math.min(low,b.hp); for(const e of S.snapshot().ev) if(e.e==='emp') emp++; if(!a.act&&i>20) break; } return {d:HP0-low,emp}; };
+  const base=swing(mk()).d, near=(v,k)=>Math.abs(v/base-k)<0.03;
+  { const S=mk(), junk=[undefined,null,5,'x',[{id:'nope'}],[{id:'empower'}],[{id:'empower',when:'zzz'}],[{id:'empower',when:{when:'__proto__'}}]]; let threw=0, kept=0;
+    for(const j of junk){ try{ const r=S.trigSet(0,0,j); if(!Array.isArray(r)||r.length) kept++; }catch(err){ threw++; } }
+    const r=S.trigSet(0,0,[{id:'empower',when:{when:'third',n:99,boost:-4}},{id:'empower',when:'air'}]);
+    ok('trigSet never throws, drops what it does not know, clamps parameters and keeps one',!threw&&!kept&&r.length===1&&r[0].when.n===5&&r[0].when.boost===1.2&&S.trigSet(0,1,[])===null&&S.trigSet(7,0,[])===null,r);
+    S.setItem(0,1,{kind:'shield',element:'none',name:'Shield'},20); ok('a shield cannot carry a trigger',S.trigSet(0,1,[{id:'empower',when:'third'}]).length===0);
+    const tw=S.tweak(0,0,{tune:1}); ok('a tweaked item keeps its trigger',!!tw&&!!tw.customs&&tw.customs[0].when.when==='third'); }
+  { const S=mk('third'), h=[1,2,3,4,5,6].map(()=>swing(S)); ok('third strike: hits three and six are empowered',h.map(r=>r.emp).join('')==='001001'&&near(h[2].d,1.8)&&near(h[0].d,1),h.map(r=>+r.d.toFixed(1)));
+    const S2=mk('third'); swing(S2); const v1=S2.snapshot().f[0].tg[0]; swing(S2); const v2=S2.snapshot().f[0].tg[0]; ok('and the snapshot counts the pips, then says armed',v1.c===1&&!v1.on&&v2.c===2&&v2.on===1,[v1,v2]); }
+  { const S=mk('charge'); run(S,0.5); const half=S.snapshot().f[0].tg[0]; run(S,0.6); const full=S.snapshot().f[0].tg[0], hit=swing(S);
+    ok('charge: standing still fills the ring in about a second, and the next hit spends it',!half.on&&half.p>0.4&&half.p<0.7&&full.on===1&&hit.emp===1&&near(hit.d,1.9)&&S.f[0].trg[0].c<0.7,[half,full]); }
+  { const S=mk('air',{kind:'ranged',style:'gun',element:'none',name:'Gun',traits:['swift'],trait:'swift'}), a=S.f[0]; S.f[1].x=a.x+500; const shot=m=>{ S.play(0,m); let em=-1; for(let i=0;i<120&&em<0;i++){ S.step(1/120); const p=S.snapshot().pr.find(q=>q.side===0); if(p) em=p.em||0; } run(S,1.5); return em; }, g=shot('gun_shot'), air=shot('gun_air');
+    ok('airborne: only an attack made off the ground is empowered',g===0&&air===1&&S.f[0].trg[0].a===0,[g,air]); }
+  { const S=mk('last'), a=S.f[0], hi=swing(S); a.hp=HP0*0.3; a.rest=0; const lo=swing(S); ok('last stand: every hit below a third of health',hi.emp===0&&lo.emp===1&&near(lo.d,1.4),+lo.d.toFixed(1)); }
+  { const S=mk('counter'), a=S.f[0], b=S.f[1]; S.setItem(1,0,SW,50); const plain=swing(S); b.x=a.x+50; b.face=-1; S.play(1,'blade1'); run(S,0.3); const win=a.trg[0].w; a.hurt=0; const c1=swing(S), c2=swing(S);
+    ok('counter: being hit opens a short window for one empowered hit',plain.emp===0&&win>0.8&&c1.emp===1&&near(c1.d,1.8)&&c2.emp===0,{win:+win.toFixed(2)}); }
+  { const S=mk('ink'), a=S.f[0], h1=swing(S), ink=a.ink2, h2=swing(S); ok('full ink: empowered while the meter is nearly full, and it costs ink',h1.emp===1&&near(h1.d,1.6)&&ink<80&&h2.emp===0,+ink.toFixed(1)); }
+  { const S=mk('first'), h1=swing(S), h2=swing(S); ok('first blood: the first hit of the round only',h1.emp===1&&near(h1.d,2.2)&&h2.emp===0);
+    const S2=mk('first'), a=S2.f[0], b=S2.f[1]; S2.setItem(1,0,SW,50); b.x=a.x+50; b.face=-1; S2.play(1,'blade1'); run(S2,0.4); a.hurt=0; ok('and it is lost if the other side draws blood first',swing(S2).emp===0&&a.trg[0].fb===0); }
+  { const S=mk('third',{kind:'ranged',style:'gun',element:'none',name:'Gun',traits:['swift'],trait:'swift'}), a=S.f[0], b=S.f[1], shots=[]; let emps=0;
+    for(let n=0;n<3;n++){ b.hp=HP0; b.hurt=0; b.x=a.x+300; b.vx=0; S.play(0,'gun_shot'); for(let i=0;i<120;i++){ S.step(1/120); const v=S.snapshot(); for(const p of v.pr) if(p.side===0&&!shots.some(q=>q.id===p.id)) shots.push({id:p.id,em:p.em||0}); for(const e of v.ev) if(e.e==='emp') emps++; } }
+    ok('a shot is empowered as it leaves the gun and is marked in the snapshot',shots.map(q=>q.em).join('')==='001'&&emps===1,shots.map(q=>q.em)); }
+  { const S=mk('third'), a=S.f[0], b=S.f[1]; b.x=a.x+300; a.od=100; S.startUlt(0); let emp=0, n=0; while((S.ult>=0||a.act)&&n++<1200){ S.step(1/120); for(const e of S.snapshot().ev) if(e.e==='emp') emp++; }
+    ok('an ultimate is never empowered and does not count toward a trigger',emp===0&&a.trg[0].n===0,{emp,n:a.trg[0].n}); }
+  { const play=()=>{ const S=D.createDuel({seed:42}); S.setItem(0,0,SW,50); S.setItem(1,0,SW,50); S.trigSet(0,0,[{id:'empower',when:{when:'third',n:2}}]); S.trigSet(1,0,[{id:'empower',when:'counter'}]); S.setReady(0); S.setReady(1);
+      let emps=0; for(let i=0;i<60*14;i++){ if(S.phase==='fight'){ const a=S.f[0], b=S.f[1]; S.setInput(0,{l:a.x>b.x+50?1:0,r:a.x<b.x-50?1:0,d:0,j:0,a:Math.floor(i/9),b:0}); S.setInput(1,{l:b.x>a.x+50?1:0,r:b.x<a.x-50?1:0,d:0,j:0,a:Math.floor(i/13),b:0}); } S.step(1/60); for(const e of S.snapshot().ev) if(e.e==='emp') emps++; }
+      return {S,emps}; }, A=play(), B=play(), h=A.S.hash(); A.S.f[0].trg[0].n+=1;
+    ok('a match with triggers repeats exactly, and their state is in the hash',A.emps>0&&h===B.S.hash()&&A.S.hash()!==h,{emps:A.emps,h}); }
+}
 console.log(bad?bad+' failed':'all world rules pass'); process.exit(bad?1:0);
