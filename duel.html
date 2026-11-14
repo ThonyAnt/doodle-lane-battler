@@ -975,7 +975,7 @@ const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet s
 // A recording holds about LOG_ROOM characters of commands (some forty long matches' worth). When it is full it stops:
 // the match goes on, the log is marked full, and it replays up to the tick it stopped at.
 const LOG_ROOM=2e6;
-const LOG_V=1, COMMANDS=['setItem','tweak','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold'];
+const LOG_V=1, COMMANDS=['setItem','tweak','customize','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold'];
 const INPUT_KEYS=['l','r','d','j','a','b','m','q','h','u'], viaJSON=v=>JSON.parse(JSON.stringify(v)), round1=v=>Math.round(v*10)/10;
 const packInput=i=>{ const o={}; for(const k of INPUT_KEYS){ const v=i?i[k]:undefined; o[k]=k==='l'||k==='r'||k==='d'?(v?1:0):v===undefined?null:v; } return viaJSON(o); };   // held buttons as 0 or 1, press counts as given, a missing one as null
 const unpackInput=o=>{ const i={}; for(const k of INPUT_KEYS) if(o[k]!==null&&o[k]!==undefined) i[k]=o[k]; return i; };
@@ -1047,6 +1047,39 @@ const FORGE_LIMITS={reflect:[0.5,1.5],slow:[0.3,1],turn:[-180,180],shotPower:[0.
   burn:2,soak:2,stun:0.6,heal:8,hurt:8,hpBudget:24,stunBudget:1.5,cooldown:[0.25,5],nearEvery:0.25,nearDist:260,say:18,sayEvery:1.5,faults:3,hold:4};
 // The Math a rule gets: these ten and nothing else of the real one. The two-argument ones take exactly two.
 const FORGE_MATH=Object.freeze({abs:v=>Math.abs(v),sign:v=>Math.sign(v),floor:v=>Math.floor(v),round:v=>Math.round(v),sqrt:v=>Math.sqrt(v),sin:v=>Math.sin(v),cos:v=>Math.cos(v),min:(a,b)=>Math.min(a,b),max:(a,b)=>Math.max(a,b),hypot:(a,b)=>Math.hypot(a,b)});
+/* ---------- summon blocks (customizations: copies of the drawing that act on their own) ----------
+   An item may carry customizations: it.customs=[{id,...params}], set with S.customize(side,slot,list). These are the summon
+   ones. Each summon is drawn with the item's own sprite in its owner's colour, can be hit and removed, and counts toward
+   SUMMON_CAP per fighter. cost is the block's price in budget points (a first guess, not tuned); per.n is the price of
+   each copy above the fewest. params are [fewest, most, default]. The rest are the block's numbers (see summons()).
+     orbiter   copies circle the holder and sting a foe they touch; a swing at one knocks it away, three break it
+     pet       a copy trots behind the holder, crouches, pounces on a foe who comes near, then lies down to rest
+     turret    down + the item plants a copy where the holder stands; it turns to the foe and spits small copies at them
+     decoy     when the holder is hit they blink away and a still copy of them is left behind, which soaks up shots
+     swarm     small copies trail behind the holder; each use of the item flings one of them at the foe
+     guardian  a copy hovers in front of the holder, darts into the path of incoming shots and blocks three before breaking */
+const SUMMON_CAP=6, SUMMON_OD=0.5;       // SUMMON_OD: a summon's hit fills its owner's overdrive at half the rate of the owner's own
+const SUMMONS={
+  orbiter:{name:'Orbiter',cost:2,per:{n:1},params:{n:[1,2,2]},keep:1,hp:3,stagger:0.3,regrow:6,dmg:3,gap:1.2},
+  pet:{name:'Pet',cost:3,keep:1,hp:2,regrow:7,dmg:9,near:200,wind:0.35,rest:2.6,cy:14},
+  turret:{name:'Turret',cost:4,hp:2,life:6,again:9,every:1,dmg:3.5,cy:30},
+  decoy:{name:'Decoy',cost:4,hp:3,life:2.5,again:7,blink:130,cy:50},
+  swarm:{name:'Swarm',cost:2,per:{n:1},params:{n:[2,4,3]},keep:1,hp:1,stagger:0.25,regrow:2.8,dmg:3},
+  guardian:{name:'Guardian',cost:3,keep:1,hp:3,regrow:8}};
+const summonBlock=id=>typeof id==='string'&&Object.prototype.hasOwnProperty.call(SUMMONS,id)?SUMMONS[id]:null;
+// A list of customizations as the rules will keep it: known summon blocks only, each once, two at most, every parameter a
+// whole number inside its limits. Anything else is dropped; it never throws.
+function summonCustoms(list){
+  const out=[]; if(!Array.isArray(list)) return out;
+  for(const c of list){
+    const id=typeof c==='string'?c:c&&typeof c==='object'&&typeof c.id==='string'?c.id:'', B=summonBlock(id); if(!B||out.length>=2||out.some(o=>o.id===id)) continue;
+    const o={id}; for(const k of Object.keys(B.params||{})){ const [lo,hi,def]=B.params[k], v=typeof c==='object'&&typeof c[k]==='number'?Math.round(c[k]):NaN; o[k]=Number.isFinite(v)?Math.max(lo,Math.min(hi,v)):def; }
+    out.push(o);
+  }
+  return out;
+}
+// What a summon customization costs in budget points (0 for one that is not a summon block).
+function summonCost(c){ const B=summonBlock(c&&c.id); if(!B) return 0; let n=B.cost; for(const k of Object.keys(B.per||{})){ const p=B.params[k], v=Number.isFinite(+c[k])?Math.max(p[0],Math.min(p[1],Math.round(+c[k]))):p[2]; n+=B.per[k]*(v-p[0]); } return n; }
 function createDuel(opts){
   if(opts&&opts.record) opts=viaJSON(opts);       // a recorded match keeps its own copy of what it was made with (see S.log)
   let acc=0, nextId=1; const STEP=1/120, r1=round1;
@@ -1227,7 +1260,8 @@ function createDuel(opts){
     if(typeof ch.name==='string'){ const nm=ch.name.replace(/[<>&"']/g,'').trim().slice(0,22); if(nm) spec.name=nm; }
     if(ch.trait!==undefined) spec.trait=String(ch.trait);
     if(ch.tune!==undefined) spec.tune=ch.tune;
-    return S.setItem(side,k,spec,it.cost);
+    const made=S.setItem(side,k,spec,it.cost); if(made&&it.customs) made.customs=it.customs;      // summon blocks stay on a tweaked item
+    return made;
   };
   const usesFor=side=>[0,1].map(k=>{ const it=S.items[side][k]; return it&&it.kind==='heal'?it.st.uses+(it.trait==='feast'?1:0):3; });
   const carries=(side,tr)=>S.items[side].some(it=>it&&it.trait===tr);
@@ -1538,6 +1572,151 @@ function createDuel(opts){
     }
     S.pr=S.pr.filter(p=>p.ttl>0);
   }
+  /* ---------- summons (the blocks in SUMMONS) ----------
+     S.sm is the list of live summons, plain numbers and text only: {id,kind,side,slot,x,y,vx,vy,st,t,hp,face,i,...}.
+     x, y are as for fighters (y is height above the floor). st is what it is doing and t how long it has been doing it,
+     which is what the page animates from. S.smT[side] holds that side's timers (regrowing, cooldowns) and what was seen
+     last tick. Summons step after the fighters and the shots, and not at all while an ultimate plays (they hang like
+     everything else). Their damage goes through hurt() with the owner as the attacker, so shields, bubbles, elements and
+     a casting foe's firmness all apply; it carries no trait and triggers no strike rule. It fills the owner's overdrive
+     at SUMMON_OD of the usual rate (the foe's fills as for any hit). */
+  S.sm=[]; S.smT=[{},{}]; let smId=1;
+  function summonReset(){ S.sm=[]; S.smT=[{},{}]; }
+  // Set an item's customizations: in the draw phase before "ready", or any time in practice (as S.tweak). Returns the list
+  // as kept (unknown ids and bad parameters are dropped), or null if it may not be changed now.
+  S.customize=(side,k,list)=>{
+    const it=(side===0||side===1)&&(k===0||k===1)?S.items[side][k]:null; if(!it||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
+    return it.customs=summonCustoms(list);
+  };
+  const smItem=s=>S.items[s.side][s.slot], smLive=(side,k,kind)=>S.sm.filter(s=>s.hp>0&&s.side===side&&s.slot===k&&s.kind===kind);
+  const smTouch=(s,e,dy)=>e.hp>0&&Math.abs(s.x-e.x)<26&&s.y+(dy||0)>e.y-10&&s.y+(dy||0)<e.y+98*e.scale;
+  function smAdd(kind,f,k,o){
+    if(kind!=='bolt'&&S.sm.reduce((n,s)=>n+(s.hp>0&&s.side===f.side&&s.kind!=='bolt'?1:0),0)>=SUMMON_CAP) return null;
+    const s=Object.assign({id:smId++,kind,side:f.side,slot:k,x:f.x,y:f.y+55,vx:0,vy:0,st:'idle',t:0,hp:1,face:f.face,i:0,inv:0,cd:0},o); S.sm.push(s);
+    if(kind!=='bolt') puff(s.x,-(s.y+(SUMMONS[kind].cy||0)),PCOLS[f.side],6);
+    return s;
+  }
+  // A summon is gone: a puff in its owner's colour (a burst if it was broken), and its block's regrow timer starts.
+  function smEnd(s,broken){
+    const B=SUMMONS[s.kind], cy=B&&B.cy||0; s.hp=0; puff(s.x,-(s.y+cy),PCOLS[s.side],broken?10:5); if(broken) burst(s.x,-(s.y+cy),PCOLS[s.side],8);
+    if(B&&B.regrow){ const t=S.smT[s.side], key=s.slot+s.kind; t[key]=Math.max(t[key]||0,B.regrow); }
+  }
+  function smHurt(s,e,dmg,kx,ky,stun){ const o=S.f[s.side], it=smItem(s), od=o.od; hurt(e,dmg,it?it.el:'none',kx,ky,o,s.x,stun); o.od=Math.min(100,od+Math.max(0,o.od-od)*SUMMON_OD); }
+  // Is the summon inside the foe's swing right now? (Any melee move, bare fists included, around its hit marks.)
+  function smSwung(s,e,cy){
+    const a=e.act, M=a&&MOVES[a.m]; if(!M||!M.hits||M.ult||M.mine||e.hp<=0) return false;
+    const it=itemOf(e.side,a.k); if(it.kind!=='melee'||a.t<M.hits[0]-0.04||a.t>M.hits[M.hits.length-1]+0.08) return false;
+    const dx=(s.x-e.x)*e.face, reach=it.st.reach*(M.reach||1)*(STYLE[it.style]||STYLE.blade).reach;
+    return dx>=-14&&dx<=reach+20&&Math.abs(s.y+cy-(e.y+50))<=72;
+  }
+  // The foe's shot that `near` says yes to is swallowed (never an ultimate's piece, a bomb or a drawn bolt). True if one was.
+  function smEat(s,near){
+    for(let n=0;n<S.pr.length;n++){ const p=S.pr[n]; if(p.side===s.side||p.k!=='shot'||p.hover||p.tr==='fleet'||!near(p)) continue;
+      S.pr.splice(n,1); fx('spark',{x:rr(p.x),yd:rr(-p.y),col:PCOLS[s.side]}); ring(p.x,-p.y,PCOLS[s.side]); return true; }
+    return false;
+  }
+  function summons(dt){
+    // 1. each fighter: what they did this tick, and what their items' blocks make of it
+    for(const f of S.f){
+      const e=S.f[1-f.side], t=S.smT[f.side], a=f.act; let used=-1;
+      // used: the slot of the item that was put to use this tick (a move begun, combo steps included; or a shield, dash or snack)
+      if(a&&!a.sm&&!MOVES[a.m].ult&&a.m!=='mine'){ a.sm=1; used=a.k; }
+      for(const k of [0,1]){ const it=S.items[f.side][k], was=t['cd'+k]||0; t['cd'+k]=f.cd[k]; if(used<0&&it&&(it.kind==='shield'||it.kind==='dash'||it.kind==='heal')&&f.cd[k]>was+0.05) used=k; }
+      const down=used>=0&&!!(S.inp[f.side].d||(a&&used===a.k&&/_(up|power)$/.test(a.m)));
+      // hit: this fighter was staggered this tick. An ultimate that played since the last step does not count.
+      const gap=t.ult!==S.ultT; t.ult=S.ultT; let hit=f.hp>0&&f.hurt>0&&!(t.hurt>0)&&!gap; t.hurt=f.hurt;
+      const gy=t.gy||0; if(f.ground) t.gy=f.y;      // gy: where they last stood (an upward attack hops off the ground)
+      if(f.hp<=0) continue;
+      for(const k of [0,1]){
+        const it=S.items[f.side][k]; if(!it||!Array.isArray(it.customs)) continue;
+        for(const c of it.customs){
+          const B=summonBlock(c.id), key=k+c.id; if(!B) continue; const mine=smLive(f.side,k,c.id);
+          if(B.keep){      // kept up: missing ones come back, one at a time
+            if(mine.length<(c.n||1)){ t[key]=(t[key]||0)-dt;
+              if(t[key]<=0){ let i=0; while(mine.some(s=>s.i===i)) i++; t[key]=B.stagger||0;
+                const s=smAdd(c.id,f,k,{i,hp:B.hp,th:i*Math.PI*2/(c.n||1)}); if(s&&c.id==='pet'){ s.y=s.gy=f.ground?f.y:0; s.x=f.x-f.face*30; } } }
+          }else if(t[key]>0) t[key]-=dt;
+          if(c.id==='swarm'&&used===k){ const s=mine.filter(s=>s.st==='idle').sort((p,q)=>p.i-q.i)[0]; if(s){ s.st='wind'; s.t=0; } }
+          if(c.id==='turret'&&down&&used===k&&(f.ground||f.y-gy<40)&&!(t[key]>0)){
+            for(const s of mine) smEnd(s);
+            if(smAdd('turret',f,k,{y:f.ground?f.y:gy,ttl:B.life,hp:B.hp,cd:0.6,face:Math.sign(e.x-f.x)||f.face})) t[key]=B.again;
+          }
+          if(c.id==='decoy'&&hit&&!(t[key]>0)&&!casting(f)){
+            // the holder blinks away from the foe (not into anything solid) and the decoy stands where they were
+            hit=false; const dir=Math.sign(f.x-e.x)||-f.face, nx=Math.max(18,Math.min(W-18,f.x+dir*B.blink));
+            if(!smAdd('decoy',f,k,{y:f.y,ttl:B.life,hp:B.hp,face:f.face,inv:0.45})) continue;
+            t[key]=B.again;
+            if(!SOL.some(o=>o.x1>Math.min(f.x,nx)-11&&o.x0<Math.max(f.x,nx)+11&&f.y+88*f.scale>o.y0&&f.y<o.y1-4)){ f.x=nx; f.vx=dir*120; f.hurt=Math.min(f.hurt,0.1); t.hurt=f.hurt; puff(f.x,-(f.y+50),PCOLS[f.side],8); }
+          }
+        }
+      }
+    }
+    // 2. each summon
+    for(const s of S.sm){
+      if(s.hp<=0) continue;
+      const o=S.f[s.side], e=S.f[1-s.side], it=smItem(s), B=SUMMONS[s.kind==='bolt'?'turret':s.kind], cy=s.kind==='bolt'?0:B.cy||0;
+      s.t+=dt; if(s.inv>0) s.inv=Math.max(0,s.inv-dt); if(s.cd>0) s.cd=Math.max(0,s.cd-dt);
+      if(s.kind!=='bolt'&&(o.hp<=0||!it||!Array.isArray(it.customs)||!it.customs.some(c=>c.id===s.kind))){ smEnd(s); continue; }      // its owner is down or its item is gone
+      if(s.ttl!==undefined&&(s.ttl-=dt)<=0){ smEnd(s); continue; }
+      const pw=0.6+0.25*(it?it.st.p:1), away=Math.sign(s.x-e.x)||1;
+      // the foe's swing lands on it: it loses a point (a decoy pops outright) and breaks at none
+      let struck=false;
+      if(!(s.inv>0)&&smSwung(s,e,cy)){ struck=true; s.inv=0.35; s.hp=s.kind==='decoy'?0:s.hp-1; fx('spark',{x:rr(s.x),yd:rr(-(s.y+cy)),col:PCOLS[s.side]});
+        if(s.hp<=0){ if(s.kind==='decoy'&&Math.abs(e.x-s.x)<110) e.slow=Math.max(e.slow,1.2);      // a popped decoy splashes ink on whoever popped it
+          smEnd(s,true); continue; } }
+      if(s.kind==='orbiter'){
+        s.th+=dt*3.4*(s.side?-1:1);
+        if(struck){ s.st='out'; s.t=0; s.vx=e.face*520; s.vy=260; }
+        if(s.st==='out'){ s.x+=s.vx*dt; s.y=Math.max(10,s.y+s.vy*dt); s.vx*=Math.max(0,1-3*dt); s.vy*=Math.max(0,1-3*dt); if(s.t>=1.3){ s.st='idle'; s.t=0; s.vx=s.vy=0; } }
+        else{ const q=Math.min(1,dt*12); s.x+=(o.x+Math.cos(s.th)*64-s.x)*q; s.y+=(o.y+52+Math.sin(s.th)*46-s.y)*q;
+          if(s.cd<=0&&smTouch(s,e)){ smHurt(s,e,B.dmg*pw,(Math.sign(e.x-o.x)||1)*140,0,0); s.cd=B.gap; s.st='out'; s.t=0.8; s.vx=away*260; s.vy=180; } }      // it stings and bounces off
+      }else if(s.kind==='pet'){
+        if(o.ground) s.gy=o.y;
+        if(struck){ s.st='rest'; s.t=B.rest-1.2; s.vx=0; s.x+=e.face*30; s.y=s.gy; }
+        if(s.st==='idle'){
+          const dx=o.x-o.face*44-s.x; s.vx=Math.abs(dx)<4?0:Math.max(-340,Math.min(340,dx*6)); s.x+=s.vx*dt; s.y+=(s.gy-s.y)*Math.min(1,dt*10); s.face=Math.sign(s.vx)||Math.sign(e.x-s.x)||s.face;
+          if(s.cd<=0&&e.hp>0&&Math.abs(e.x-s.x)<B.near&&Math.abs(e.y-s.y)<80){ s.st='wind'; s.t=0; s.vx=0; s.face=Math.sign(e.x-s.x)||s.face; }
+        }else if(s.st==='wind'){ if(s.t>=B.wind){ s.st='jump'; s.t=0; s.hit=0; s.vx=s.face*Math.max(260,Math.min(560,Math.abs(e.x-s.x)*2.2)); s.vy=330; } }
+        else if(s.st==='jump'){
+          s.vy-=1100*dt; s.x+=s.vx*dt; s.y+=s.vy*dt;
+          if(!s.hit&&smTouch(s,e,cy)){ s.hit=1; smHurt(s,e,B.dmg*pw,s.face*240,160,0.2); s.vx*=-0.3; }
+          if(s.y<=s.gy&&s.vy<0){ s.y=s.gy; s.st='rest'; s.t=0; s.vx=s.vy=0; }
+        }else if(s.t>=B.rest){ s.st='idle'; s.t=0; }
+      }else if(s.kind==='turret'){
+        s.face=Math.sign(e.x-s.x)||s.face;
+        if(s.st==='idle'&&s.cd<=0.25&&e.hp>0){ s.st='aim'; s.t=0; }
+        if(s.st==='aim'&&s.cd<=0){
+          const ang=Math.atan2(e.y+50-(s.y+34),e.x-s.x); s.st='idle'; s.t=0; s.cd=B.every;
+          S.sm.push({id:smId++,kind:'bolt',side:s.side,slot:s.slot,x:s.x+s.face*16,y:s.y+34,vx:Math.cos(ang)*520,vy:Math.sin(ang)*520,st:'fly',t:0,hp:1,face:s.face,i:0,inv:0,cd:0,ttl:1.3,dmg:B.dmg*pw});
+        }
+      }else if(s.kind==='bolt'){
+        s.x+=s.vx*dt; s.y+=s.vy*dt;
+        if(smTouch(s,e)){ smHurt(s,e,s.dmg,Math.sign(s.vx)*40,0,0); s.hp=0; }
+        else if(s.y<=0||s.x<-20||s.x>W+20||SOL.some(q=>s.x>q.x0&&s.x<q.x1&&s.y>q.y0&&s.y<q.y1)){ fx('spark',{x:rr(s.x),yd:rr(-s.y),col:PCOLS[s.side]}); s.hp=0; }
+      }else if(s.kind==='decoy'){
+        if(smEat(s,p=>Math.abs(p.x-s.x)<18&&p.y>s.y-4&&p.y<s.y+94)){ s.st='hit'; s.t=0; if(--s.hp<=0){ smEnd(s,true); continue; } }
+      }else if(s.kind==='swarm'){
+        if(s.st==='idle'){ const q=Math.min(1,dt*Math.max(3,7-1.2*s.i)); s.x+=(o.x-o.face*(34+26*s.i)-s.x)*q; s.y+=(o.y+(s.i%2?84:64)-s.y)*q; s.face=o.face; }
+        else if(s.st==='wind'){ const q=Math.min(1,dt*14); s.x+=(o.x-o.face*22-s.x)*q; s.y+=(o.y+104-s.y)*q; s.face=Math.sign(e.x-s.x)||s.face;
+          if(s.t>=0.14){ const ang=Math.atan2(e.y+50-s.y,e.x-s.x); s.st='fly'; s.t=0; s.vx=Math.cos(ang)*620; s.vy=Math.sin(ang)*620; } }
+        else{      // flying: it can curve a little toward the foe
+          const cur=Math.atan2(s.vy,s.vx), d=((Math.atan2(e.y+50-s.y,e.x-s.x)-cur+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI, a2=cur+Math.max(-3*dt,Math.min(3*dt,d));
+          s.vx=Math.cos(a2)*620; s.vy=Math.sin(a2)*620; s.x+=s.vx*dt; s.y+=s.vy*dt;
+          if(smTouch(s,e)){ smHurt(s,e,B.dmg*pw,Math.sign(s.vx)*60,0,0); smEnd(s); continue; }
+          if(s.t>=0.9||s.y<=0||SOL.some(q=>s.x>q.x0&&s.x<q.x1&&s.y>q.y0&&s.y<q.y1)){ smEnd(s); continue; }
+        }
+      }else if(s.kind==='guardian'){
+        // it waits in front of its holder, on the foe's side, and goes to meet the nearest shot that is coming in
+        let th=null, best=320; for(const p of S.pr){ if(p.side===s.side||p.k!=='shot'||p.hover||p.tr==='fleet') continue; const d=Math.hypot(p.x-o.x,p.y-(o.y+55)); if(d<best&&(p.x-o.x)*p.vx<=0){ best=d; th=p; } }
+        const ang=th?Math.atan2(th.y-(o.y+55),th.x-o.x):0, tx=th?o.x+Math.cos(ang)*46:o.x+(Math.sign(e.x-o.x)||o.face)*42, ty=th?o.y+55+Math.sin(ang)*46:o.y+60, q=Math.min(1,dt*(th?18:8));
+        s.x+=(tx-s.x)*q; s.y+=(ty-s.y)*q; s.face=Math.sign(e.x-o.x)||s.face;
+        if(s.st==='block'&&s.t>=0.25){ s.st='idle'; s.t=0; }
+        if(smEat(s,p=>Math.hypot(p.x-s.x,p.y-s.y)<28)){ s.st='block'; s.t=0; if(--s.hp<=0){ smEnd(s,true); continue; } }
+      }
+      if(s.kind!=='bolt') s.x=Math.max(8,Math.min(W-8,s.x));
+    }
+    S.sm=S.sm.filter(s=>s.hp>0);
+  }
   /* ---------- InkShop world (adapted from Alex's prototype) ----------
      His world is in screen pixels with y pointing down; ours has heights above the floor. Everything that is DRAWN keeps
      his convention ({x,y}, y down, floor at 0) so his geometry runs unchanged; fighters are converted at the seams. */
@@ -1572,7 +1751,7 @@ function createDuel(opts){
   }
   function resetWorld(){
     if(S.bins) for(const b of S.bins.slice()) unbin(b);
-    S.bins=[];
+    S.bins=[]; summonReset();
     S.objs=[]; S.fields=[]; S.groups=[null,null]; S.hack=null; S.effects=[]; S.broken=null; S.breached=false; S.cells=boardCells(BOARD); fx('clear',{});
     if(S.sheet) sheetReset();
     if(!BOARD) return;
@@ -1789,7 +1968,7 @@ function createDuel(opts){
   // After a knockout nothing is decided any more, but the picture must not freeze: fighters finish falling and come to
   // rest (no buttons, no shots, no damage). settle is that, for the pause after a round and the first seconds of the end.
   function settle(dt){
-    SOL=solids(); S.pr.length=0; const keep=S.inp;
+    SOL=solids(); S.pr.length=0; S.sm.length=0; const keep=S.inp;
     S.inp=keep.map(i=>Object.assign({},i,{l:0,r:0,d:0}));
     for(const f of S.f){ f.buf[0]=f.buf[1]=0; f.jq=0; f.mbuf=0; if(f.act&&!f.ground) f.act=null; control(f,dt); }
     S.inp=keep;
@@ -1828,7 +2007,7 @@ function createDuel(opts){
       S.time+=dt; SOL=solids();
       if(S.rules.length) ruleStep(dt);
       for(const f of S.f) control(f,dt);
-      projectiles(dt,-1); world(dt); if(S.sheet) sheetTick(dt);
+      projectiles(dt,-1); summons(dt); world(dt); if(S.sheet) sheetTick(dt);
     }
     const a=S.f[0], b=S.f[1], d0=a.hp<=0, d1=b.hp<=0;
     if(!S.practice&&(d0||d1||S.t<=0)){
@@ -1844,13 +2023,14 @@ function createDuel(opts){
     hack:S.hack&&{by:S.hack.by,target:S.hack.target,name:S.hack.def.name,desc:S.hack.def.desc,t:+S.hack.t.toFixed(2),max:S.hack.max,counter:S.hack.counter},
     fxs:S.effects.map(e=>({by:e.by,target:e.target,counter:e.counter,name:e.name})),
     items:S.items.map(a=>a.map(it=>it&&{name:it.name,kind:it.kind,style:it.style,el:it.el,cost:Math.round(it.cost),ver:it.ver,sz:Math.round(it.st.size),
-      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune,am:it.ammo})),
+      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune,am:it.ammo,cu:it.customs})),
     f:S.f.map(f=>({x:r1(f.x),y:r1(f.y),vx:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vx),vy:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vy),face:f.face,hp:Math.max(0,r1(f.hp)),g:f.ground?1:0,
       act:f.act?{k:f.act.k,m:f.act.m+(f.act.v?'_b':''),t:+f.act.t.toFixed(3),r:+f.act.rate.toFixed(2)}:null,
       sh:f.shield>0?1:0,hurt:f.hurt>0?1:0,burn:f.burn>0?1:0,slow:f.slow>0?1:0,dash:f.dash>0?1:0,held:f.held,
       cd:[+(f.cd[0]/f.cdMax[0]).toFixed(2),+(f.cd[1]/f.cdMax[1]).toFixed(2)],uses:f.uses,
       ink2:Math.round(f.ink2),od:Math.round(f.od),stun:f.stun>0?1:0,trap:f.trap>0?1:0,bub:f.bubble?Math.round(f.bubble.r):0,oc:f.overclock>0?1:0,sc:+f.scale.toFixed(2),fl:f.flung>0?1:0})),
     pr:S.pr.map(p=>({id:p.id,k:p.k,st:p.st,big:p.big,side:p.side,slot:p.slot,x:r1(p.x),y:r1(p.y),vx:Math.round(p.vx),vy:Math.round(p.vy),el:p.el,o:p.os,h:p.hover?1:undefined,a:p.st==='fleet'?+p.ang.toFixed(2):undefined,z:S.ult>=0&&!(p.tr==='fleet'&&p.side===S.ult)?1:undefined})),
+    sm:S.sm.map(s=>({id:s.id,k:s.kind,side:s.side,slot:s.slot,x:r1(s.x),y:r1(s.y),vx:S.ult>=0?0:Math.round(s.vx),vy:S.ult>=0?0:Math.round(s.vy),st:s.st,t:+s.t.toFixed(2),f:s.face,hp:s.hp,i:s.i,tl:s.ttl!==undefined?r1(s.ttl):undefined})),      // summons
     ev:S.events.splice(0)});
   // A fingerprint of where the match stands: the phase, clock, round and wins, and everything about every fighter and
   // every shot (numbers to the nearest 0.01). Two matches that agree tick for tick have the same one, so comparing a
@@ -1867,6 +2047,7 @@ function createDuel(opts){
     };
     for(const f of S.f) put(f,0);
     for(const p of S.pr) put(p,0);
+    for(const s of S.sm) put(s,0); put(S.smT,0);      // summons and their timers
     return fnv1a(out.join(','));
   };
   if(S.sheet) sheetReset();
@@ -3857,6 +4038,74 @@ function ultFront(v,now){
   // time starts again: a ring bursts from the fighter who took it
   if(ultEnd&&!CALM){ const el=(now-ultEnd.t0)/1000; if(el<0.55){ const u=ease(el/0.55); L.save(); L.strokeStyle=PFLASH[ultEnd.side]; L.globalAlpha=1-u; L.lineWidth=12*(1-u)+1; L.beginPath(); L.arc(ultEnd.x,GY-ultEnd.y,30+u*340,0,7); L.stroke(); L.restore(); } }
 }
+/* ---------- summons (see SUMMONS in the rules) ----------
+   Every summon is the item's own drawing with a glow in its owner's colour, and whatever is added to it (orbit path,
+   legs, tripod, wings, shield arc, the decoy's stick figure) is in that colour too, so it reads as that player's. */
+function drawSummons(v,now,age){
+  const list=v.sm||[]; if(!list.length) return;
+  const orbit=[0,0];
+  for(const s of list){
+    const it=v.items[s.side]&&v.items[s.side][s.slot], col=PCOL[s.side], sz=it?it.sz:44, own=v.f[s.side], foe=v.f[1-s.side];
+    const axis=!!it&&((it.kind==='melee'&&it.style!=='fist')||it.style==='staff');
+    const X=s.x+s.vx*age, Y=GY-(s.y+s.vy*age), ph=now/1000+s.id*1.7;
+    // the drawing itself: an axis drawing (a blade, a staff) points its tip along `tip`; anything else is turned by `roll`
+    const body=(size,tip,roll)=>{ L.save(); L.shadowColor=col; L.shadowBlur=12; let ok;
+      if(axis){ L.rotate(tip); L.translate(-size/2,0); ok=sprite(s.side,s.slot,size,true); } else{ L.rotate(roll||0); ok=sprite(s.side,s.slot,size); }
+      if(!ok){ L.fillStyle=col; L.beginPath(); L.arc(axis?size/2:0,0,Math.max(5,size/5),0,7); L.fill(); } L.restore(); };
+    const eyes=(x,y,r)=>{ L.save(); L.shadowBlur=0; for(const d of [-1,1]){ L.fillStyle='#fff'; L.strokeStyle=col; L.lineWidth=1.5; L.beginPath(); L.arc(x+d*r*1.15,y,r,0,7); L.fill(); L.stroke(); L.fillStyle='#111'; L.beginPath(); L.arc(x+d*r*1.15+r*0.35,y,r*0.45,0,7); L.fill(); } L.restore(); };
+    const streak=(len)=>{ const g=L.createLinearGradient(-len,0,0,0); g.addColorStop(0,'rgba(255,255,255,0)'); g.addColorStop(1,col); L.strokeStyle=g; L.globalAlpha=.6; L.lineCap='round'; L.lineWidth=5; L.beginPath(); L.moveTo(-len,0); L.lineTo(-6,0); L.stroke(); L.globalAlpha=1; };
+    L.save(); L.lineCap='round'; L.lineJoin='round';
+    if(s.tl!==undefined&&s.tl<0.8&&s.k!=='bolt') L.globalAlpha=0.35+0.65*Math.abs(Math.sin(now/55));      // about to go: it flickers
+    if(s.k==='orbiter'){
+      if(!orbit[s.side]++){ L.save(); L.strokeStyle=col; L.globalAlpha=.5; L.lineWidth=2.5; L.setLineDash([3,9]); L.lineDashOffset=-now/40*(s.side?-1:1); L.beginPath(); L.ellipse(own.x,GY-(own.y+52),64,46,0,0,7); L.stroke(); L.restore(); }
+      L.translate(X,Y); if(s.st==='out'){ L.globalAlpha*=.75; body(sz*0.6,now/60,now/60); }
+      else body(sz*0.62,Math.atan2(Y-(GY-(own.y+52)),X-own.x)+(s.side?-1:1)*1.2,Math.sin(ph*5)*0.25);
+    }else if(s.k==='pet'){
+      const size=sz*0.8, run=s.st==='idle'&&Math.abs(s.vx)>20, hop=run?Math.abs(Math.sin(now/70+s.id))*6:s.st==='idle'?Math.abs(Math.sin(ph*2.2))*2:0;
+      L.translate(X,Y); L.scale(s.f||1,1);
+      // two little legs
+      L.strokeStyle=col; L.lineWidth=3; const step=run?Math.sin(now/55)*6:0, low=s.st==='rest'||s.st==='wind';
+      if(s.st!=='jump'){ L.beginPath(); L.moveTo(-8,low?-5:-11-hop); L.lineTo(-8+step,0); L.moveTo(8,low?-5:-11-hop); L.lineTo(8-step,0); L.stroke(); }
+      L.translate(0,(low?-9:-17)-hop);
+      if(s.st==='wind'){ const u=Math.min(1,s.t/0.35); L.save(); L.translate(-6*u,0); L.scale(1+0.15*u,1-0.3*u); body(size,-0.3*u,-0.25*u); L.restore(); }
+      else if(s.st==='jump'){ const a=-Math.atan2(s.vy,Math.abs(s.vx)||1); body(size,a,a*0.6); }
+      else if(s.st==='rest'){ L.globalAlpha*=.8; body(size,0.12,0.5); }
+      else body(size,-0.12,Math.sin(ph*4)*0.08);
+      if(s.st!=='rest') eyes(size*0.2,axis?-4:-size*0.12,3.2);
+      else{ L.fillStyle=col; L.font='bold 13px sans-serif'; L.scale(s.f||1,1); for(let n=0;n<3;n++){ const u=((now/900+n/3)%1); L.globalAlpha=1-u; L.fillText('z',6+u*14+n*2,-14-u*22); } }
+      if(s.st==='wind'){ L.scale(s.f||1,1); L.fillStyle=col; L.font='bold 20px sans-serif'; L.textAlign='center'; L.fillText('!',0,-size*0.45-12); }
+    }else if(s.k==='turret'){
+      const hx=X, hy=Y-34, ang=Math.atan2(GY-(foe.y+50)-hy,foe.x-hx), kick=s.st==='idle'&&s.t<0.15?7*(1-s.t/0.15):0, aim=s.st==='aim';
+      L.strokeStyle=col; L.lineWidth=3; L.beginPath(); L.moveTo(hx,hy+10); L.lineTo(X-15,Y); L.moveTo(hx,hy+10); L.lineTo(X+15,Y); L.moveTo(hx,hy+10); L.lineTo(X,Y); L.stroke();
+      if(s.tl!==undefined){ L.globalAlpha*=.8; L.lineWidth=3; L.beginPath(); L.moveTo(X-16,Y+6); L.lineTo(X-16+32*Math.max(0,Math.min(1,s.tl/6)),Y+6); L.stroke(); L.globalAlpha/=.8; }      // how long it has left
+      if(aim){ L.save(); L.globalAlpha*=.4; L.setLineDash([5,7]); L.lineWidth=2; L.beginPath(); L.moveTo(hx,hy); L.lineTo(foe.x,GY-(foe.y+50)); L.stroke(); L.restore(); }
+      L.translate(hx-Math.cos(ang)*kick,hy-Math.sin(ang)*kick);
+      if(aim){ L.fillStyle=col; L.globalAlpha*=.35; L.beginPath(); L.arc(0,0,sz*0.36+6*Math.sin(now/40),0,7); L.fill(); L.globalAlpha/=.35; }
+      if(axis) body(sz*0.72,ang,0); else{ L.scale(s.f||1,1); body(sz*0.72,0,Math.sin(ph*3)*0.05); eyes(sz*0.1,-sz*0.3,3); }
+    }else if(s.k==='bolt'){
+      L.translate(X,Y); L.rotate(Math.atan2(-s.vy,s.vx)); streak(46); body(Math.max(18,sz*0.3),0,now/50);
+    }else if(s.k==='decoy'){
+      // a still stick figure in the owner's colour, holding the drawing
+      const d=s.f||1, fl=0.5+0.12*Math.sin(now/60+s.id); L.translate(X,Y); L.globalAlpha*=fl; L.strokeStyle=col; L.lineWidth=5; L.setLineDash([9,6]);
+      L.beginPath(); L.arc(0,-80,9,0,7); L.moveTo(0,-71); L.lineTo(0,-36); L.lineTo(-10,0); L.moveTo(0,-36); L.lineTo(10,0); L.moveTo(0,-62); L.lineTo(d*18,-50); L.moveTo(0,-62); L.lineTo(-d*12,-44); L.stroke(); L.setLineDash([]);
+      L.translate(d*18,-50); L.scale(d,1); L.globalAlpha=Math.min(1,L.globalAlpha*1.5); if(axis) body(sz*0.8,-0.95,0); else body(sz*0.6,0,0);
+      if(s.st==='hit'&&s.t<0.25){ L.strokeStyle='#fff'; L.globalAlpha=1-s.t/0.25; L.lineWidth=4; L.beginPath(); L.arc(0,0,20+s.t*120,0,7); L.stroke(); }
+    }else if(s.k==='swarm'){
+      const size=Math.max(18,sz*0.44), fly=s.st==='fly', flap=Math.sin(now/(fly?22:45)+s.id*2)*0.7;
+      L.translate(X,Y+(fly?0:Math.sin(ph*4.5)*4));
+      if(fly){ L.rotate(Math.atan2(-s.vy,s.vx)); streak(54); } else L.scale(s.f||1,1);
+      L.strokeStyle=col; L.lineWidth=2.5; L.beginPath(); L.moveTo(-2,-2); L.lineTo(-9,-9-6*flap); L.moveTo(-2,2); L.lineTo(-9,9+6*flap); L.stroke();      // wings
+      body(size,fly?0:s.st==='wind'?-1.1:-0.15,fly?0:s.st==='wind'?-0.6:Math.sin(ph*5)*0.15);
+    }else if(s.k==='guardian'){
+      const size=sz*0.8, d=s.f||1, blk=s.st==='block'?1-Math.min(1,s.t/0.25):0, R=size*0.5+9+blk*6;
+      L.translate(X,Y+Math.sin(ph*3)*3);
+      L.strokeStyle=blk?'#fff':col; L.shadowColor=col; L.shadowBlur=10+blk*14; L.lineWidth=5+blk*4; L.globalAlpha*=.8; L.beginPath(); L.arc(0,0,R,d>0?-1.15:Math.PI-1.15,d>0?1.15:Math.PI+1.15); L.stroke(); L.globalAlpha/=.8; L.shadowBlur=0;
+      L.fillStyle=col; for(let n=0;n<3;n++){ L.globalAlpha=n<s.hp?1:.2; L.beginPath(); L.arc((n-1)*9,R+9,3,0,7); L.fill(); } L.globalAlpha=1;      // blocks it has left
+      if(axis) body(size,-Math.PI/2,0); else{ L.scale(d,1); body(size*0.85,0,0); }
+    }
+    L.restore();
+  }
+}
 function render(now){
   const v=koView||view, age=net&&!v.hs&&!koView&&(v.phase==='fight'||v.phase==='end')?Math.min(0.08,(now-viewAt)/1000):0, dt=Math.max(0,Math.min(0.05,(now-(lastRender||now))/1000)); lastRender=now;
   fitCanvas(); L.setTransform(1,0,0,1,0,0); L.clearRect(0,0,cv.width,cv.height); L.setTransform(VS,0,0,VS,OX*VS,OY);
@@ -3917,6 +4166,7 @@ function render(now){
     else{ L.save(); L.translate(x,y); L.rotate(now/90*Math.sign(p.vx||1)); if(!it||!sprite(ps,p.slot,it.sz)){ L.fillStyle=PEN[p.el]; L.beginPath(); L.arc(0,0,10,0,7); L.fill(); } L.restore(); }
   }
   if(fleetSeen.size>40) for(const id of [...fleetSeen.keys()]) if(!v.pr.some(p=>p.id===id)) fleetSeen.delete(id);
+  drawSummons(v,now,age);
   drawFighter(v,1,now,age,dt); drawFighter(v,0,now,age,dt);
   worldFront(v,now);
   if(v.sheet) sheetFront(v,now);
@@ -3985,7 +4235,18 @@ if(RETRO) retroBuild();
 const LAB_STOCK={blade:'sword',spear:'spear',hammer:'hammer',fist:'gloves',dual:'twins',bow:'bow',gun:'gun',akimbo:'pistols',staff:'staff',hurl:'star'};
 const LAB_NAME={blade:'Sword',spear:'Spear',hammer:'Hammer',fist:'Fists',dual:'Twin blades',bow:'Bow',gun:'Gun',akimbo:'Twin pistols',staff:'Staff',hurl:'Thrown'};
 const lab={style:'blade',el:'none',speed:1,loop:false,gap:220,last:null,idle:0};
-function labEquip(){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,st.spec,50); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0; if(desk[0]) updateDesk(desk[0]); }
+function labEquip(){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,st.spec,50); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0; if(desk[0]) updateDesk(desk[0]); labSummon(); }
+// Summon blocks for the weapon under test (lab.cu: a block id or ''), and optionally the same weapon and block for the red dummy.
+const LAB_SUMMON_TIP={'':'',orbiter:'They circle the fighter. Move the dummy close (Distance) to see them sting; "Take a hit" swings knock them away.',pet:'It follows on the ground and pounces when the dummy comes within 200 of it (it trails 44 behind the fighter).',
+  turret:'Planted by a down attack: press the "up" or "power" move (or S + J). It lasts 6 s, then 3 s before another.',decoy:'Press "Take a hit": the fighter blinks away and a decoy is left. "Dummy shoots" shows it soaking up shots.',
+  swarm:'They trail behind. Every move pressed flings one at the dummy.',guardian:'Press "Dummy shoots": it blocks three shots, breaks, and grows back after 8 s.'};
+function labSummon(){
+  const cu=lab.cu?[{id:lab.cu}]:[]; sim.customize(0,0,cu);
+  if(lab.both){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(1,0,st.spec,50); setArt(1,0,st.strokes,it.ver,it.kind,it.style); sim.customize(1,0,cu); }
+  else if(sim.items[1][0]){ sim.items[1][0]=null; setArt(1,0,null); }
+  const tip=$('labSummonTip'); if(tip) tip.textContent=LAB_SUMMON_TIP[lab.cu||'']+(lab.cu?' Cost: '+summonCost(sim.items[0][0].customs[0])+' points.':'');
+  document.querySelectorAll('#labSummons button[data-cu]').forEach(b=>b.classList.toggle('on',b.dataset.cu===(lab.cu||'')));
+}
 function labPlace(gap){ const a=sim.f[0], b=sim.f[1], g=gap||lab.gap, x0=Math.max(60,Math.min(ARENA_W-60-g,ARENA_W/2-g/2-60));
   for(const f of [a,b]){ f.y=0; f.vx=f.vy=0; f.ground=true; f.act=null; f.hurt=0; f.stun=0; f.dash=0; f.burn=0; f.slow=0; f.shield=0; f.hp=HP; }
   a.x=x0; b.x=x0+g; a.face=1; b.face=-1; sim.pr.length=0; }
@@ -4018,6 +4279,9 @@ function labBuild(){
   el.innerHTML=`<h2>Move tester</h2><p>Pick a weapon, then a move. The blue fighter does it on the red dummy, which never dies. Keys still work (A D move, W jump, J attack, U ultimate), so combos and running attacks can be tried by hand. <a href="/duel">Back to the game</a></p>
     <div class="row"><b>Weapon</b><span id="labStyles" class="row" style="margin:0"></span></div>
     <div class="row"><b>Move</b><span id="labMoves" class="row" style="margin:0"></span></div>
+    <div class="row"><b>Summon</b><span id="labSummons" class="row" style="margin:0"><button data-cu="">None</button>${Object.keys(SUMMONS).map(k=>`<button data-cu="${k}">${SUMMONS[k].name}</button>`).join('')}
+      <button id="labShoot">Dummy shoots</button><label style="margin-left:8px"><input type="checkbox" id="labBoth"> Dummy has it too</label></span></div>
+    <p id="labSummonTip" style="margin:-4px 0 6px 70px"></p>
     <div class="row"><b>Ink</b><span id="labEls" class="row" style="margin:0 14px 0 0"></span>
       <label>Speed <input type="range" id="labSpeed" min="0.1" max="1" step="0.05" value="1"><span id="labSpeedV">1.00×</span></label>
       <label>Distance <input type="range" id="labGap" min="40" max="520" step="10" value="220"></label>
@@ -4033,6 +4297,10 @@ function labBuild(){
   $('labSpeed').oninput=e=>{ lab.speed=+e.target.value; $('labSpeedV').textContent=lab.speed.toFixed(2)+'×'; };
   $('labGap').oninput=e=>{ lab.gap=+e.target.value; labPlace(); };
   $('labLoop').onchange=e=>{ lab.loop=e.target.checked; };
+  // summon blocks
+  document.querySelectorAll('#labSummons button[data-cu]').forEach(b=>b.onclick=()=>{ b.blur(); lab.cu=b.dataset.cu; labSummon(); });
+  $('labBoth').onchange=e=>{ lab.both=e.target.checked; labSummon(); };
+  $('labShoot').onclick=e=>{ e.target.blur(); lab.last=null; labPlace(Math.max(lab.gap,320)); sim.play(1,'gun_shot'); };
   sim.step(0.05); pickEl('none'); pickStyle('blade');
 }
 if(REPLAY) setReplay(REPLAY);      // duel?replay=CODE: watch that room's match again
