@@ -2173,15 +2173,15 @@ const shadowY=f=>{ let y=0; for(const p of ARENA_PLATS) if(f.y>=p.y-1&&f.x>=p.x0
 // and the cells he has filled in (the platforms) in spreadsheet green.
 const sheetDels=[], SHEET_ROWS=['Revenue','COGS','Gross profit','EBITDA','D&A','CapEx','Free cash flow','WACC','Enterprise value'];
 function sheetBack(v,now){
-  const h=v.sheet, x0=-OX, x1=VW-OX, top=40, C=SHEET_COL, R=SHEET_ROW, c0=Math.floor(x0/C), c1=Math.ceil(x1/C);
+  const h=v.sheet, x0=-OX, x1=VW-OX, top=40, C=SHEET_COL, R=SHEET_ROW, c0=Math.floor(x0/C), c1=Math.ceil(x1/C), ca=x0-c0*C>C*0.35?c0+1:c0;   // ca: the first column with room for the row names, shown as column A
   L.save(); L.lineCap='butt';
   // faint figures: a few change every couple of seconds, so the model looks worked on
   L.font='11px Karla,system-ui,sans-serif'; L.textBaseline='middle';
   for(let r=0;r<9;r++){ const y=GY-r*R-R/2;
     for(let c=c0;c<c1;c++){
       const n=Math.abs(Math.sin(c*12.9898+r*78.233+Math.floor((h.t+c*1.7+r*0.9)/2.5)*4.1)*43758.5453)%1;
-      if(c===c0){ L.fillStyle='#9aa3b2'; L.textAlign='left'; L.fillText(SHEET_ROWS[8-r]||'',Math.max(x0,c*C)+6,y); }
-      else if(n<0.62){ L.fillStyle=n<0.08?'#d9a3a3':'#bcc4d0'; L.textAlign='right'; L.fillText(n<0.08?'('+(n*9000|0)+')':r===1?(n*40).toFixed(1)+'%':((n*98000)|0).toLocaleString('en-US'),(c+1)*C-6,y); }
+      if(c===ca){ L.fillStyle='#9aa3b2'; L.textAlign='left'; L.fillText(SHEET_ROWS[8-r]||'',Math.max(x0,c*C)+6,y,C-10); }
+      else if(c>ca&&n<0.62){ L.fillStyle=n<0.08?'#d9a3a3':'#bcc4d0'; L.textAlign='right'; L.fillText(n<0.08?'('+(n*9000|0)+')':r===1?(n*40).toFixed(1)+'%':((n*98000)|0).toLocaleString('en-US'),(c+1)*C-6,y); }
     } }
   // grid
   L.strokeStyle='#e1e6ee'; L.lineWidth=1; L.beginPath();
@@ -2199,7 +2199,7 @@ function sheetBack(v,now){
   // headings and the formula bar
   L.fillStyle='#f1f3f6'; L.fillRect(x0,22,x1-x0,18); L.strokeStyle='#cfd6e0'; L.lineWidth=1; L.beginPath(); L.moveTo(x0,40); L.lineTo(x1,40); L.moveTo(x0,22); L.lineTo(x1,22); L.stroke();
   L.fillStyle='#6b7486'; L.font='600 11px Karla,system-ui,sans-serif'; L.textAlign='center';
-  for(let c=c0;c<c1;c++) L.fillText(String.fromCharCode(65+(c-c0)%26),c*C+C/2,31);       // the leftmost column on screen is A
+  for(let c=ca;c<c1;c++) L.fillText(String.fromCharCode(65+(c-ca)%26),c*C+C/2,31);
   L.fillStyle='#fff'; L.fillRect(x0,0,x1-x0,22);
   const typed=h.msg.slice(0,Math.max(0,Math.floor((h.t-h.said)*34))), caret=Math.floor(now/400)%2?'|':'';
   L.textAlign='left'; L.fillStyle='#8a93a5'; L.font='italic 600 12px Georgia,serif'; L.fillText('fx',x0+10,11);
