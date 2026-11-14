@@ -15,6 +15,7 @@
 //   again, so from the second round on the bot reacts to every shot as one it noticed long ago, with no reaction time. That
 //   makes ranged weapons look much weaker than they are in a real match, where ids never repeat (quick: melee beats ranged
 //   about 53% unseeded, about 41% seeded). The seeded numbers are the ones that match a real match.
+//   bot --brain=net puts the trained CPU through the same table (weights from --weights=<file>, default bot-weights.json).
 // The scripted people are guesses at how people play, and bots are not people: use the numbers to compare, not as truth.
 const fs=require('fs'), path=require('path'), cp=require('child_process');
 const arg=k=>{ const a=process.argv.find(x=>x.startsWith('--'+k+'=')); return a?a.split('=')[1]:undefined; };
@@ -23,7 +24,7 @@ const SEED=arg('seed')===undefined?undefined:(+arg('seed')>>>0);
 // The bench's own dice for the scripted people (the game's are inside its rules), and a way to derive one seed from another.
 const dice=seed=>{ if(seed===undefined) return Math.random; let a=seed>>>0; return ()=>{ a=(a+0x6D2B79F5)|0; let t=Math.imul(a^(a>>>15),1|a); t=(t+Math.imul(t^(t>>>7),61|t))^t; return ((t^(t>>>14))>>>0)/4294967296; }; };
 const sub=(seed,k)=>seed===undefined?undefined:(Math.imul((seed>>>0)+1,0x9E3779B1)^Math.imul(k+1,0x85EBCA6B))>>>0;
-const load=src=>new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,makeBot,stockItem,STOCK,STYLE,MOVES,ULTS,INK,BOT:typeof BOT!=="undefined"?BOT:{},INK_CURVE:typeof INK_CURVE!=="undefined"?INK_CURVE:{}};')();
+const load=src=>new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,makeBot,stockItem,STOCK,STYLE,MOVES,ULTS,INK,BOT:typeof BOT!=="undefined"?BOT:{},INK_CURVE:typeof INK_CURVE!=="undefined"?INK_CURVE:{},makeNetBot:typeof makeNetBot!=="undefined"?makeNetBot:null,botFeatures:typeof botFeatures!=="undefined"?botFeatures:null,netForward:typeof netForward!=="undefined"?netForward:null,NET_SHAPE:typeof NET_SHAPE!=="undefined"?NET_SHAPE:null};')();
 const D=load(fs.readFileSync(FILE,'utf8'));
 const OLD=arg('old')?load(cp.execSync('git show '+arg('old')+':duel.html',{cwd:path.join(__dirname,'..'),maxBuffer:1<<26}).toString()):null;
 const KEY={blade:'sword',spear:'spear',hammer:'hammer',fist:'gloves',dual:'twins',bow:'bow',gun:'gun',akimbo:'pistols',staff:'staff',hurl:'star'}, STYLES=Object.keys(KEY);
@@ -67,6 +68,16 @@ function round(a,b,flip,opts,seed){
 function duel(a,b,n,opts){ let wa=0,wb=0,t=0; const rs=[]; for(let i=0;i<(n||N);i++){ const r=round(a,b,i%2,opts,SEED===undefined?undefined:SEED+i); if(r.w===0) wa++; else if(r.w===1) wb++; t+=r.t; rs.push(r); } return {a:Math.round(100*wa/(n||N)),b:Math.round(100*wb/(n||N)),secs:+(t/(n||N)).toFixed(1),rs}; }
 const botP=(items,skill,old,costs)=>{ let bots=[bot(0,skill,old),bot(1,skill,old)]; return {items,costs,play:(S,side,dt)=>bots[side](S,dt),fresh:seed=>{ bots=[bot(0,skill,old,sub(seed,0)),bot(1,skill,old,sub(seed,1))]; }}; };
 const personP=(items,kind)=>{ let ps=[person(kind),person(kind)]; return {items,play:(S,side,dt)=>ps[side](S,side,dt),fresh:seed=>{ ps=[person(kind,sub(seed,0)),person(kind,sub(seed,1))]; }}; };
+// --brain=net: the trained CPU in the bot's place (the `bot` command only). Its weights are a bot-weights.json or any checkpoint from bot/train.js.
+let THETA=null, WEIGHTS='';
+if(arg('brain')==='net'){
+  WEIGHTS=path.resolve(arg('weights')||path.join(__dirname,'..','bot-weights.json')); let o=null; try{ o=JSON.parse(fs.readFileSync(WEIGHTS,'utf8')); }catch(e){}
+  const size=D.NET_SHAPE?D.NET_SHAPE.reduce((n,k,i,a)=>i?n+a[i-1]*k+k:0,0):0;
+  if(!o||!Array.isArray(o.theta)||!size||o.theta.length!==size||!o.theta.every(Number.isFinite)){ console.error('--brain=net: no weights to play in '+WEIGHTS+' (train some with bot/train.js, or name a checkpoint with --weights=<file>)'); process.exit(1); }
+  THETA=Float32Array.from(o.theta);
+}
+const netP=(items,skill)=>{ const mk=()=>[0,1].map(s=>D.makeNetBot(s,THETA,()=>skill===undefined?SKILL:skill)); let bots=mk(); return {items,play:(S,side,dt)=>bots[side](S,dt),fresh:()=>{ bots=mk(); }}; };
+const cpuP=(items,skill)=>THETA?netP(items,skill):botP(items,skill,!!OLD);
 
 if(arg('ink')) Object.assign(D.INK_CURVE,JSON.parse(arg('ink')));     // e.g. --ink='{"exp":0.5}' to try a different ink curve
 if(arg('moves')){ const o=JSON.parse(arg('moves')); for(const m in o) Object.assign(D.MOVES[m],o[m]); }   // e.g. --moves='{"hammer_air":{"dmg":1}}'
@@ -88,11 +99,12 @@ if(cmd==='melee'){            // quick look at the melee styles only, against th
   console.log(JSON.stringify(D.BOT),'avg',Object.keys(tot).map(k=>k+' '+Math.round(tot[k]/MS.length)).join('  '),' | ',MS.map(st=>st+':'+Object.values(out[st]).join('/')).join(' '));
 }
 if(cmd==='bot'){
-  console.log('Bot win % against scripted people holding the same weapon (rounds per cell: '+N+', bot skill '+SKILL+(OLD?', OLD bot from '+arg('old'):'')+')');
+  console.log(THETA?'The trained CPU\'s win % against scripted people holding the same weapon (rounds per cell: '+N+', skill '+SKILL+', weights '+path.relative(process.cwd(),WEIGHTS)+')'
+    :'Bot win % against scripted people holding the same weapon (rounds per cell: '+N+', bot skill '+SKILL+(OLD?', OLD bot from '+arg('old'):'')+')');
   const out={}; const tot={masher:0,jumper:0,kiter:0};
-  for(const st of STYLES){ out[st]={}; for(const k of ['masher','jumper','kiter']){ const r=duel(botP([spec(KEY[st])],SKILL,!!OLD),personP([spec(KEY[st])],k)); out[st][k]=r.a; tot[k]+=r.a; } }
+  for(const st of STYLES){ out[st]={}; for(const k of ['masher','jumper','kiter']){ const r=duel(cpuP([spec(KEY[st])],SKILL),personP([spec(KEY[st])],k)); out[st][k]=r.a; tot[k]+=r.a; } }
   out.AVERAGE={}; for(const k in tot) out.AVERAGE[k]=Math.round(tot[k]/STYLES.length); console.table(out);
-  if(!OLD){ const sk={}; for(const s of [0,0.25,0.55,0.8,1]){ let a=0; for(const st of ['blade','gun','hammer']) a+=duel(botP([spec(KEY[st])],s),personP([spec(KEY[st])],'masher'),Math.round(N/2)).a; sk['skill '+s]={'vs masher':Math.round(a/3)}; } console.log('How the skill setting changes it (sword, gun, hammer averaged)'); console.table(sk); }
+  if(!OLD){ const sk={}; for(const s of [0,0.25,0.55,0.8,1]){ let a=0; for(const st of ['blade','gun','hammer']) a+=duel(cpuP([spec(KEY[st])],s),personP([spec(KEY[st])],'masher'),Math.round(N/2)).a; sk['skill '+s]={'vs masher':Math.round(a/3)}; } console.log('How the skill setting changes it (sword, gun, hammer averaged)'); console.table(sk); }
 }
 if(cmd==='versus'){ if(!OLD) throw new Error('needs --old=<git ref>'); const out={}; let tot=0;
   for(const st of STYLES){ const newP=botP([spec(KEY[st])],SKILL), oldP=botP([spec(KEY[st])],SKILL,true); const r=duel(newP,oldP); out[st]={'new bot wins':r.a,'old bot wins':r.b,secs:r.secs}; tot+=r.a; }
