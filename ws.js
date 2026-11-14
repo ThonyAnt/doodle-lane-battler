@@ -129,7 +129,7 @@ function attach(server,path,onSocket,opts){
       tcp.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: '+acceptKey(key)+'\r\n\r\n');
       const sock=makeSocket(tcp,{client:false,maxBuffered:entry.opts.maxBuffered});
       entry.all.add(sock); sock.on('close',()=>entry.all.delete(sock));
-      entry.onSocket(sock,req);
+      try{ entry.onSocket(sock,req); }catch(e){ console.error('ws: '+p+' could not take a socket:',e&&e.message); sock.terminate(); return; }      // one bad arrival must not stop the server
       if(head&&head.length) sock.push(head);      // frames that came in right behind the handshake
     });
   }

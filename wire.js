@@ -210,5 +210,56 @@ function apply(a,p){
   return unfit();
 }
 
-return {createCodec,diff,apply,clone,equal};
+/* ---------- state frames ----------
+   What goes down a socket for every snapshot of the match. Byte 0 is 1 (the whole snapshot) or 2 (a delta); then, as
+   varints, the frame's number (1, 2, 3...), for a delta the number of the snapshot it is a patch against, and the
+   sender's clock in milliseconds; then one packed value: the snapshot, or the patch (null when nothing changed).
+   The other end says which snapshot it holds (ack). A delta is always against the newest one it has said it holds, if
+   the sender still has that among the last 32 it sent; if not, and once every two seconds anyway, the frame is whole.
+   So an end that never acknowledges, or has lost its place, is still sent everything it needs. */
+const FULL=1, DELTA=2;
+function header(bytes){
+  if(!bytes||bytes.length<3||(bytes[0]!==FULL&&bytes[0]!==DELTA)) throw new Error('wire: not a state frame');
+  let i=1; const varint=()=>{ let v=0, m=1, b; do{ if(i>=bytes.length||m>72057594037927936) throw new Error('wire: not a state frame'); b=bytes[i++]; v+=(b&127)*m; m*=128; }while(b&128); return v; };
+  const seq=varint(), base=bytes[0]===DELTA?varint():0, serverMs=varint();
+  return {kind:bytes[0],seq,base,serverMs,at:i};      // at: where the packed value starts
+}
+// The sending end of one connection. frame(snap, nowMs) is the bytes for the next snapshot; snap must not be changed
+// afterwards (the sender keeps it to patch against). ack(n): the other end holds snapshot n.
+function createSender(opts){
+  const keep=(opts&&opts.keep)||32, fullMs=(opts&&opts.fullMs)||2000, codec=createCodec(), sent=[];
+  let seq=0, acked=0, fullAt=-Infinity;
+  return {
+    ack(n){ if(Number.isInteger(n)&&n>acked&&n<=seq) acked=n; },
+    frame(snap,nowMs){
+      let base=null; for(let i=sent.length-1;i>=0&&!base;i--) if(sent[i].seq===acked) base=sent[i];
+      const full=!base||nowMs-fullAt>=fullMs, head=[full?FULL:DELTA], varint=v=>{ while(v>=128){ head.push((v%128)|128); v=Math.floor(v/128); } head.push(v); };
+      seq++; varint(seq); if(!full) varint(base.seq); varint(Math.max(0,Math.floor(nowMs)));
+      const body=codec.pack(full?snap:(diff(base.snap,snap)||null)), out=new Uint8Array(head.length+body.length);
+      out.set(head,0); out.set(body,head.length);
+      sent.push({seq,snap}); if(sent.length>keep) sent.shift(); if(full) fullAt=nowMs;
+      return out;
+    }
+  };
+}
+// The receiving end. read(bytes) gives {kind, seq, base, serverMs, snap}: snap is the caller's own copy of the snapshot,
+// to change as it likes. Every frame must be read, in order. It throws (the message starts "wire:") on a frame it
+// cannot follow; the connection then has to be dropped and made again.
+function createReceiver(opts){
+  const keep=(opts&&opts.keep)||64, codec=createCodec(), held=new Map();      // number -> snapshot, oldest first, never changed once held
+  return {
+    read(bytes){
+      const h=header(bytes), value=codec.unpack(bytes.subarray(h.at)); let snap=value;
+      if(h.kind===DELTA){
+        if(!held.has(h.base)) throw new Error('wire: a delta against a snapshot this end does not hold');
+        snap=apply(held.get(h.base),value);
+        for(const k of held.keys()){ if(k<h.base) held.delete(k); else break; }      // the sender never goes back to an older one
+      }
+      held.set(h.seq,snap); if(held.size>keep) held.delete(held.keys().next().value);
+      return {kind:h.kind,seq:h.seq,base:h.base,serverMs:h.serverMs,snap:clone(snap)};
+    }
+  };
+}
+
+return {createCodec,diff,apply,clone,equal,header,createSender,createReceiver,FULL,DELTA};
 });
