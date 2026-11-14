@@ -48,7 +48,10 @@ body.playing .arenawrap{border-left:0;border-right:0;border-radius:0;box-shadow:
 .hp b{white-space:nowrap}
 .pips{letter-spacing:2px;white-space:nowrap}
 .bar{flex:1;height:16px;border:2px solid var(--ink);border-radius:8px;background:#eef1f7;overflow:hidden;min-width:40px}
-.bar i{display:block;height:100%;width:100%;transition:width .12s}
+.bar{position:relative}
+.bar i{display:block;height:100%;width:100%;transition:width .12s;position:relative}
+.bar i.gh{position:absolute;top:0;bottom:0;left:0;background:#ffd84a!important;transition:none;margin:0!important}
+.hp.right .bar i.gh{left:auto;right:0}
 .hp.left .bar i{background:var(--p1)} .hp.right .bar i{background:var(--p2);margin-left:auto}
 #clock{font-family:var(--display);font-size:26px;min-width:96px;text-align:center;white-space:nowrap}
 .overlay{position:absolute;inset:46px 0 0 0;display:flex;align-items:center;justify-content:center;padding:12px;background:rgba(243,246,251,.86)}
@@ -489,9 +492,9 @@ Window titlebars = platforms
 
   <section class="arenawrap" aria-label="Arena">
     <div class="hud">
-      <div class="hp left"><b>Blue</b><span class="pips" id="pip0"></span><div class="bar"><i id="hp0"></i></div></div>
+      <div class="hp left"><b>Blue</b><span class="pips" id="pip0"></span><div class="bar"><i class="gh" id="hpg0"></i><i id="hp0"></i></div></div>
       <div id="clock"></div>
-      <div class="hp right"><b>Red</b><span class="pips" id="pip1"></span><div class="bar"><i id="hp1"></i></div></div>
+      <div class="hp right"><b>Red</b><span class="pips" id="pip1"></span><div class="bar"><i class="gh" id="hpg1"></i><i id="hp1"></i></div></div>
     </div>
     <canvas id="arena" width="960" height="440"></canvas>
     <div class="overlay" id="overlay" hidden></div>
@@ -661,8 +664,13 @@ function localGuess(strokes){
 //   power: damage, and how hard it shoves (how long a shield lasts, how much a snack heals)
 //   range: reach, how far a shot flies, blast size, dash distance (how freely you move behind a shield, helpings of a snack)
 //   speed: how fast the move plays and how soon it is ready again
+// How ink turns into strength: (ink/full)^exp, up to 3. With a square root, doubling the ink is worth about 40% more, so
+// putting everything into one drawing no longer beats splitting it between two (it used to win about two rounds in three).
+// A 50-ink item is as strong as it was before.
+const INK_CURVE={exp:0.5,full:160};
+const inkPower=cost=>Math.max(0.2,Math.min(3,3*Math.pow(Math.max(0,cost)/INK_CURVE.full,INK_CURVE.exp)));
 function itemStats(kind,el,cost,stats){
-  const p=Math.max(0.2,Math.min(3,cost/30)), raw=el==='none'?1.15:1, s=stats||{power:5,range:5,speed:5};
+  const p=inkPower(cost), raw=el==='none'?1.15:1, s=stats||{power:5,range:5,speed:5};
   const pm=statMul(s.power,LEAN.power), rm=statMul(s.range,LEAN.range), sm=statMul(s.speed,LEAN.speed), push=0.82+0.036*s.power;
   switch(kind){
     case 'melee': return {p,rate:sm,push,size:44+22*p,reach:(44+22*p)*rm,dmg:(3.5+3.5*p)*raw*pm,wind:0.1+0.05*p,cd:(0.34+0.18*p)/sm,kb:240+80*p};
@@ -684,7 +692,7 @@ const MOVES={
   blade2:   {dur:0.36,hits:[0.13],cancel:0.26,next:'blade3',dmg:0.7,kb:180,lift:140,lunge:190},
   blade3:   {dur:0.64,hits:[0.30],dmg:1.5,kb:420,lift:280,lunge:260,lungeAt:0.2,reach:1.15,end:1},
   blade_run:{dur:0.42,hits:[0.14],dmg:1.05,kb:320,lift:120,carry:380,end:1},
-  blade_air:{dur:0.42,hits:[0.10,0.24],dmg:0.55,kb:200,lift:-160,tall:110,end:1},
+  blade_air:{dur:0.42,hits:[0.10,0.24],dmg:0.47,kb:200,lift:-160,tall:110,end:1},
   blade_up: {dur:0.46,hits:[0.16],dmg:0.95,kb:110,lift:560,hop:250,tall:110,end:1},
   bow_shot: {dur:0.50,shots:[0.30],cancel:0.42,next:'bow_quick',dmg:1.3,speed:760,grav:220},
   bow_quick:{dur:0.34,shots:[0.18],cancel:0.30,next:'bow_quick',dmg:0.75,speed:760,grav:220,stun:0.1},
@@ -704,7 +712,7 @@ const MOVES={
   hammer2:  {dur:0.56,hits:[0.24],cancel:0.42,next:'hammer3',dmg:1.0,kb:200,lift:420,lunge:140,lungeAt:0.18},
   hammer3:  {dur:0.86,hits:[0.44],dmg:2.0,kb:520,lift:340,lunge:240,lungeAt:0.3,reach:1.4,quake:1,end:1},
   hammer_run:{dur:0.52,hits:[0.20],dmg:1.3,kb:420,lift:260,carry:340,end:1},
-  hammer_air:{dur:0.50,hits:[0.26],dmg:1.4,kb:260,lift:-320,tall:120,dive:300,quake:1,end:1},
+  hammer_air:{dur:0.50,hits:[0.26],dmg:1.0,kb:260,lift:-320,tall:120,dive:300,quake:1,end:1},
   hammer_up:{dur:0.60,hits:[0.20,0.34,0.48],dmg:0.6,kb:260,lift:120,end:1},
   fist1:    {dur:0.22,hits:[0.07],cancel:0.15,next:'fist2',dmg:0.5,kb:110,lift:0,lunge:120},
   fist2:    {dur:0.24,hits:[0.08],cancel:0.17,next:'fist3',dmg:0.6,kb:130,lift:40,lunge:120},
@@ -728,7 +736,7 @@ const MOVES={
   dual3:    {dur:0.28,hits:[0.09],cancel:0.19,next:'dual4',dmg:0.5,kb:140,lift:120,lunge:160},
   dual4:    {dur:0.58,hits:[0.20,0.28],dmg:0.75,kb:300,lift:200,lunge:240,lungeAt:0.12,end:1},
   dual_run: {dur:0.40,hits:[0.12,0.20],dmg:0.55,kb:240,lift:90,carry:400,end:1},
-  dual_air: {dur:0.40,hits:[0.10,0.20],dmg:0.55,kb:200,lift:-160,tall:110,end:1},
+  dual_air: {dur:0.40,hits:[0.10,0.20],dmg:0.47,kb:200,lift:-160,tall:110,end:1},
   dual_up:  {dur:0.44,hits:[0.13,0.21],dmg:0.5,kb:100,lift:430,hop:260,tall:110,end:1},
   // A pair of pistols: the front gun opens, then the two hands take turns (rapid = back hand, rapid2 = front hand).
   // mz / mzs: where a shot leaves when it is not the style's usual muzzle (the back hand's gun sits lower and nearer).
@@ -786,9 +794,9 @@ const PAIRED=['dual','akimbo'];   // styles fought with a weapon in each hand
 // steady button presses added; each was adjusted until every style won about half its rounds. They even out the bot's play,
 // which is a guess at how people play, so expect to retune after watching real matches. The two paired styles (dual, akimbo)
 // were added later: their moves are scaled from blade and gun for the faster hit rate, and their damage set the same way.
-const STYLE={pick:{reach:1,dmg:1,kb:1},blade:{reach:1,dmg:0.97,kb:1},spear:{reach:1.4,dmg:0.58,kb:0.9},hammer:{reach:1.05,dmg:1.46,kb:1.3},fist:{reach:0.62,dmg:0.79,kb:0.9},
-  bow:{reach:1,dmg:1.3,kb:1},gun:{reach:1,dmg:1.55,kb:1},staff:{reach:1,dmg:1.03,kb:1},hurl:{reach:1,dmg:1.55,kb:1},
-  dual:{reach:0.8,dmg:0.71,kb:0.85},akimbo:{reach:1,dmg:1.4,kb:0.9}};
+const STYLE={pick:{reach:1,dmg:1,kb:1},blade:{reach:1,dmg:0.98,kb:1},spear:{reach:1.4,dmg:0.71,kb:0.9},hammer:{reach:1.05,dmg:0.94,kb:1.3},fist:{reach:0.62,dmg:0.98,kb:0.9},
+  bow:{reach:1,dmg:1.31,kb:1},gun:{reach:1,dmg:1.73,kb:1},staff:{reach:1,dmg:0.8,kb:1},hurl:{reach:1,dmg:1.6,kb:1},
+  dual:{reach:0.8,dmg:0.82,kb:0.85},akimbo:{reach:1,dmg:1.64,kb:0.9}};
 const MUZZLE={bow:[40,72],gun:[48,71],staff:[66,70],hurl:[46,68],akimbo:[48,72]};
 const styleOf=(kind,style)=>kind==='melee'?(MELEE_STYLES.includes(style)?style:'blade'):kind==='ranged'?(RANGED_STYLES.includes(style)?style:'gun'):'';
 const ALT=['blade1','blade2','bow_shot','bow_quick','gun_shot','gun_rapid','spear1','spear2','hammer1','hammer2','fist1','fist3','staff_shot','staff_quick','hurl_shot','hurl_quick'];   // moves with a second animation, name + '_b'
@@ -1047,7 +1055,7 @@ function createDuel(opts){
       if(el==='plant'&&by&&by.hp>0) by.hp=Math.min(HP,by.hp+dmg*0.3);
     }
     if(tr==='flurry'&&!blocked) for(const dy of [44,66]) S.events.push({e:'hit',x:Math.round(t.x),y:Math.round(t.y+dy),n:Math.max(1,Math.round(dmg/2)),el,side:t.side,hap:hap||'thud',dir:kx<0?'L':'R'});
-    else S.events.push({e:blocked?'block':'hit',x:Math.round(t.x),y:Math.round(t.y+52),n:Math.max(1,Math.round(dmg)),el,side:t.side,hap:hap||'thud',dir:kx<0?'L':'R',w:+w.toFixed(2),fin:fin&&!blocked?1:0,ult:tr==='fleet'?1:0});
+    else S.events.push({e:blocked?'block':'hit',x:Math.round(t.x),y:Math.round(t.y+52),n:Math.max(1,Math.round(dmg)),el,side:t.side,hap:hap||'thud',dir:kx<0?'L':'R',w:+w.toFixed(2),fin:fin&&!blocked?1:0,ult:tr==='fleet'?1:0,d:tr==='fleet'?+dmg.toFixed(2):undefined});
     if(tr==='blast'&&!blocked) S.events.push({e:'boom',x:Math.round(t.x),y:Math.round(t.y+45),n:26,el,s:1});
   }
   // Begin a move: the fighter is committed until it ends or chains.
@@ -1281,7 +1289,8 @@ function createDuel(opts){
     if(BOARD&&S.broken&&BOARD.floor>12) a.push({x0:BOARD.x0,x1:BOARD.x1,y:BOARD.floor});
     return a;
   }
-  // The stage each round: inside an art board, his three sketched ledges and a crate.
+  // The stage each round: inside an art board, his three sketched ledges. (It used to start with a crate in the middle too;
+  // players can still draw one.)
   // Take a weapon back out of the Recycle Bin, unless something else has been put in that hand meanwhile.
   function unbin(b){
     const i=(S.bins||[]).indexOf(b); if(i<0) return; S.bins.splice(i,1);
@@ -1298,7 +1307,6 @@ function createDuel(opts){
     const b=BOARD, w=b.x1-b.x0, fl=-b.floor;
     const sk=(x0,x1,y)=>{ const pts=INK.densify([{x:x0,y},{x:x1,y:y+rand(-2,2)}],6).map(p=>({x:p.x,y:p.y+rand(-1.2,1.2)})); addObj({kind:'platform',x:x0,y,w:x1-x0,strokes:[pts],color:'#8a8f99',life:Infinity}); };
     sk(b.x0+w*0.1,b.x0+w*0.32,fl-120); sk(b.x0+w*0.68,b.x0+w*0.9,fl-120); sk(b.x0+w*0.4,b.x0+w*0.6,fl-215);
-    spawnCrate(INK.toPts(INK.T.crate,b.x0+w*0.5,fl-19,0.85,1,0.8),'#8a8f99',-1,'crate',Infinity);
   }
   // Where things are: the arena width, the art board (or none), and the ledges. Sent by whatever is showing the fight.
   S.setLayout=L=>{
@@ -1567,8 +1575,10 @@ function createDuel(opts){
 // The opponent. The fighting is this game's bot. The drawing, hacking and countering are Alex's animator.bot, adapted from
 // his AI.decide(), AI.onHack() and Drawer: the same rules and odds, and a ghost cursor that really traces each glyph
 // stroke by stroke and submits it through S.stroke, exactly as a player's drawing is. skillOf() is his CPU skill, 0..1.
+const BOT={cdBack:1,jumpBack:0,antiAir:1,predict:1,backPlan:1,leap:0,flee:0,swap:170};   // switches for the bot's habits, so tools/balance.js can try them one at a time
 function makeBot(side,skillOf){
-  let think=0, react=null, hadHack=false; const i={l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0,u:0};
+  let think=0, react=null, hadHack=false, now=0, idle=0, seenAct=null, seenAt=0, rolled=false, plan='', planFor=null, flee=false, stuck=0;
+  const i={l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0,u:0}, last={a:-9,b:-9,j:-9,u:-9}, seenShot=new Map();
   const {T,toPts,densify,rand,pick,GLYPH_ICON}=INK, COL=['#1d3fbf','#b0121f'][side];
   const dr={task:null,cur:{x:0,y:-200},vis:false,
     draw(name,ax,ay,sc,fx){ if(this.task||!T[name]) return false; this.task={strokes:toPts(T[name],ax,ay,sc||1,fx||1,1.1).map(st=>densify(st,4)),si:0,pi:0,down:false,wait:0.05,name}; this.vis=true; return true; },
@@ -1584,32 +1594,97 @@ function makeBot(side,skillOf){
     { // his onHack(): notice a hack aimed at us, then (depending on skill) draw its counter glyph after a reaction delay
       const me=S.f[side], aimed=!!(S.hack&&S.hack.target===side); if(aimed&&!hadHack) react={t:rand(0.2,0.6)*(1.5-d),go:Math.random()<0.3+0.6*d}; hadHack=aimed;
       if(react){ react.t-=dt; if(react.t<=0){ const r=react; react=null; if(r.go&&S.hack&&S.hack.target===side){ dr.cancel(); dr.draw(GLYPH_ICON[S.hack.counter]||'null',me.x-me.face*70,-(me.y+150),0.7,1); } } } }
-    think-=dt; if(think>0) return; think=0.35+(0.1-0.35)*d+Math.random()*0.08+0.07;
+    // ---- fighting ----
+    // The bot looks at the fight every tick but acts through a person's limits, all set by the skill d (0 to 1): it notices
+    // what the foe starts a reaction time late (lag), can only press so many times a second (rate), sometimes hesitates,
+    // and only sometimes reacts to a threat at all (sure). With those it plays the way a decent player does: it keeps its
+    // weapon's distance, hits first when the foe walks into reach and keeps the combo going, backs off while its weapon
+    // recovers, launches a foe who jumps in, hits on the way down from its own jumps, blocks or jumps shots, steps out of
+    // (or beats) a swing it has seen coming, shoots from range and keeps shooters at arm's length.
+    now+=dt;
     const f=S.f[side], e=S.f[1-side], dx=e.x-f.x, dist=Math.abs(dx), dy=e.y-f.y, dir=Math.sign(dx)||1, facing=f.face===dir;
-    const incoming=S.pr.some(p=>p.side!==side&&Math.abs(p.x-f.x)<170&&Math.sign(p.vx)===-dir);
-    let ideal=260, press=[false,false], melee=false, far=0;
-    for(const k of [0,1]){
-      const it=S.items[side][k], kind=it?it.kind:'melee', reach=it&&it.kind==='melee'?it.st.reach*(STYLE[it.style]||STYLE.blade).reach:36;
-      if(kind==='melee'){ melee=true; ideal=Math.min(ideal,reach*0.75); press[k]=dist<reach+10&&Math.abs(dy)<64&&facing; }
-      else if(kind==='ranged'){ press[k]=Math.abs(dy)<42&&dist<Math.min(640,it.st.dist*0.95)&&facing; far=Math.max(far,it.st.dist); }
-      else if(kind==='bomb') press[k]=dist>110&&dist<430&&facing;
-      else if(kind==='shield') press[k]=(incoming||(e.act&&dist<130)||(e.act&&MOVES[e.act.m].ult&&e.act.t>0.3))&&facing;
-      else if(kind==='dash') press[k]=dist>300&&facing&&Math.random()<0.5;
-      else press[k]=f.hp<HP*0.55&&f.uses[k]>0;
+    const lag=0.30-0.24*d, rate=4.5+4.5*d, sure=0.3+0.65*d, items=[S.items[side][0],S.items[side][1]], KEYS='ab';
+    const tap=key=>{ if(now-last[key]<1/rate) return false; last[key]=now; i[key]++; return true; };
+    const reachOf=(it,M)=>it&&it.kind==='melee'?it.st.reach*(STYLE[it.style]||STYLE.blade).reach*((M&&M.reach)||1):36;
+    const ready=k=>f.cd[k]<=0.02&&!f.act, can=!(f.hurt>0||f.stun>0||f.trap>0||f.flung>0);
+    let km=-1,kr=-1,kb=-1,ks=-1,kd=-1,kh=-1;
+    items.forEach((it,k)=>{ if(!it) return; if(it.kind==='melee'){ if(km<0||reachOf(it)>reachOf(items[km])) km=k; } else if(it.kind==='ranged') kr=k; else if(it.kind==='bomb') kb=k; else if(it.kind==='shield') ks=k; else if(it.kind==='dash') kd=k; else kh=k; });
+    if(km<0){ const empty=items.findIndex(it=>!it); if(empty>=0) km=empty; }      // an empty hand is a punch
+    if(Math.random()<dt*(1-d)*0.9) idle=now+0.15+Math.random()*0.35;             // a moment of doing nothing
+    // what it has noticed: the foe's current move (a reaction time after it began) and shots heading its way
+    if(e.act!==seenAct){ seenAct=e.act; seenAt=now; rolled=false; }
+    const saw=e.act&&now-seenAt>=lag?e.act:null;
+    let threat=false, tHit=9;
+    if(saw){ const M=MOVES[saw.m]; if(M&&M.hits&&saw.done<M.hits.length){ const er=reachOf(S.items[1-side][saw.k],M)+50; tHit=(M.hits[saw.done]-saw.t)/saw.rate; threat=dist<er&&Math.abs(dy)<90&&e.face===-dir&&tHit<0.45; } }
+    let shotIn=9, shotId=0;
+    for(const p of S.pr){ if(p.side===side||p.hover) continue; const t0=seenShot.get(p.id); if(t0===undefined){ seenShot.set(p.id,{t:now,roll:Math.random()<sure}); continue; } if(now-t0.t<lag||!t0.roll) continue;
+      const tt=p.vx?(f.x-p.x)/p.vx:9; if(tt>0&&tt<0.4){ const py=p.y+p.vy*tt-(p.grav||0)*tt*tt/2; if(py>f.y-12&&py<f.y+100&&tt<shotIn){ shotIn=tt; shotId=p.id; } } }
+    if(seenShot.size>80) seenShot.clear();
+    let mv=0, down=0, pressed=false;           // mv: 1 toward the foe, -1 away
+    const closing=(f.vx-e.vx)*dir, foeMelee=!S.items[1-side][e.held]||S.items[1-side][e.held].kind==='melee';   // closing: how fast the gap is shrinking
+    const myMelee=km>=0?items[km]:null, myReach=reachOf(myMelee), M1=MOVES[(myMelee?myMelee.style:'fist')+'1'], myHit=M1.hits[0]/((myMelee&&myMelee.st.rate)||1);
+    if(can){
+      // ---- defence ----
+      if(shotIn<0.3){
+        if(ks>=0&&f.cd[ks]<=0&&!f.act&&f.shield<=0&&facing){ pressed=tap(KEYS[ks]); }
+        else if(f.ground&&!f.act&&shotIn>0.07){ const p=S.pr.find(q=>q.id===shotId); if(p&&(p.dmg>=5||p.big||(kr<0&&dist>170))) tap('j'); }
+      }
+      if(threat&&!rolled){ rolled=true; const er=reachOf(S.items[1-side][saw.k],MOVES[saw.m])+50;
+        plan=Math.random()<sure?(ks>=0&&f.cd[ks]<=0&&facing?'block':km>=0&&ready(km)&&myHit<tHit-0.02&&dist<myReach+20&&facing?'beat':BOT.backPlan&&(er-dist)/300<tHit-0.04?'back':'trade'):''; planFor=saw; }
+      if(threat&&planFor===saw&&!f.act){
+        if(plan==='block'&&f.shield<=0) pressed=tap(KEYS[ks])||pressed;
+        else if(plan==='beat'||(plan==='trade'&&km>=0&&ready(km)&&facing&&dist<myReach+10)) pressed=tap(KEYS[km])||pressed;
+        else if(plan==='back'){ mv=-1; if(tHit<0.14&&f.ground&&Math.random()<0.5) tap('j'); }
+      }
+      // ---- the snack, when it is safe or badly needed ----
+      if(kh>=0&&f.cd[kh]<=0&&f.uses[kh]>0&&!f.act&&!pressed&&(f.hp<HP*0.2||(f.hp<HP*0.4&&dist>210))) pressed=tap(KEYS[kh]);
+      // ---- attack ----
+      const shooter=kr>=0&&(km<0||!items[km]||dist>BOT.swap||!ready(km));
+      if(now>=idle&&!pressed&&!(threat&&plan==='back')){
+        if(shooter){
+          const it=items[kr], range=it.st.dist, ideal=Math.max(200,Math.min(520,range*0.7)), lined=Math.abs(dy)<42, key=KEYS[kr];
+          if(f.act&&f.act.k===kr){ if(MOVES[f.act.m].next&&lined&&dist<range*0.95) tap(key); }          // keep the quick shots coming
+          else if(ready(kr)&&facing){
+            if(lined&&dist<range*0.95){ if(d>0.35&&dist>ideal*0.85&&Math.abs(e.vx)<140&&Math.random()<0.12) down=1; pressed=tap(key); }
+            else if(!f.ground&&dy<-30&&dist<range*0.8) pressed=tap(key);                                  // from the air, angled down
+          }
+          if(BOT.flee&&dist<ideal-110&&foeMelee) flee=true; else if(dist>ideal-30||!foeMelee||!BOT.flee) flee=false;
+          if(flee){ if(stuck>0.3){ mv=1; if(f.ground) tap('j'); } else mv=-1; }                             // cornered: go over the top
+          else if(dist>ideal+60) mv=1; else if(!facing) mv=1;
+          if(dy>70&&f.ground&&Math.random()<dt*2.5) tap('j');
+        }else if(km>=0){
+          const it=items[km], key=KEYS[km], aim=1+(Math.random()-0.5)*0.3*(1-d);
+          if(f.act&&f.act.k===km&&!MOVES[f.act.m].mine){ if(MOVES[f.act.m].next&&dist<myReach+46) tap(key); }      // keep the combo going
+          else if(ready(km)){
+            if(!f.ground){ if(facing&&dist<myReach*0.95&&dy<24&&dy>-150) pressed=tap(key); }               // on the way down
+            else if(BOT.antiAir&&facing&&dy>46&&dist-Math.max(0,closing)*0.16<myReach*0.85&&e.vy<260){ down=1; pressed=tap(key); }     // the foe is jumping in: launch them
+            else if(facing&&Math.abs(dy)<60&&dist-Math.max(0,closing)*myHit*sure*BOT.predict<myReach*0.92*aim) pressed=tap(key);       // timed so it lands as they arrive
+            else if(facing&&Math.abs(dy)<60&&Math.abs(f.vx)>215&&Math.sign(f.vx)===dir&&dist<myReach+72) pressed=tap(key);   // running attack carries in
+          }
+          const eit=S.items[1-side][e.held], eReach=reachOf(eit)+56;
+          if(BOT.cdBack&&!f.act&&f.cd[km]>0.14&&dist<eReach&&!(e.hurt>0||e.stun>0)) mv=-1;                             // weapon recovering: step out of their reach
+          else if(!e.ground&&f.ground&&closing>90&&dist<(BOT.jumpBack?240:200)&&dy>30&&(BOT.jumpBack||!ready(km))) mv=-1;   // a jump-in it cannot answer: step out from under it
+          else if(BOT.leap&&f.ground&&ready(km)&&dist>myReach+40&&dist<myReach+190&&Math.abs(dy)<40&&Math.random()<dt*BOT.leap) tap('j');   // sometimes come in from above
+          else if(dist>myReach*0.78) mv=1; else if(!facing) mv=1;
+          if(kd>=0&&ready(kd)&&facing&&dist>290&&Math.abs(dy)<60&&!pressed) pressed=tap(KEYS[kd]);          // close the gap
+          if(dy>70&&f.ground&&dist<280&&Math.random()<dt*3.5) tap('j');                                     // go up after them
+          else if(!f.ground&&dy>40&&f.vy<60&&f.jumps<2&&Math.random()<dt*6) tap('j');
+        }
+        if(kb>=0&&ready(kb)&&facing&&!pressed&&dist>125&&dist<430&&Math.abs(dy)<140) pressed=tap(KEYS[kb]);
+      }else if(!pressed&&!threat){ if(km>=0&&!shooter&&dist>myReach*0.78) mv=1; }
+      if(dy<-60&&f.ground&&f.y>0&&!pressed&&!f.act) down=1;                                                 // drop through the platform
     }
-    if(!melee&&far) ideal=Math.max(200,Math.min(560,far*0.72));    // a shooter stands off as far as its shots carry
-    if(!melee&&ideal>200&&dist<150&&Math.random()<0.6){ i.l=dir>0?1:0; i.r=dir>0?0:1; }
-    else if(dist>ideal+18||!facing){ i.r=dir>0?1:0; i.l=dir>0?0:1; }
-    else{ i.l=i.r=0; }
-    if(Math.random()>0.4){ if(press[0]) i.a++; if(press[1]) i.b++; }
-    if((dy>70&&Math.random()<0.55)||(incoming&&Math.random()<0.35)||Math.random()<0.04) i.j++;
-    i.d=dy<-60&&Math.random()<0.5?1:0;
+    stuck=mv===-1&&Math.abs(f.vx)<30?stuck+dt:0;
+    i.r=mv*dir>0?1:0; i.l=mv*dir<0?1:0; i.d=down;
+    // ---- the slower thoughts: ultimate, hacks and drawing, a few times a second ----
+    think-=dt; if(think>0){ S.setInput(side,i); return; } think=0.35+(0.1-0.35)*d+Math.random()*0.08+0.07;
+    const incoming=shotIn<9;
     // his decide(): hacks when the overdrive bar is full, and glyphs for the situation
     const busy=!!dr.task;
     // a full bar goes on the ultimate about half the time, when there is a drawing to copy and room for it to fly
     const uIt=S.items[side][f.held]||S.items[side][1-f.held], U=ultOf(uIt), uMin=U.min===undefined?110:U.min;   // each ultimate has its own working distance
     if(e.act&&MOVES[e.act.m].ult&&U.kind!=='quake'&&e.act.u==='quake'&&e.act.t>0.3&&f.ground&&Math.random()<0.7) i.j++;   // jump the shock wave
-    if(f.od>=100&&uIt&&dist>=uMin&&dist<=(U.max||1e9)&&Math.abs(dy)<(U.kind==='quake'?40:160)&&Math.random()<0.5*(0.2+0.4*d)) i.u++;
+    if(f.od>=100&&uIt&&can&&(!f.act||MOVES[f.act.m].shots)&&!threat&&dist>=uMin&&dist<=(U.max||1e9)&&Math.abs(dy)<(U.kind==='quake'?40:160)&&Math.random()<0.3+0.6*d) i.u++;
     else if(f.od>=100&&!S.hack&&Math.random()<0.2+0.4*d){ const opts=[2,3]; if(S.cells.length&&!S.broken) opts.push(0); if(S.items[1-side][e.held]) opts.push(1,1); if(S.items[side][f.held]) opts.push(4,4); i.h=pick(opts); i.q++; }
     else if(!busy&&f.ink2>55&&dist>240&&Math.random()<0.14*d) dr.draw('lightning',f.x+dir*80,-(f.y+110),0.8,dir);
     else if(!busy&&f.ink2>45&&e.act&&dist<130&&Math.random()<0.25*d) dr.draw('wall',f.x+dir*42,-(f.y+46),0.9);
@@ -1731,6 +1806,9 @@ new ResizeObserver(fitCanvas).observe(cv); fitCanvas();
 let mode='bot', sim=null, bot=null, view=null, viewAt=0, net=null, local=[true,false], fx=[], shake=0, impactUntil=0, impactAt=-9999, serverInfo={}, canRead=location.protocol.startsWith('http');
 const art=[[null,null],[null,null]], artStrokes=[[null,null],[null,null]], desk=[null,null];
 const inp=[0,1].map(()=>({l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0,u:0}));
+// An ultimate's damage is shown as one big running total over whoever is being hit (ultDmg, per victim), and the health
+// it removed stays lit on their bar for a moment before draining away (hpGhost).
+const ultDmg=[null,null], hpGhost=[HP,HP], hpSeen=[HP,HP], hpHold=[0,0];
 // People who ask their system for less motion get no screen flashes and a much smaller shake.
 const CALM=matchMedia('(prefers-reduced-motion: reduce)').matches, PFLASH=['#b9c6ff','#ffb3b8'];
 // His interface and effects. Built once; the windows only show on the retro desktop, the effects are used everywhere.
@@ -2101,6 +2179,12 @@ function accept(v){
     // is inverted for a few frames (on a white stage a plain white flash would not show). Ordinary attacks and knockouts
     // never black the screen out.
     if(e.e==='hit'){ shake=Math.max(shake,(2.5+9*(e.w||0))*soft); if(e.fin&&e.ult&&now-impactAt>900){ impactAt=now; impactUntil=now+IMPACT_MS; shake=Math.max(shake,18*soft); } }
+    if(e.e==='hit'&&e.ult){                              // add this piece to the running total over the victim
+      let u=ultDmg[e.side]; const by=1-e.side, it=v.items[by][v.f[by].held];
+      if(!u||u.fin||now-u.last>1500) u=ultDmg[e.side]={sum:0,shown:0,hits:0,t0:now,fin:0,by,name:(ULTS[it&&it.style]||ULTS.blade).name};
+      u.sum+=e.d!==undefined?e.d:e.n; u.hits++; u.last=u.pop=now; if(e.fin){ u.fin=now; shake=Math.max(shake,16*soft); }
+      hpHold[e.side]=now+1100;
+    }
     if(e.e==='ko') shake=Math.max(shake,14*soft);
     if(e.e==='ult'){ ultFx={side:e.side,name:e.name||'ULTIMATE',sub:e.sub||'',slot:e.slot|0,intro:e.intro||0.85,t0:now}; ultEnd=null; shake=Math.max(shake,10*soft); FXI.ring(e.x,-(e.y+60),PCOL[e.side]); FXI.burst(e.x,-(e.y+60),PCOL[e.side],22); }
     if(e.e==='ultend'){ ultEnd={side:e.side,x:e.x,y:e.y,n:e.n,t0:now}; shake=Math.max(shake,14*soft); }
@@ -2545,12 +2629,45 @@ function drawFighter(v,i,now,age,dt){
   if(f.slow){ L.fillStyle=PEN.water; for(let n=0;n<3;n++){ const fy=base-74+((now/9+n*31)%62); L.beginPath(); L.arc(x-14+n*14,fy,2.5,0,7); L.fill(); } }
   if(f.hp>0||v.phase==='draw'){ const h=ANIM.xf(s,p[0],p[1]); L.font='18px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=col;
     const tag=local[i]&&!(local[0]&&local[1])?'you':NAME[i], tx=x+h[0]*K*d, ty=base+h[1]*K-20;
-    if(RETRO||DESK){ retroStatus(L,f,tag,col,Math.round(tx),Math.round(ty),v.phase!=='draw',DESK?v.wins[i]:-1); return; }
+    if(RETRO||DESK){ f.gh=hpGhost[i]; retroStatus(L,f,tag,col,Math.round(tx),Math.round(ty),v.phase!=='draw',DESK?v.wins[i]:-1); return; }
     L.fillText(tag,tx,ty); }
 }
 // Retro desktop and the desktop overlay: the tag above a fighter is a small grey bevelled plate holding sunken bars, drawn to match the Fighters
 // panel in inkshop.css (.bevel, .bar.hp, .bar.ink, .bar.od): health, then ink and overdrive once the round is on.
 // The overlay has no scoreboard, so there the plate also shows rounds won as small squares (wins >= 0).
+// Health that has just been lost stays on the bar in yellow for a moment, then drains: a hit reads as a chunk taken out.
+// An ultimate holds it for longer.
+function hpGhostStep(v,now,dt){
+  for(const i of [0,1]){ const hp=v.phase==='draw'?HP:Math.max(0,v.f[i].hp);
+    if(hp<hpSeen[i]-0.05) hpHold[i]=Math.max(hpHold[i],now+420);
+    hpSeen[i]=hp;
+    if(hpGhost[i]<hp||v.phase==='draw') hpGhost[i]=hp; else if(now>hpHold[i]) hpGhost[i]=Math.max(hp,hpGhost[i]-HP*0.7*dt);
+    const g=document.getElementById('hpg'+i); if(g) g.style.width=(hpGhost[i]*100/HP)+'%'; }
+}
+// The running total of an ultimate over its victim: it counts up as the pieces land, jumps with each one, and slams when the
+// last one hits, with the ultimate's name over it and the number of hits under it.
+function ultDamageDraw(v,now,dt){
+  for(const side of [0,1]){
+    const u=ultDmg[side]; if(!u) continue;
+    const end=(u.fin||u.last)+(u.fin?1700:1300), fade=450; if(now>end+fade||v.phase==='draw'){ ultDmg[side]=null; continue; }
+    u.shown+=(u.sum-u.shown)*Math.min(1,dt*16); if(u.sum-u.shown<0.3) u.shown=u.sum;
+    const f=v.f[side], col=PCOL[u.by], top=-OY/VS+86, x=Math.max(-OX+150,Math.min(VW-OX-150,f.x)), y=Math.max(top,GY-(f.y+178));
+    const pop=CALM?0:0.4*Math.exp(-(now-u.pop)/85), slam=u.fin&&!CALM?1.0*Math.exp(-(now-u.fin)/170):0, k=(u.fin?1.25:1)+pop+slam, a=now>end?1-(now-end)/fade:1;
+    const jig=u.fin||CALM?0:Math.sin(now/23+u.hits)*0.05, txt='−'+Math.round(u.shown);
+    L.save(); L.globalAlpha=Math.max(0,a); L.translate(x,y); L.rotate(jig);
+    if(u.fin&&now-u.fin<260&&!CALM){                    // a burst of rays behind the number as it lands
+      const g=(now-u.fin)/260; L.strokeStyle=col; L.lineCap='round'; L.globalAlpha=Math.max(0,a)*(1-g);
+      for(let n=0;n<14;n++){ const t=n*Math.PI*2/14+0.2, r0=58+g*70, r1=r0+34+(n%2?26:0); L.lineWidth=n%2?5:8; L.beginPath(); L.moveTo(Math.cos(t)*r0,Math.sin(t)*r0*0.7); L.lineTo(Math.cos(t)*r1,Math.sin(t)*r1*0.7); L.stroke(); }
+      L.globalAlpha=Math.max(0,a); }
+    L.textAlign='center'; L.textBaseline='middle'; L.lineJoin='round';
+    L.font='900 '+Math.round(66*k)+'px "Arial Black",Impact,Arial,sans-serif';
+    L.lineWidth=16*k; L.strokeStyle='#111'; L.strokeText(txt,0,0); L.lineWidth=9*k; L.strokeStyle='#fff'; L.strokeText(txt,0,0);
+    L.fillStyle=u.fin&&now-u.fin<240&&Math.floor((now-u.fin)/60)%2===0&&!CALM?'#fff':col; L.fillText(txt,0,0);
+    L.font='900 19px "Arial Black",Impact,Arial,sans-serif'; L.lineWidth=6; L.strokeStyle='#111'; L.strokeText(u.name,0,-52*k); L.fillStyle='#ffd84a'; L.fillText(u.name,0,-52*k);
+    if(u.hits>1){ const h=u.hits+' HITS'; L.font='900 15px "Arial Black",Impact,Arial,sans-serif'; L.lineWidth=5; L.strokeStyle='#111'; L.strokeText(h,0,46*k); L.fillStyle='#fff'; L.fillText(h,0,46*k); }
+    L.restore();
+  }
+}
 function retroStatus(c,f,tag,col,tx,ty,meters,wins){
   const w=62, bh=7, mh=4, pip=wins>=0?8:0, ph=(meters?bh+mh+9:bh+6)+pip, x0=tx-w/2, y0=ty-ph-4;
   const edge=(x,y,w,h,a,b)=>{ c.fillStyle=a; c.fillRect(x,y,w,1); c.fillRect(x,y,1,h); c.fillStyle=b; c.fillRect(x,y+h-1,w,1); c.fillRect(x+w-1,y,1,h); };
@@ -2562,6 +2679,7 @@ function retroStatus(c,f,tag,col,tx,ty,meters,wins){
   c.fillStyle='#c3c3c3'; c.fillRect(x0,y0,w,ph); edge(x0,y0,w,ph,'#fff','#404040'); edge(x0+1,y0+1,w-2,ph-2,'#dfdfdf','#808080');
   for(let n=0;n<WINS&&pip;n++) well(x0+3+n*8,y0+3,6,6,n<wins?1:0,col);
   well(x0+3,y0+3+pip,w-6,bh,f.hp/HP,grad(y0+3+pip,bh,'#5d5','#2a2'));
+  if(f.gh>f.hp+0.4){ const a=Math.round((w-8)*Math.max(0,f.hp)/HP), b=Math.round((w-8)*Math.min(HP,f.gh)/HP); if(b>a){ c.fillStyle=Math.floor(performance.now()/90)%2?'#ffe45c':'#fff3a8'; c.fillRect(x0+4+a,y0+4+pip,b-a,bh-2); } }
   if(meters){ const y=y0+bh+5+pip, hw=(w-8)/2, od=(f.od||0)/100;
     well(x0+3,y,hw,mh,(f.ink2===undefined?100:f.ink2)/100,grad(y,mh,'#57f','#22b'));
     well(x0+5+hw,y,hw,mh,od,od>=1&&Math.floor(performance.now()/200)%2?'#fff':'#e90'); }
@@ -2827,13 +2945,11 @@ function ultFront(v,now){
     }
     L.restore();
   }
-  // time starts again: what the whole ultimate took, stamped over the fighter who took it
+  // time starts again: a ring bursts from the fighter who took it
   if(ultEnd){
     const el=(now-ultEnd.t0)/1000, x=ultEnd.x, y=GY-ultEnd.y-70, col=PCOL[ultEnd.side];
     if(!CALM&&el<0.5){ L.save(); L.strokeStyle=PFLASH[ultEnd.side]; L.globalAlpha=1-el/0.5; L.lineWidth=10*(1-el/0.5)+1; L.beginPath(); L.arc(x,GY-ultEnd.y,30+el*520,0,7); L.stroke(); L.restore(); }
-    if(ultEnd.n>0){ const s=el<0.14?2.4-1.4*ease(el/0.14):1, a=el>0.95?Math.max(0,1-(el-0.95)/0.35):1;
-      L.save(); L.translate(x,y-el*22); L.scale(s,s); L.rotate(-0.08); L.globalAlpha=a; L.font='italic 900 58px "Arial Black",Impact,sans-serif'; L.textAlign='center'; L.textBaseline='middle';
-      L.lineWidth=9; L.strokeStyle='#fff'; L.strokeText('−'+ultEnd.n,0,0); L.fillStyle=col; L.fillText('−'+ultEnd.n,0,0); L.restore(); }
+    // (the running total over the fighter, drawn with the other hit effects, already shows what the ultimate took)
   }
 }
 function render(now){
@@ -2892,13 +3008,14 @@ function render(now){
   drawFighter(v,1,now,age,dt); drawFighter(v,0,now,age,dt);
   worldFront(v,now);
   if(v.sheet) sheetFront(v,now);
+  hpGhostStep(v,now,dt);
   // effects
   fx=fx.filter(e=>now-e.t0<700);
   for(const e of fx){
     const a=(now-e.t0)/700, y=GY-(e.y||0); L.globalAlpha=1-a;
     if(e.e==='hit'){ L.strokeStyle=e.el==='none'?'#111':PEN[e.el]; L.lineCap='round'; for(let n=0;n<9;n++){ const t=n*Math.PI*2/9+0.23, r0=8+a*33, r1=r0+(1-a)*(n%2?19:31); L.lineWidth=n%2?2:3; L.beginPath(); L.moveTo(e.x+Math.cos(t)*r0,y+Math.sin(t)*r0); L.lineTo(e.x+Math.cos(t)*r1,y+Math.sin(t)*r1); L.stroke(); }
       if(a<0.3){ const g=1-a/0.3, tilt=((e.x*7+e.n*13)%10)/10*1.6-0.8, len=70+e.n*5, cx=Math.cos(tilt), sy=Math.sin(tilt); L.globalAlpha=g; L.fillStyle=e.el==='none'?'#111':PEN[e.el]; L.beginPath(); L.moveTo(e.x-cx*len,y-sy*len); L.lineTo(e.x+sy*5*g,y-cx*5*g); L.lineTo(e.x+cx*len,y+sy*len); L.lineTo(e.x-sy*5*g,y+cx*5*g); L.closePath(); L.fill(); L.fillStyle='#fff'; L.beginPath(); L.moveTo(e.x-cx*len*0.7,y-sy*len*0.7); L.lineTo(e.x+sy*1.6*g,y-cx*1.6*g); L.lineTo(e.x+cx*len*0.7,y+sy*len*0.7); L.lineTo(e.x-sy*1.6*g,y+cx*1.6*g); L.closePath(); L.fill(); L.globalAlpha=1-a; }
-      L.font='26px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=PEN[e.el]; L.fillText('-'+e.n,e.x,y-30-a*30); }
+      if(!e.ult){ L.font='26px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=PEN[e.el]; L.fillText('-'+e.n,e.x,y-30-a*30); } }
     else if(e.e==='block'){ L.font='22px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle='#111'; L.fillText('BLOCK',e.x,y-30-a*24); L.strokeStyle='#111'; L.lineWidth=2; L.beginPath(); L.arc(e.x,y,15+a*35,-1.3,1.3); L.stroke(); }
     else if(e.e==='shot'){ if((e.st==='gun'||e.st==='akimbo')&&a<0.14){ L.globalAlpha=1-a/0.14; L.strokeStyle=e.el==='none'?'#111':PEN[e.el]; L.lineCap='round'; for(let n=0;n<7;n++){ const t=(n-3)*0.42, r0=6, r1=(n%2?16:28)*(0.6+a*3); L.lineWidth=n%2?2:3; L.beginPath(); L.moveTo(e.x+Math.cos(t)*r0*e.f,y+Math.sin(t)*r0); L.lineTo(e.x+Math.cos(t)*r1*e.f,y+Math.sin(t)*r1); L.stroke(); } } }
     else if(e.e==='slash'){ if(a<0.4){ const g=1-a/0.4, col=PCOL[e.side], x0=Math.min(e.x,e.x2)-40, x1=Math.max(e.x,e.x2)+40, tilt=((e.x*3)%7-3)*6;   // the cut left behind by a blink
@@ -2916,6 +3033,7 @@ function render(now){
   if(impactOn(now)&&!DESK&&!CALM){ L.save(); const b=v.board&&!v.breached&&!v.broken?v.board:null, R=b?[b.x0,GY-b.top,b.x1-b.x0,b.top-b.floor]:[-OX-20,-OY/VS-20,VW+40,cv.height/VS+40];
     L.fillStyle='#fff'; L.globalCompositeOperation='destination-over'; L.fillRect(R[0],R[1],R[2],R[3]); L.globalCompositeOperation='difference'; L.fillRect(R[0],R[1],R[2],R[3]); L.restore(); }
   // banners
+  ultDamageDraw(v,now,dt);
   const banner=(t,size,y,col)=>{ L.font=size+'px "Gochi Hand",cursive'; L.textAlign='center'; L.lineWidth=8; const bx=v.board?(v.board.x0+v.board.x1)/2:ARENA_W/2, by=v.board?y-(v.board.floor+Math.max(0,v.board.top-v.board.floor-330)):y; L.strokeStyle='#fffdf6'; L.strokeText(t,bx,by); L.fillStyle=col||'#1c2541'; L.fillText(t,bx,by); };
   if(v.phase==='draw'&&RETRO&&(local[0]||local[1]||!$('overlay').hidden)){ /* a window is open there: the sketchbook, or the join code, which must stay scannable */ }
   else if(v.phase==='draw'){ banner('Round '+v.round+': draw your gear!',40,70);
