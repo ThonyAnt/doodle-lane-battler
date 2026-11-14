@@ -526,7 +526,8 @@ Window titlebars = platforms
       <br>· <b>Rapid fire:</b> with a ranged item, keep tapping after the first shot.
       <br>Each combo move and shot has two animations picked at random. <b>Practice</b> (on this device) has no clock and a dummy that never dies, and lets you swap items at any time.</li>
     <li><b>Fighting styles:</b> a sword, a spear, a hammer or gloves each fight differently, and so do a bow, a gun, a magic staff or something you throw. Tap for a combo; attack while running, in the air, or holding down for other moves.</li>
-    <li><span class="chip fire">fire</span> burns after the hit · <span class="chip water">water</span> slows and shoves · <span class="chip plant">plant</span> heals you for part of the damage · plain ink hits 15% harder.</li>
+    <li><span class="chip fire">fire</span> burns after the hit and halves healing · <span class="chip water">water</span> slows and shoves · <span class="chip plant">plant</span> heals you for part of the damage · plain ink hits 15% harder.</li>
+    <li><b>Match-ups:</b> fire beats plant, plant beats water, water beats fire (+30% against the item your foe is holding, -20% the other way), so swap items to dodge a bad match-up. Fire on a soaked foe bursts into steam (+25%); plant on a soaked foe heals double.</li>
     <li>Shields only block from the front. Your own bombs hurt you too. Snacks heal 3 times per round.</li>
   </ul>
 </main>
@@ -946,7 +947,7 @@ function createDuel(opts){
     winner:-1,champ:-1,ver:0,practice:!!(opts&&opts.practice),inp:[{l:0,r:0,d:0},{l:0,r:0,d:0}],cnt:[{j:0,a:0,b:0,m:0,q:0,u:0},{j:0,a:0,b:0,m:0,q:0,u:0}],
     objs:[],fields:[],groups:[null,null],hack:null,effects:[],broken:null,breached:false,cells:[],time:0,stop:0};
   const PICK={name:'Pick',kind:'melee',style:'pick',el:'none',cost:0,st:Object.assign(itemStats('melee','none',10),{reach:54,dmg:5})};
-  const itemOf=(side,k)=>S.items[side][k]||PUNCH;
+  const itemOf=(side,k)=>S.items[side][k]||PUNCH, EL_BEATS={fire:'plant',plant:'water',water:'fire'};
   // An ultimate always plays out once it has started: nothing the caster or the foe does can cut it short. While casting, a
   // fighter still takes damage but is not staggered, knocked back, flung, disarmed or stunned out of it, and cannot swap
   // their own weapon or dash away by drawing. Only a knockout ends it early.
@@ -1045,6 +1046,14 @@ function createDuel(opts){
     if(tr==='launch') ky=ky>0?ky*1.5:ky===0?240:ky;
     t.od=Math.min(100,t.od+dmg*0.9); if(by&&tr!=='fleet') by.od=Math.min(100,by.od+dmg*1.3);
     if(t.act&&itemOf(t.side,t.act.k).trait==='guard') dmg*=0.92;
+    // Elements against each other: fire beats plant, plant beats water, water beats fire. What counts is the item the
+    // target is holding, so swapping items is a defence. Fire on a soaked fighter flashes to steam.
+    let tag='';
+    if(tr!=='fleet'&&el!=='none'){
+      const tel=itemOf(t.side,t.held).el;
+      if(EL_BEATS[el]===tel){ dmg*=1.3; tag='sup'; } else if(EL_BEATS[tel]===el){ dmg*=0.8; tag='weak'; }
+      if(!blocked&&el==='fire'&&t.slow>0){ dmg*=1.25; t.slow=0; tag='steam'; }
+    }
     if(blocked){
       if(t.shieldTr==='thorns'&&by&&by!==t){ const n=dmg*0.35; by.hp-=n; S.events.push({e:'hit',x:Math.round(by.x),y:Math.round(by.y+52),n:Math.max(1,Math.round(n)),el:'none',side:by.side,hap:'thud',dir:'R'}); }
       dmg*=tr==='pierce'?0.6:0.15; kx*=0.3; ky*=0.3;
@@ -1059,12 +1068,12 @@ function createDuel(opts){
     if(tr==='fleet'&&!blocked) S.stop=Math.max(S.stop,fin?ULT_FINAL:ULT_BEAT);       // an ultimate's blows land one beat at a time
     if(!blocked){
       if(stun>0&&!firm){ t.hurt=Math.max(t.hurt,stun); t.act=null; t.dash=0; }
-      if(el==='fire'){ t.burn=2; t.burnDps=dmg*0.15; }
+      if(el==='fire'){ t.burn=2.5; t.burnDps=dmg*0.12; }          // burning also halves any healing
       if(el==='water') t.slow=1.8;
-      if(el==='plant'&&by&&by.hp>0) by.hp=Math.min(HP,by.hp+dmg*0.3);
+      if(el==='plant'&&by&&by.hp>0){ const grow=t.slow>0; if(grow&&!tag) tag='grow'; by.hp=Math.min(HP,by.hp+dmg*0.3*(grow?2:1)*(by.burn>0?0.5:1)); }   // plants drink from a soaked target
     }
     if(tr==='flurry'&&!blocked) for(const dy of [44,66]) S.events.push({e:'hit',x:Math.round(t.x),y:Math.round(t.y+dy),n:Math.max(1,Math.round(dmg/2)),el,side:t.side,hap:hap||'thud',dir:kx<0?'L':'R'});
-    else S.events.push({e:blocked?'block':'hit',x:Math.round(t.x),y:Math.round(t.y+52),n:Math.max(1,Math.round(dmg)),el,side:t.side,hap:hap||'thud',dir:kx<0?'L':'R',w:+w.toFixed(2),fin:fin&&!blocked?1:0,ult:tr==='fleet'?1:0,d:tr==='fleet'?+dmg.toFixed(2):undefined});
+    else S.events.push({e:blocked?'block':'hit',x:Math.round(t.x),y:Math.round(t.y+52),n:Math.max(1,Math.round(dmg)),el,side:t.side,hap:hap||'thud',dir:kx<0?'L':'R',tag:tag||undefined,w:+w.toFixed(2),fin:fin&&!blocked?1:0,ult:tr==='fleet'?1:0,d:tr==='fleet'?+dmg.toFixed(2):undefined});
     if(tr==='blast'&&!blocked) S.events.push({e:'boom',x:Math.round(t.x),y:Math.round(t.y+45),n:26,el,s:1});
   }
   // Begin a move: the fighter is committed until it ends or chains.
@@ -1092,7 +1101,7 @@ function createDuel(opts){
     else if(it.kind==='dash'){ f.dash=0.2; f.dashHit=false; f.dashItem=it; f.vx=f.face*st.speed; cool(st.cd); S.events.push({e:'dash',x:Math.round(f.x),y:Math.round(f.y+40),side:f.side}); }
     else{
       if(f.uses[k]<=0){ cool(0.4); return; }
-      f.uses[k]--; const n=Math.min(st.heal*HP/100,HP-f.hp); f.hp+=n; cool(st.cd); if(it.trait==='cleanse'){ f.burn=0; f.slow=0; }
+      f.uses[k]--; const n=Math.min(st.heal*HP/100*(f.burn>0?0.5:1),HP-f.hp); f.hp+=n; cool(st.cd); if(it.trait==='cleanse'){ f.burn=0; f.slow=0; }
       S.events.push({e:'heal',x:Math.round(f.x),y:Math.round(f.y+96),n:Math.round(n),side:f.side});
     }
   }
@@ -1187,7 +1196,7 @@ function createDuel(opts){
       const stunned=f.hurt>0||f.stun>0||f.trap>0, dir=stunned?0:inp.r-inp.l;
       if(stunned){ f.vx*=Math.max(0,1-3*dt); f.jq=0; }
       else{
-        if(dir&&!f.act) f.face=dir;
+        if(dir&&(!f.act||(MOVES[f.act.m]&&MOVES[f.act.m].shots))) f.face=dir;   // a fighter can turn mid-volley: the shots still to come follow
         // While committed to a move the fighter can only drift.
         const max=RUN_SPEED*(f.slow>0?0.55:1)*(f.shield>0?(f.shieldMove||0.6):1)*(carries(f.side,'swift')?1.12:1)*(f.overclock>0?1.18:1)*(f.scale<0.85?0.85:1), a=(f.act?(f.ground?900:500):(f.ground?2600:1500))*dt, want=f.act?dir*max*0.3:dir*max;
         if(f.flung<=0) f.vx+=Math.max(-a,Math.min(a,want-f.vx));          // a flung fighter keeps its momentum
@@ -1685,6 +1694,7 @@ function makeBot(side,skillOf){
       if(dy<-60&&f.ground&&f.y>0&&!pressed&&!f.act) down=1;                                                 // drop through the platform
     }
     stuck=mv===-1&&Math.abs(f.vx)<30?stuck+dt:0;
+    if(mv<0&&f.act&&MOVES[f.act.m]&&MOVES[f.act.m].shots) mv=0;     // backing off mid-volley would turn it around and fire the wrong way
     i.r=mv*dir>0?1:0; i.l=mv*dir<0?1:0; i.d=down;
     // ---- the slower thoughts: ultimate, hacks and drawing, a few times a second ----
     think-=dt; if(think>0){ S.setInput(side,i); return; } think=0.35+(0.1-0.35)*d+Math.random()*0.08+0.07;
@@ -2031,7 +2041,7 @@ const KEYS1={KeyA:'l',KeyD:'r',KeyW:'j',KeyS:'d',KeyJ:'a',KeyK:'b',KeyL:'m',KeyQ
 function press(side,k,down){
   const i=inp[side];
   if('lrd'.includes(k)){ if(i[k]===(down?1:0)) return; i[k]=down?1:0; } else if(down){ i[k]++; if(k==='q') i.h=FXI.hackSel; } else return;
-  if(sim) sim.setInput(side,i); else if(net&&net.side===side) post(Object.assign({type:'input',seq:++net.seq},i));
+  if(sim) sim.setInput(side,i); else if(net&&net.side===side) sendInput();
 }
 function keyTarget(code){
   if(mode==='2p') return KEYS1[code]?[0,KEYS1[code]]:KEYS2[code]?[1,KEYS2[code]]:null;
@@ -2045,7 +2055,18 @@ addEventListener('keydown',e=>{ if(e.target.tagName==='INPUT'||e.repeat) return;
 addEventListener('blur',releaseAll); document.addEventListener('visibilitychange',()=>{ if(document.hidden) releaseAll(); });
 // Online, a held or released button is one small request that can be lost on a bad connection, which would leave the
 // fighter running. So the current buttons are sent again a few times a second while a round is on.
-setInterval(()=>{ if(net&&net.side>=0&&view&&(view.phase==='fight'||view.phase==='count')) post(Object.assign({type:'input',seq:++net.seq},inp[net.side])); },350);
+// Only one input request is in the air at a time and it always carries the newest buttons: taps made meanwhile are
+// folded into the next one, sent the moment the first returns. Requests can no longer queue up behind each other (the
+// lag) or arrive after a newer one, and a failed or slow one is retried at once. The server lets go of a held direction
+// if it stops hearing from a controller, so a lost release cannot leave the fighter running.
+let inFly=false, inDirty=false;
+function sendInput(){
+  if(!net||net.side<0) return; if(inFly){ inDirty=true; return; }
+  inFly=true; inDirty=false; const n=net, ctl=new AbortController(), to=setTimeout(()=>ctl.abort(),700); let ok=false;
+  fetch('/duel/act',{method:'POST',headers:{'Content-Type':'application/json'},signal:ctl.signal,body:JSON.stringify(Object.assign({room:n.code,id:cid,type:'input',seq:++n.seq},inp[n.side]))})
+    .then(r=>{ ok=r.ok; }).catch(()=>{}).finally(()=>{ clearTimeout(to); inFly=false; if(net!==n) return; if(!ok) setTimeout(sendInput,80); else if(inDirty) sendInput(); });
+}
+setInterval(()=>{ if(net&&net.side>=0&&view&&(view.phase==='fight'||view.phase==='count')) sendInput(); },150);
 // iPad Safari ignores the viewport's no-zoom setting, so stop the zoom gestures by hand: a second tap soon after the first
 // during a fight (the buttons use pointer events, so they still fire), and pinching at any time.
 let lastTap=0;
@@ -3101,7 +3122,8 @@ function render(now){
     const a=(now-e.t0)/700, y=GY-(e.y||0); L.globalAlpha=1-a;
     if(e.e==='hit'){ L.strokeStyle=e.el==='none'?'#111':PEN[e.el]; L.lineCap='round'; for(let n=0;n<9;n++){ const t=n*Math.PI*2/9+0.23, r0=8+a*33, r1=r0+(1-a)*(n%2?19:31); L.lineWidth=n%2?2:3; L.beginPath(); L.moveTo(e.x+Math.cos(t)*r0,y+Math.sin(t)*r0); L.lineTo(e.x+Math.cos(t)*r1,y+Math.sin(t)*r1); L.stroke(); }
       if(a<0.3){ const g=1-a/0.3, tilt=((e.x*7+e.n*13)%10)/10*1.6-0.8, len=70+e.n*5, cx=Math.cos(tilt), sy=Math.sin(tilt); L.globalAlpha=g; L.fillStyle=e.el==='none'?'#111':PEN[e.el]; L.beginPath(); L.moveTo(e.x-cx*len,y-sy*len); L.lineTo(e.x+sy*5*g,y-cx*5*g); L.lineTo(e.x+cx*len,y+sy*len); L.lineTo(e.x-sy*5*g,y+cx*5*g); L.closePath(); L.fill(); L.fillStyle='#fff'; L.beginPath(); L.moveTo(e.x-cx*len*0.7,y-sy*len*0.7); L.lineTo(e.x+sy*1.6*g,y-cx*1.6*g); L.lineTo(e.x+cx*len*0.7,y+sy*len*0.7); L.lineTo(e.x-sy*1.6*g,y+cx*1.6*g); L.closePath(); L.fill(); L.globalAlpha=1-a; }
-      if(!e.ult){ L.font='26px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=PEN[e.el]; L.fillText('-'+e.n,e.x,y-30-a*30); } }
+      if(!e.ult){ L.font='26px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=PEN[e.el]; L.fillText('-'+e.n,e.x,y-30-a*30);
+        if(e.tag){ L.font=(e.tag==='weak'?'18px':'bold 24px')+' "Gochi Hand",cursive'; L.fillStyle=e.tag==='weak'?'#7b8294':PEN[e.el]; L.fillText({sup:'SUPER!',weak:'resisted',steam:'STEAM!',grow:'OVERGROWN!'}[e.tag],e.x,y-58-a*30); } } }
     else if(e.e==='block'){ L.font='22px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle='#111'; L.fillText('BLOCK',e.x,y-30-a*24); L.strokeStyle='#111'; L.lineWidth=2; L.beginPath(); L.arc(e.x,y,15+a*35,-1.3,1.3); L.stroke(); }
     else if(e.e==='shot'){ if((e.st==='gun'||e.st==='akimbo')&&a<0.14){ L.globalAlpha=1-a/0.14; L.strokeStyle=e.el==='none'?'#111':PEN[e.el]; L.lineCap='round'; for(let n=0;n<7;n++){ const t=(n-3)*0.42, r0=6, r1=(n%2?16:28)*(0.6+a*3); L.lineWidth=n%2?2:3; L.beginPath(); L.moveTo(e.x+Math.cos(t)*r0*e.f,y+Math.sin(t)*r0); L.lineTo(e.x+Math.cos(t)*r1*e.f,y+Math.sin(t)*r1); L.stroke(); } } }
     else if(e.e==='slash'){ if(a<0.4){ const g=1-a/0.4, col=PCOL[e.side], x0=Math.min(e.x,e.x2)-40, x1=Math.max(e.x,e.x2)+40, tilt=((e.x*3)%7-3)*6;   // the cut left behind by a blink

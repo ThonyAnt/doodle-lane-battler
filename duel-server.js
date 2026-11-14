@@ -62,6 +62,9 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
     const now=Date.now();
     for(const room of rooms.values()){
       const dt=Math.min(0.1,(now-room.last)/1000), both=present(room).every(Boolean), S=room.sim; room.last=now;
+      // A controller repeats its buttons several times a second; one that goes quiet with a direction held has lost its release.
+      if(room.heldAt) for(const s of [0,1]) if(room.heldAt[s]&&now-room.heldAt[s]>900){ const b=room.lastIn[s]; room.heldAt[s]=0;
+        S.setInput(s,{l:false,r:false,d:false,j:+b.j||0,a:+b.a||0,b:+b.b||0,m:+b.m||0,q:+b.q||0,u:+b.u||0,h:Math.max(0,Math.min(4,b.h|0))}); }
       if(both){ if(room.bot){ room.bot(S,dt); if(S.phase==='draw'&&!S.ready[1]) S.setReady(1); } S.step(dt); }
       const live=both&&(S.phase==='count'||S.phase==='fight'||S.phase==='end');
       if(room.clients.size&&((live&&now-room.sent>=15)||room.dirty||now-room.sent>=250)){ broadcast(room,'state',S.snapshot()); room.sent=now; room.dirty=false; }
@@ -188,7 +191,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       if(body.type==='input'){
         // Requests can arrive out of order, so only the newest one counts.
         const seq=+body.seq||0; let c=null; for(const x of room.clients) if(x.id===id) c=x;
-        if(c&&seq>c.seq){ c.seq=seq; S.setInput(side,{l:!!body.l,r:!!body.r,d:!!body.d,j:+body.j||0,a:+body.a||0,b:+body.b||0,m:+body.m||0,q:+body.q||0,u:+body.u||0,h:Math.max(0,Math.min(4,body.h|0))}); }
+        if(c&&seq>c.seq){ c.seq=seq; (room.heldAt=room.heldAt||[0,0])[side]=(body.l||body.r||body.d)?Date.now():0; (room.lastIn=room.lastIn||[null,null])[side]=body; S.setInput(side,{l:!!body.l,r:!!body.r,d:!!body.d,j:+body.j||0,a:+body.a||0,b:+body.b||0,m:+body.m||0,q:+body.q||0,u:+body.u||0,h:Math.max(0,Math.min(4,body.h|0))}); }
         send(200,{}); return true;
       }
       if(body.type==='item'){ const [code,out]=await makeItem(room,side,body); send(code,out); return true; }
