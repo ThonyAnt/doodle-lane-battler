@@ -284,6 +284,178 @@ try{
   await atest('a socket for a room that does not exist is told it is gone, and closed',async()=>{ const c=await listenWs('ZZZZ','net-nobody'); await until(()=>c.closed,2000); return [c.names.join()==='gone'&&c.closed,c.names]; });
   await atest('without an upgrade the socket address is an ordinary 404',async()=>(await fetch(HTTP0+'/duel/ws?room='+B+'&id=x')).status===404);
   await atest('the server hands the page wire.js',async()=>{ const r=await fetch(HTTP0+'/wire.js'), text=await r.text(); return r.status===200&&/javascript/.test(r.headers.get('content-type'))&&text===fs.readFileSync(path.join(__dirname,'..','wire.js'),'utf8'); });
+
+  /* ---------- 6. the page's link to its room: the part of duel.html between the NET-PURE marks ---------- */
+  // That part has no DOM in it: the browser's WebSocket and EventSource are handed to it, so stand-ins can be handed here.
+  const netPure=(/\/\*NET-PURE-START\*\/([\s\S]*?)\/\*NET-PURE-END\*\//.exec(src)||[])[1];
+  const P=netPure?new Function(netPure+';return {chooseLink,openLink,linkMeter,linkText};')():{};
+  const pick=o=>P.chooseLink(o);
+  test('?net=ws waits up to 1500 ms, then falls back',()=>pick({param:'ws',opened:false,elapsedMs:1000,closed:false})==='wait'&&pick({param:'ws',opened:false,elapsedMs:1600,closed:false})==='sse');
+  test('?net=ws uses the socket once open, falls back when it closes',()=>pick({param:'ws',opened:true,elapsedMs:200,closed:false})==='ws'&&pick({param:'ws',opened:true,elapsedMs:9000,closed:true})==='sse');
+  test('no parameter and ?net=sse never try, ?net=ws-only never falls back',()=>pick({param:'',opened:true,elapsedMs:0,closed:false})==='sse'&&pick({param:'sse',opened:true,elapsedMs:0,closed:false})==='sse'&&pick({param:'ws-only',opened:false,elapsedMs:9000,closed:true})==='wait');
+  // Beyond the plan's three: the rest of the table.
+  test('the chooser, case by case',()=>{ const want=[
+      ['',false,0,false,'sse'],['',false,5000,true,'sse'],['sse',false,5000,false,'sse'],['nonsense',true,10,false,'sse'],[undefined,true,10,false,'sse'],
+      ['ws',false,0,false,'wait'],['ws',false,1499,false,'wait'],['ws',false,1500,false,'sse'],['ws',false,100,true,'sse'],['ws',true,1,false,'ws'],['ws',true,99999,false,'ws'],['ws',true,5,true,'sse'],
+      ['ws-only',false,0,false,'wait'],['ws-only',false,99999,false,'wait'],['ws-only',true,3,false,'ws'],['ws-only',true,99999,false,'ws'],['ws-only',true,99999,true,'wait'],['ws-only',false,10,true,'wait']];
+    const wrong=want.filter(([param,opened,elapsedMs,closed,link])=>pick({param,opened,elapsedMs,closed})!==link); return [wrong.length===0,wrong]; });
+  // Stand-ins with a clock set by hand: sockets and streams that do nothing until the test makes them.
+  function fakes(){ const F={socks:[],streams:[],timers:[],t:0,got:[],links:[]};
+    F.WebSocket=function(url){ this.url=url; this.readyState=0; this.sent=[]; F.socks.push(this); };
+    F.WebSocket.prototype.send=function(d){ this.sent.push(JSON.parse(d)); }; F.WebSocket.prototype.close=function(){ this.readyState=3; this.shut=true; };
+    F.EventSource=function(url){ this.url=url; this.on={}; F.streams.push(this); };
+    F.EventSource.prototype.addEventListener=function(n,fn){ (this.on[n]=this.on[n]||[]).push(fn); }; F.EventSource.prototype.close=function(){ this.shut=true; };
+    F.setTimeout=(fn,ms)=>{ const t={fn,at:F.t+ms}; F.timers.push(t); return t; }; F.clearTimeout=t=>{ const i=F.timers.indexOf(t); if(i>=0) F.timers.splice(i,1); };
+    F.advance=ms=>{ const end=F.t+ms; for(;;){ const due=F.timers.filter(t=>t.at<=end).sort((a,b)=>a.at-b.at)[0]; if(!due) break; F.timers.splice(F.timers.indexOf(due),1); F.t=due.at; due.fn(); } F.t=end; };
+    F.join=param=>P.openLink({param,wsUrl:'ws://x/duel/ws?room=AAAA&id=me',sseUrl:'/duel/events?room=AAAA&id=me',names:['hello','state','gone'],emit:(n,d)=>F.got.push([n,d]),WebSocket:F.WebSocket,EventSource:F.EventSource,Wire,
+      now:()=>F.t,setTimeout:F.setTimeout,clearTimeout:F.clearTimeout,onLink:l=>F.links.push(l+'@'+F.t)});
+    F.up=s=>{ s.readyState=1; s.onopen({}); }; F.down=s=>{ s.readyState=3; if(s.onclose) s.onclose({}); };
+    F.text=(s,ev,data)=>s.onmessage({data:JSON.stringify({ev,data})}); F.tx=Wire.createSender();
+    F.state=(s,snap)=>{ const f=F.tx.frame(snap,1700000000000+F.t); s.onmessage({data:f.buffer}); for(const m of s.sent.splice(0)){ if(m.ack!==undefined) F.tx.ack(m.ack); (F.sent=F.sent||[]).push(m); } return Wire.header(f).kind; };
+    return F; }
+  const snapN=i=>Wire.clone(SNAPS[i]);
+  test('with no parameter the event stream is opened at once and no socket is ever made',()=>{ const F=fakes(), L=F.join(''); F.advance(5000); const es=F.streams[0]; es.on.hello[0]({data:'{"side":0}'}); es.on.state[0]({data:JSON.stringify(snapN(0))});
+    return [F.socks.length===0&&F.streams.length===1&&es.url==='/duel/events?room=AAAA&id=me'&&F.links.join()==='sse@0'&&L.link==='sse'&&Object.keys(es.on).join()==='hello,state,gone'&&F.got.map(g=>g[0]).join()==='hello,state'&&F.got[0][1].side===0&&L.send({t:'input',seq:1})===false&&F.timers.length===0,F.links]; });
+  test('?net=sse is the same',()=>{ const F=fakes(); F.join('sse'); return F.socks.length===0&&F.streams.length===1&&F.links.join()==='sse@0'; });
+  test('?net=ws: the socket carries events and states, and no event stream is opened',()=>{ const F=fakes(), L=F.join('ws'), s=F.socks[0]; const before=[L.link,L.send({t:'input',seq:1})]; F.advance(40); F.up(s); F.text(s,'hello',{side:1}); const kinds=[0,1,2,3,4,5,6,7].map(i=>F.state(s,snapN(i))); F.advance(60000);
+    const states=F.got.filter(g=>g[0]==='state').map(g=>g[1]);
+    return [before.join()===',false'&&s.url==='ws://x/duel/ws?room=AAAA&id=me'&&s.binaryType==='arraybuffer'&&F.streams.length===0&&F.links.join()==='ws@40'&&L.link==='ws'&&F.got[0][0]==='hello'&&F.got[0][1].side===1&&states.length===8&&states.every((v,i)=>JSON.stringify(v)===JSON.stringify(SNAPS[i]))&&kinds.join('')==='12222222',{links:F.links,kinds}]; });
+  test('it says which state it holds: the first at once, then every third, and with every input',()=>{ const F=fakes(), L=F.join('ws'), s=F.socks[0]; F.up(s); for(let i=0;i<5;i++) F.state(s,snapN(i)); const sentOk=L.send({t:'input',seq:77,r:1}); F.sent.push(...s.sent.splice(0)); for(let i=5;i<9;i++) F.state(s,snapN(i));
+    const acks=F.sent.filter(m=>m.t!=='ping').map(m=>m.t+':'+m.ack+(m.seq?':'+m.seq:'')); return [sentOk===true&&acks.join()==='ack:1,ack:4,input:5:77,ack:8',acks]; });
+  test('a snapshot handed to the page is the page\'s own: marking its events does not spoil the next',()=>{ const F=fakes(); F.join('ws'); const s=F.socks[0]; F.up(s); let good=true;
+    for(let i=0;i<40;i++){ F.state(s,snapN(i)); const v=F.got[F.got.length-1][1]; good=good&&JSON.stringify(v)===JSON.stringify(SNAPS[i]); for(const e of v.ev) e.t0=5; v.f[0].x=-1; v.ev.push({e:'x'}); } return good; });
+  test('?net=ws: no answer within 1500 ms and the event stream takes over; a socket that opens later is ignored',()=>{ const F=fakes(), L=F.join('ws'), s=F.socks[0]; F.advance(1499); const waiting=F.streams.length===0&&L.link===''; F.advance(10);
+    const es=F.streams[0], fell=F.links.join(); if(s.onopen){ s.readyState=1; s.onopen({}); } if(s.onmessage) F.text(s,'hello',{side:0}); es.on.hello[0]({data:'{"side":1}'}); F.advance(60000);
+    return [waiting&&F.streams.length===1&&/^sse@15\d\d$/.test(fell)&&s.shut===true&&L.link==='sse'&&F.links.length===1&&F.got.length===1&&F.got[0][1].side===1&&F.socks.length===1,F.links]; });
+  test('?net=ws: a refused socket falls back at once',()=>{ const F=fakes(), L=F.join('ws'); F.advance(30); F.socks[0].onerror({}); F.down(F.socks[0]); F.advance(60000); return [F.links.join()==='sse@30'&&F.streams.length===1&&F.socks.length===1&&L.link==='sse',F.links]; });
+  test('?net=ws: a socket that closes mid-match falls back, and inputs stop going to it',()=>{ const F=fakes(), L=F.join('ws'), s=F.socks[0]; F.advance(20); F.up(s); F.state(s,snapN(0)); F.advance(5000); const sentBefore=L.send({t:'input',seq:1}); F.down(s); F.advance(60000);
+    return [sentBefore===true&&L.send({t:'input',seq:2})===false&&F.links.join()==='ws@20,sse@5020'&&F.streams.length===1&&F.socks.length===1,F.links]; });
+  test('?net=ws: a frame that cannot be followed drops the socket for the event stream',()=>{ const F=fakes(), L=F.join('ws'), s=F.socks[0]; F.up(s); F.state(s,snapN(0)); s.onmessage({data:Uint8Array.from([2,9,5,1,0]).buffer}); return [L.link==='sse'&&s.shut===true&&F.streams.length===1,F.links]; });
+  test('?net=ws-only never falls back: it waits, and tries again a second after a socket closes',()=>{ const F=fakes(), L=F.join('ws-only'); F.advance(30000); const patient=F.streams.length===0&&F.socks.length===1&&L.link==='';
+    F.up(F.socks[0]); F.state(F.socks[0],snapN(0)); F.advance(1000); F.down(F.socks[0]); const during=[L.link,L.send({t:'input',seq:1})]; F.advance(999); const notYet=F.socks.length===1; F.advance(2);
+    const again=F.socks[1]; F.tx=Wire.createSender(); F.up(again); const kind=F.state(again,snapN(5)); again.onerror({}); F.down(again); F.advance(1001);
+    return [patient&&during.join()===',false'&&notYet&&F.socks.length===3&&F.streams.length===0&&kind===1&&JSON.stringify(F.got[F.got.length-1][1])===JSON.stringify(SNAPS[5])&&F.links.join()==='ws@30000,@31000,ws@32001,@32001',F.links]; });
+  test('closing the link closes whatever is open and nothing happens afterwards',()=>{ const F=fakes(), L=F.join('ws'), s=F.socks[0]; F.up(s); const onmsg=s.onmessage; L.close(); if(onmsg) onmsg({data:JSON.stringify({ev:'hello',data:{}})}); F.down(s); F.advance(60000);
+    const G=fakes(), M=G.join(''); const es=G.streams[0]; M.close(); es.on.hello[0]({data:'{}'}); const H=fakes(), N=H.join('ws'); N.close(); H.advance(60000);
+    return [s.shut===true&&F.streams.length===0&&F.got.length===0&&F.socks.length===1&&L.send({t:'input'})===false&&es.shut===true&&G.got.length===0&&H.streams.length===0&&H.socks[0].shut===true,[F.links,G.links,H.links]]; });
+  test('the round trip is timed with a ping every two seconds, and the pong never reaches the page',()=>{ const F=fakes(), L=F.join('ws'), s=F.socks[0]; F.up(s); F.sent=[];
+    for(let i=0;i<300;i++){ F.advance(1000/60); F.state(s,snapN(i)); const ping=F.sent.filter(m=>m.t==='ping').pop(); if(ping&&!ping.done){ ping.done=true; F.advance(0); const at=ping.ms; F.setTimeout(()=>F.text(s,'pong',{ms:at}),42); } }
+    const st=L.stats(), pings=F.sent.filter(m=>m.t==='ping').length; return [pings>=2&&pings<=4&&Math.abs(st.rttMs-42)<17&&st.link==='ws'&&st.kbps>0.5&&st.kbps<20&&st.jitterMs<1&&!F.got.some(g=>g[0]==='pong'),st]; });
+  test('the status line reads like "ws · 42 ms · ±3 ms · 2.1 kB/s"',()=>[P.linkText({link:'ws',rttMs:41.6,jitterMs:3.2,kbps:2.14})==='ws · 42 ms · ±3 ms · 2.1 kB/s'&&P.linkText({link:'sse',rttMs:-1,jitterMs:0,kbps:0})==='sse · -- ms · ±0 ms · 0.0 kB/s'&&P.linkText({link:'',rttMs:-1,jitterMs:0,kbps:0})==='connecting',P.linkText({link:'ws',rttMs:41.6,jitterMs:3.2,kbps:2.14})]);
+  test('the meter: bytes a second, and jitter as the unevenness of arrivals against the sender\'s clock',()=>{ const m=P.linkMeter(); for(let i=0;i<240;i++) m.got(100,i*16+(i%2?6:0),true,5000+i*16); const a=m.read();
+    const n=P.linkMeter(); for(let i=0;i<240;i++) n.got(100,i*16,true,5000+i*16); const b=n.read(); const k=P.linkMeter(); for(let i=0;i<240;i++) k.got(2000,i*16+(i%2?6:0),true,0); const c=k.read();
+    return [Math.abs(a.kbps-6.25)<0.3&&a.jitterMs>4&&a.jitterMs<7&&b.jitterMs<0.01&&Math.abs(c.kbps-125)<6&&c.jitterMs>3&&c.jitterMs<7&&a.rttMs===-1,[a,b,c]]; });
+
+  // The same code against the real server: the browser's two classes stood in for by ws.js's client and an http request.
+  function NodeWebSocket(url){ const me=this; me.readyState=0; NodeWebSocket.made.push(me);
+    W.connect(url).then(sock=>{ if(me.readyState>1){ sock.close(); return; } me.sock=sock; me.readyState=1; if(me.onopen) me.onopen({});
+      sock.on('message',(data,isBinary)=>{ if(me.onmessage) me.onmessage({data:isBinary?data.buffer.slice(data.byteOffset,data.byteOffset+data.length):data}); });
+      sock.on('close',()=>{ me.readyState=3; if(me.onclose) me.onclose({}); }); },()=>{ if(me.readyState>1) return; me.readyState=3; if(me.onerror) me.onerror({}); if(me.onclose) me.onclose({}); }); }
+  NodeWebSocket.made=[]; NodeWebSocket.prototype.send=function(d){ this.sock.send(d); }; NodeWebSocket.prototype.close=function(){ this.readyState=2; if(this.sock) this.sock.close(); };
+  function NodeEventSource(url){ const me=this; me.on={}; NodeEventSource.made.push(me);
+    me.req=http.get(HTTP0+url,res=>{ res.setEncoding('utf8'); let buf=''; res.on('data',chunk=>{ buf+=chunk; for(let i;(i=buf.indexOf('\n\n'))>=0;){ const msg=buf.slice(0,i); buf=buf.slice(i+2); const ev=(/^event: (.*)$/m.exec(msg)||[])[1], data=(/^data: (.*)$/m.exec(msg)||[])[1]; if(ev&&data) for(const fn of me.on[ev]||[]) fn({data}); } }); }); me.req.on('error',()=>{}); }
+  NodeEventSource.made=[]; NodeEventSource.prototype.addEventListener=function(n,fn){ (this.on[n]=this.on[n]||[]).push(fn); }; NodeEventSource.prototype.close=function(){ this.req.destroy(); };
+  // A device with the page's link: opens it to a room as the page does and keeps what the page would be handed.
+  const device=(room,id,param,wsBase)=>{ const d={names:[],state:null,hello:[],links:[],t0:Date.now(),seq:Date.now()}, q='room='+room+'&id='+id;
+    d.line=P.openLink({param,wsUrl:(wsBase||WS0+'/duel/ws')+'?'+q,sseUrl:'/duel/events?'+q,names:['hello','players','state','item','reset','forge','plats','gone'],emit:(n,v)=>{ d.names.push(n); if(n==='state') d.state=v; if(n==='hello') d.hello.push(v); if(n==='gone') d.line.close(); },      // (the page closes its link when the room is gone)
+      WebSocket:NodeWebSocket,EventSource:NodeEventSource,Wire,now:()=>Date.now(),setTimeout,clearTimeout,onLink:l=>d.links.push([l,Date.now()-d.t0])});
+    d.press=o=>d.line.send(Object.assign({t:'input',seq:++d.seq},HELD,o)); return d; };
+  const deadEnd=net.createServer(()=>{}); await new Promise(r=>deadEnd.listen(0,'127.0.0.1',r));      // takes the connection and never answers: a proxy that swallows upgrades
+  const C=(await post('/duel/room?forge=0')).body.code, actC=(id,o)=>post('/duel/act',Object.assign({room:C,id},o));
+  { const made=()=>[NodeWebSocket.made.length,NodeEventSource.made.length].join();
+    const one=device(C,'link-one','ws'); await until(()=>one.hello.length&&one.state,3000); const madeOne=made();
+    const two=device(C,'link-two',''); await until(()=>two.hello.length&&two.state,3000); const madeTwo=made();
+    await atest('with ?net=ws the page\'s link plays the room over the socket; with no parameter, over the event stream',()=>[one.links.length===1&&one.links[0][0]==='ws'&&one.links[0][1]<1000&&one.hello[0].side===0&&madeOne==='1,0'&&two.links.length===1&&two.links[0][0]==='sse'&&two.links[0][1]<50&&two.hello[0].side===1&&madeTwo==='1,1'&&one.names.slice(0,3).join()==='hello,players,state',[one.links,two.links,madeOne,madeTwo]]);
+    for(const id of ['link-one','link-two']){ await actC(id,{type:'stock',slot:0,key:'sword',el:'none'}); await actC(id,{type:'ready'}); }
+    await until(()=>one.state.phase==='fight'&&two.state.phase==='fight',8000); await sleep(150);
+    await atest('both see the same fight, and a button pressed on the socket link moves its fighter',async()=>{ const same=Math.abs(one.state.f[0].x-two.state.f[0].x)<12&&Math.abs(one.state.t-two.state.t)<0.05, x0=one.state.f[0].x, sent=one.press({r:true}), viaStream=two.press({l:true}); await sleep(400); const x1=one.state.f[0].x; one.press({});
+      await sleep(300); const st=one.line.stats(); return [same&&sent===true&&viaStream===false&&x1-x0>40&&Math.abs(two.state.f[0].x-one.state.f[0].x)<12&&st.link==='ws'&&st.kbps>0.3&&st.kbps<15,{x0,x1,st}]; });
+    // Blue's socket dies under it (a tablet that slept, a network that dropped it): the page's link moves to the event stream and the seat is kept.
+    const sock=NodeWebSocket.made[0].sock, n0=one.hello.length; sock.terminate(); await until(()=>one.hello.length>n0&&one.line.link==='sse',3000); await sleep(300);
+    await atest('when the socket dies mid-match the link falls back to the event stream and the player keeps the seat',async()=>{ const t=one.state.t; await sleep(300);
+      return [one.links.map(l=>l[0]).join()==='ws,sse'&&one.hello[one.hello.length-1].side===0&&one.state.phase==='fight'&&one.state.t<t&&one.press({r:true})===false&&made()==='1,2',[one.links,one.hello.length]]; });
+    one.line.close(); two.line.close();
+    const lost=device(C,'link-lost','ws','ws://127.0.0.1:'+deadEnd.address().port+'/duel/ws'); await until(()=>lost.hello.length&&lost.state,4000);
+    await atest('a network that swallows the upgrade: the link is on the event stream within 1.5 s and the room is all there',()=>[lost.links.length===1&&lost.links[0][0]==='sse'&&lost.links[0][1]>=1400&&lost.links[0][1]<1900&&lost.hello[0].code===C&&lost.state.phase==='fight'&&lost.names.includes('item'),lost.links]);
+    const shut=device(C,'link-shut','ws',WS0+'/duel/nows'); await until(()=>shut.hello.length&&shut.state,4000);
+    await atest('a server that refuses the upgrade: the link falls back straight away',()=>[shut.links.length===1&&shut.links[0][0]==='sse'&&shut.links[0][1]<800&&shut.state.phase==='fight',shut.links]);
+    const only=device(C,'link-only','ws-only','ws://127.0.0.1:'+deadEnd.address().port+'/duel/ws'), streams=NodeEventSource.made.length; await sleep(2000);
+    await atest('?net=ws-only against the same dead end never opens the event stream',()=>[only.links.length===0&&only.hello.length===0&&NodeEventSource.made.length===streams,only.links]);
+    lost.line.close(); shut.line.close(); only.line.close();
+    const gone=device('ZZZZ','link-gone','ws'); await until(()=>gone.names.includes('gone'),2000); const sockets=NodeWebSocket.made.length; await sleep(1700);
+    await atest('a room that is gone says so over the socket, and a link the page then closes does not come back',()=>[gone.names.join()==='gone'&&NodeEventSource.made.length===streams&&NodeWebSocket.made.length===sockets,gone.names]);
+  }
+  deadEnd.close();
+
+  /* ---------- 7. the page itself, in a pretend browser, in a real room ---------- */
+  // Just enough of a browser for the page's own script to start, join the room in its address and run frames with
+  // nothing on the screen (after the one in tools/test-replay.js). Its fetch, WebSocket and EventSource reach the
+  // child server; its timers are real. Returns get(expression) to read the page's variables, frames(n), text(id) for
+  // an element found with querySelector('#id'), posts (the requests it made) and stop().
+  function fakePage(search,hash){
+    const root=path.join(__dirname,'..'), script=/<script>\n([\s\S]*?)<\/script>/.exec(src)[1], vm=require('vm');
+    const known=new Set(), ids=new Map(), noteIds=t=>{ for(const m of String(t).matchAll(/\bid="([^"${}]+)"/g)) known.add(m[1]); };
+    noteIds(src.slice(0,src.indexOf('<script')));
+    const el=preset=>{ const store=Object.assign({},preset), q=new Proxy(function(){},{
+      get(t,k){ if(k===Symbol.toPrimitive) return ()=>0; if(k===Symbol.iterator) return function*(){}; if(k==='then'||typeof k==='symbol') return undefined;
+        if(!(k in store)) store[k]=k==='children'||k==='childNodes'?[]:k==='querySelectorAll'?(()=>{ const two=[el({hidden:false}),el({hidden:false})]; return ()=>two; })():el(); return store[k]; },
+      set(t,k,v){ store[k]=v; if(k==='id'){ known.add(v); ids.set(v,q); } if(k==='innerHTML') noteIds(v); return true; },
+      apply(){ return el(); }, construct(){ return el(); } }); return q; };
+    const byId=id=>known.has(id)?(ids.get(id)||(ids.set(id,el(id==='arena'?{clientWidth:960,clientHeight:440,width:960,height:440}:{hidden:false})),ids.get(id))):null;
+    const frames=[], timers=new Set(), posts=[], keep=()=>{ const m=new Map(); return {getItem:k=>m.has(k)?m.get(k):null,setItem:(k,v)=>{ m.set(k,String(v)); },removeItem:k=>{ m.delete(k); }}; };
+    const ctx={console,URLSearchParams,URL,AbortController,
+      setTimeout:(f,ms)=>{ const t=setTimeout(f,ms); timers.add(t); return t; },clearTimeout:t=>clearTimeout(t),setInterval:(f,ms)=>{ const t=setInterval(f,ms); timers.add(t); return t; },clearInterval:t=>clearInterval(t),
+      document:el({getElementById:byId,querySelector:sel=>{ const m=/^#([\w-]+)$/.exec(sel); return m?(known.add(m[1]),byId(m[1])):el(); },createElement:()=>el({hidden:false}),currentScript:{textContent:script},title:'',hidden:false}),
+      location:{search,hash,pathname:'/duel',protocol:'http:',hostname:'127.0.0.1',host:'127.0.0.1:'+PORT,origin:HTTP0,href:HTTP0+'/duel'+search+hash},
+      history:{replaceState(){},pushState(){}}, navigator:{userAgent:'node',maxTouchPoints:0}, performance:{now:()=>performance.now()},
+      requestAnimationFrame:f=>{ frames.push(f); return frames.length; }, cancelAnimationFrame(){},
+      fetch:(url,opts)=>{ if(opts&&opts.method==='POST'&&opts.body) try{ posts.push(JSON.parse(opts.body)); }catch(e){} return fetch(/^https?:/.test(url)?url:HTTP0+url,opts); },
+      WebSocket:NodeWebSocket, EventSource:NodeEventSource, Wire, ForgeScript:require('../forgescript.js'),
+      ResizeObserver:function(){ return {observe(){},disconnect(){}}; }, MutationObserver:function(){ return {observe(){},disconnect(){}}; },
+      matchMedia:()=>({matches:false,addEventListener(){},addListener(){}}), innerWidth:1200, innerHeight:800, devicePixelRatio:1,
+      sessionStorage:keep(), localStorage:keep(), addEventListener(){}, removeEventListener(){}, alert(){}, getComputedStyle:()=>el(), Image:function(){ return el(); }, Audio:function(){ return el(); }};
+    ctx.window=ctx; ctx.self=ctx; ctx.globalThis=ctx; vm.createContext(ctx);
+    const run=(code,name)=>vm.runInContext(code,ctx,{filename:name});
+    for(const f of ['anim/core','anim/locomotion','anim/blade','anim/bow','anim/gun','anim/spear','anim/hammer','anim/fist','anim/staff','anim/hurl','anim/dual','anim/akimbo','anim/ultimate','inkshop'])
+      run(fs.readFileSync(path.join(root,f+'.js'),'utf8'),f+'.js');
+    run(script,'duel.html script');
+    return {get:expr=>run(expr,'probe'), posts, text:id=>String(byId(id)&&byId(id).textContent),
+      async frames(n){ for(let i=0;i<n;i++){ await new Promise(r=>setImmediate(r)); for(const f of frames.splice(0)) f(performance.now()); await sleep(16); } },
+      stop(){ try{ run('if(net){ net.line.close(); net=null; }','stop'); }catch(e){} for(const t of timers){ clearTimeout(t); clearInterval(t); } }};
+  }
+  { const R=(await post('/duel/room?forge=0')).body.code, actR=(id,o)=>post('/duel/act',Object.assign({room:R,id},o)); let onWs=null, onSse=null;
+    try{
+      onWs=fakePage('?net=ws','#'+R); await until(()=>onWs.get('!!net&&net.side')===0,3000);
+      onSse=fakePage('','#'+R); await until(()=>onSse.get('!!net&&net.side')===1,3000);
+      await atest('the page with ?net=ws joins its room over the socket; without it, over the event stream as before',()=>[onWs.get('NET_LINK')==='ws'&&onWs.get('net.link')==='ws'&&onWs.get('net.side')===0&&onSse.get('NET_LINK')===''&&onSse.get('net.link')==='sse'&&onSse.get('net.side')===1&&onWs.get('net.present.join()')==='true,true'&&onWs.get('view.phase')==='draw',[onWs.get('net.link'),onSse.get('net.link')]]);
+      for(const pg of [onWs,onSse]){ const id=pg.get('cid'); await actR(id,{type:'stock',slot:0,key:'sword',el:'none'}); await actR(id,{type:'ready'}); }
+      await until(()=>onWs.get('view.phase')==='fight'&&onSse.get('view.phase')==='fight',8000); await sleep(100);
+      await atest('items and the fight reach both pages alike',()=>{ const a=onWs.get('JSON.stringify([view.items,view.wins,view.round,!!art[0][0],!!art[1][0]])'), b=onSse.get('JSON.stringify([view.items,view.wins,view.round,!!art[0][0],!!art[1][0]])');
+        return [a===b&&/Sword/.test(a)&&/true,true\]$/.test(a)&&Math.abs(onWs.get('view.t')-onSse.get('view.t'))<0.05,a.slice(-40)]; });
+      // Blue holds right for 1.6 s. Its page sends the press at once over the socket and repeats it every 150 ms, so the
+      // server (which lets go of a direction it has not heard about for 0.9 s) keeps it running to the end.
+      const x=()=>onWs.get('view.f[0].x'), n0=onWs.posts.length, x0=x(); onWs.get("press(0,'r',true)"); await sleep(400); const x1=x(); await sleep(800); const x2=x(); await sleep(400); const x3=x();
+      onWs.get("press(0,'r',false)"); await sleep(350); const x4=x(); await sleep(250); const x5=x();
+      await atest('a key pressed in the ?net=ws page runs the fighter, with no request made',()=>[x1-x0>40&&onWs.posts.slice(n0).filter(b=>b.type==='input').length===0,[x0,x1]]);
+      await atest('held, it is repeated over the socket, so the server never takes it for a lost release',()=>[x3-x2>80&&x3-x0>400,[x0,x2,x3]]);
+      await atest('released, the fighter stops, and both pages show it in the same place',()=>[Math.abs(x5-x4)<1&&Math.abs(onSse.get('view.f[0].x')-x5)<1,[x4,x5]]);
+      const y=()=>onSse.get('view.f[1].x'), m0=onSse.posts.length, y0=y(); onSse.get("press(1,'l',true)"); await sleep(1500); const y1=y(); onSse.get("press(1,'l',false)"); await sleep(400); const y2=y(); await sleep(250);
+      await atest('the page without the parameter still plays by requests: pressed, repeated, released',()=>{ const sent=onSse.posts.slice(m0).filter(b=>b.type==='input'); return [y0-y1>400&&Math.abs(y()-y2)<1&&sent.length>=6&&sent.every(b=>b.room===R)&&Math.abs(onWs.get('view.f[1].x')-y())<1,[y0,y1,y2,sent.length]]; });
+      await onWs.frames(8); await onSse.frames(8); await sleep(1200); await onWs.frames(3); await onSse.frames(3);
+      await atest('frames draw without a fault, and the status bar names the link with its numbers',()=>{ const a=onWs.text('st-net'), b=onSse.text('st-net');
+        return [new RegExp('NetLink: room '+R+' · ws · \\d+ ms · ±\\d+ ms · \\d+\\.\\d kB/s$').test(a)&&new RegExp('NetLink: room '+R+' · sse · \\d+ ms · ±\\d+ ms · \\d+\\.\\d kB/s$').test(b),[a,b]]; });
+      await atest('the socket page receives a small fraction of what the event-stream page does',()=>{ const a=onWs.get('net.line.stats()'), b=onSse.get('net.line.stats()'); return [a.kbps>0.5&&a.kbps<0.25*b.kbps,[+a.kbps.toFixed(2),+b.kbps.toFixed(2)]]; });
+      // A rematch from the socket page (a request, like every act that is not a button): both pages are reset.
+      onWs.get("post({type:'rematch'})"); await until(()=>onWs.get('view.phase')==='draw'&&onSse.get('view.phase')==='draw'&&onWs.get('!art[0][0]')&&onSse.get('!art[0][0]'),3000);
+      await atest('a rematch asked for by the socket page resets both pages',()=>onWs.get('view.phase')==='draw'&&onSse.get('view.phase')==='draw'&&onWs.get('!art[0][0]&&!art[1][0]')&&onSse.get('!art[0][0]&&!art[1][0]')&&onWs.posts.some(b=>b.type==='rematch'));
+      // Leaving the room closes the link (the page's own way out: another mode).
+      const sockets=NodeWebSocket.made.filter(w=>w.readyState===1).length; onWs.get("setMode('bot')"); await sleep(200);
+      await atest('leaving the room closes its socket',()=>[onWs.get('net')===null&&NodeWebSocket.made.filter(w=>w.readyState===1).length===sockets-1,sockets]);
+    }catch(e){ ok('the page tests ran',false,String(e&&e.stack||e).slice(0,600)); }
+    finally{ if(onWs) onWs.stop(); if(onSse) onSse.stop(); } }
+  // The whole page, in a pretend browser good enough to load its script: does it parse, and does ?net= reach the link?
+  test('the page loads wire.js before its own script, and every inline script parses',()=>{ const re=/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g; let m, n=0; while((m=re.exec(src))){ new Function(m[1]); n++; }
+    return [n>=1&&src.indexOf('<script src="/wire.js"></script>')>0&&src.indexOf('<script src="/wire.js"></script>')<src.indexOf('/*DUEL-START*/'),n]; });
 }catch(e){ ok('the room tests ran',false,String(e&&e.stack||e)); }
 finally{ stop(); }
 
