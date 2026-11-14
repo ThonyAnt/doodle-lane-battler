@@ -1272,7 +1272,8 @@ function createDuel(opts){
     if(BOARD&&S.broken&&BOARD.floor>12) a.push({x0:BOARD.x0,x1:BOARD.x1,y:BOARD.floor});
     return a;
   }
-  // The stage each round: inside an art board, his three sketched ledges and a crate.
+  // The stage each round: inside an art board, his three sketched ledges. (It used to start with a crate in the middle too;
+  // players can still draw one.)
   // Take a weapon back out of the Recycle Bin, unless something else has been put in that hand meanwhile.
   function unbin(b){
     const i=(S.bins||[]).indexOf(b); if(i<0) return; S.bins.splice(i,1);
@@ -1289,7 +1290,6 @@ function createDuel(opts){
     const b=BOARD, w=b.x1-b.x0, fl=-b.floor;
     const sk=(x0,x1,y)=>{ const pts=INK.densify([{x:x0,y},{x:x1,y:y+rand(-2,2)}],6).map(p=>({x:p.x,y:p.y+rand(-1.2,1.2)})); addObj({kind:'platform',x:x0,y,w:x1-x0,strokes:[pts],color:'#8a8f99',life:Infinity}); };
     sk(b.x0+w*0.1,b.x0+w*0.32,fl-120); sk(b.x0+w*0.68,b.x0+w*0.9,fl-120); sk(b.x0+w*0.4,b.x0+w*0.6,fl-215);
-    spawnCrate(INK.toPts(INK.T.crate,b.x0+w*0.5,fl-19,0.85,1,0.8),'#8a8f99',-1,'crate',Infinity);
   }
   // Where things are: the arena width, the art board (or none), and the ledges. Sent by whatever is showing the fight.
   S.setLayout=L=>{
