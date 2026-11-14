@@ -1733,7 +1733,7 @@ function makeBot(side,skillOf){
 //   20 whether the foe holds a ranged weapon                       21,22 its overdrive and the foe's /100
 //   23,24,25 the nearest shot coming its way: there is one, how far towards the foe /480, how far above its feet /200
 //   26 distance to the wall behind it /480                         27 round clock /full time
-const NET_SHAPE=[28,24,16,8], NET_SIZE=NET_SHAPE.reduce((n,k,i,a)=>i?n+a[i-1]*k+k:0,0);     // 1,232 weights
+const NET_SHAPE=[28,24,16,8];      // 28*24+24 + 24*16+16 + 16*8+8 = 1,232 weights
 const net4=v=>v>4?4:v<-4?-4:v;
 // Writes the 28 numbers into o starting at `at` (no allocation: the bot calls this ten times a second per fighter in training).
 function botSee(S,side,o,at){

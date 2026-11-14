@@ -141,10 +141,10 @@ async function main(){
     await score(some,k); const t0=now(), b=await score(some,k), rps=b.tot.rounds/(now()-t0), gen=POP*ROUNDS/rps;
     console.log('speed: at least '+Math.round(rps)+' rounds/s on '+WORKERS+' workers, measured cold; a generation ('+POP*ROUNDS+' rounds) takes at most '+(gen<10?gen.toFixed(1):Math.round(gen))+' s'+(Number.isFinite(HOURS)?', so '+HOURS+' h is '+Math.round(HOURS*3600/gen)+' generations or more':'')); }
 
-  const started=now(), lastGen=state.gen+GENS; let why='';
+  const deadline=Date.now()+HOURS*3600e3, lastGen=state.gen+GENS; let why='';      // by the wall clock: time asleep counts, so it ends when you expect it to
   while(!stopping){
     if(state.gen>=lastGen){ why='done: '+GENS+' generation'+(GENS===1?'':'s')+' this run'; break; }
-    if(now()-started>=HOURS*3600){ why='time is up ('+HOURS+' h)'; break; }
+    if(Date.now()>=deadline){ why='time is up ('+HOURS+' h)'; break; }
     const t0=now(), g=state.gen+1;
     const {fit,tot}=await score(ES.esAsk(state,{pop:POP,sigma:SIGMA}),ROUNDS);
     const next=ES.esTell(state,fit,{lr:LR,decay:DECAY,sigma:SIGMA});
