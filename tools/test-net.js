@@ -361,9 +361,9 @@ try{
     me.req=http.get(HTTP0+url,res=>{ res.setEncoding('utf8'); let buf=''; res.on('data',chunk=>{ buf+=chunk; for(let i;(i=buf.indexOf('\n\n'))>=0;){ const msg=buf.slice(0,i); buf=buf.slice(i+2); const ev=(/^event: (.*)$/m.exec(msg)||[])[1], data=(/^data: (.*)$/m.exec(msg)||[])[1]; if(ev&&data) for(const fn of me.on[ev]||[]) fn({data}); } }); }); me.req.on('error',()=>{}); }
   NodeEventSource.made=[]; NodeEventSource.prototype.addEventListener=function(n,fn){ (this.on[n]=this.on[n]||[]).push(fn); }; NodeEventSource.prototype.close=function(){ this.req.destroy(); };
   // A device with the page's link: opens it to a room as the page does and keeps what the page would be handed.
-  const device=(room,id,param,wsBase)=>{ const d={names:[],state:null,hello:[],links:[],t0:Date.now(),seq:Date.now()}, q='room='+room+'&id='+id;
+  const device=(room,id,param,wsBase,Socket)=>{ const d={names:[],state:null,hello:[],links:[],t0:Date.now(),seq:Date.now()}, q='room='+room+'&id='+id;
     d.line=P.openLink({param,wsUrl:(wsBase||WS0+'/duel/ws')+'?'+q,sseUrl:'/duel/events?'+q,names:['hello','players','state','item','reset','forge','plats','gone'],emit:(n,v)=>{ d.names.push(n); if(n==='state') d.state=v; if(n==='hello') d.hello.push(v); if(n==='gone') d.line.close(); },      // (the page closes its link when the room is gone)
-      WebSocket:NodeWebSocket,EventSource:NodeEventSource,Wire,now:()=>Date.now(),setTimeout,clearTimeout,onLink:l=>d.links.push([l,Date.now()-d.t0])});
+      WebSocket:Socket||NodeWebSocket,EventSource:NodeEventSource,Wire,now:()=>Date.now(),setTimeout,clearTimeout,onLink:l=>d.links.push([l,Date.now()-d.t0])});
     d.press=o=>d.line.send(Object.assign({t:'input',seq:++d.seq},HELD,o)); return d; };
   const deadEnd=net.createServer(()=>{}); await new Promise(r=>deadEnd.listen(0,'127.0.0.1',r));      // takes the connection and never answers: a proxy that swallows upgrades
   const C=(await post('/duel/room?forge=0')).body.code, actC=(id,o)=>post('/duel/act',Object.assign({room:C,id},o));
@@ -390,6 +390,24 @@ try{
     const gone=device('ZZZZ','link-gone','ws'); await until(()=>gone.names.includes('gone'),2000); const sockets=NodeWebSocket.made.length; await sleep(1700);
     await atest('a room that is gone says so over the socket, and a link the page then closes does not come back',()=>[gone.names.join()==='gone'&&NodeEventSource.made.length===streams&&NodeWebSocket.made.length===sockets,gone.names]);
   }
+  // Newer Node has a WebSocket of its own, written by other people to the same standard the browsers follow. It is the
+  // nearest thing to a browser here: does it get through this server's handshake, and does the page's link work with it?
+  if(typeof WebSocket==='function'){
+    const E=(await post('/duel/room?forge=0')).body.code;
+    await atest('Node\'s own WebSocket shakes hands with this server, reads its frames and is answered',async()=>{ const ws=new WebSocket(WS0+'/duel/ws?room='+E+'&id=builtin'), rx=Wire.createReceiver(), got={names:[],kinds:[],state:null,open:false,closed:false,error:null}; ws.binaryType='arraybuffer';
+      ws.onopen=()=>{ got.open=true; }; ws.onclose=()=>{ got.closed=true; }; ws.onerror=e=>{ got.error=String(e&&e.message||'error'); };
+      ws.onmessage=e=>{ if(typeof e.data==='string'){ const m=JSON.parse(e.data); got.names.push(m.ev); got[m.ev]=m.data; return; } const r=rx.read(new Uint8Array(e.data)); got.kinds.push(r.kind); got.state=r.snap; ws.send(JSON.stringify({t:'ack',ack:r.seq})); };
+      await until(()=>got.kinds.length>=3,3000); if(got.open) ws.send(JSON.stringify({t:'ping',ms:7})); await until(()=>got.pong,1000); const big='x'.repeat(70000); if(got.open) ws.send(JSON.stringify({t:'nothing',pad:big})); await sleep(100); const alive=!got.closed; ws.close(); await until(()=>got.closed,2000);
+      return [got.open&&got.hello&&got.hello.side===0&&got.names.slice(0,2).join()==='hello,players'&&got.kinds[0]===1&&got.kinds[2]===2&&got.state.phase==='draw'&&got.pong&&got.pong.ms===7&&alive&&got.closed&&got.error===null,{names:got.names,kinds:got.kinds,error:got.error}]; });
+    const viaOwn=device(E,'builtin','ws',null,WebSocket); await until(()=>viaOwn.hello.length&&viaOwn.names.filter(n=>n==='state').length>=3,3000);
+    await atest('the page\'s link over Node\'s own WebSocket: open, hello, states, and a message sent',()=>[viaOwn.links.length===1&&viaOwn.links[0][0]==='ws'&&viaOwn.hello[0].side===0&&viaOwn.state.phase==='draw'&&viaOwn.press({})===true,viaOwn.links]);
+    const taker=await listenWs(E,'builtin'); await until(()=>viaOwn.line.link==='sse'&&viaOwn.hello.length>=2,3000);
+    await atest('closed by the server (its seat\'s socket was replaced), it falls back to the event stream',()=>[viaOwn.links.map(l=>l[0]).join()==='ws,sse'&&viaOwn.hello[viaOwn.hello.length-1].side===0,viaOwn.links]);
+    taker.close(); viaOwn.line.close();
+    const stuck=device(E,'builtin-2','ws','ws://127.0.0.1:'+deadEnd.address().port+'/duel/ws',WebSocket), refused=device(E,'builtin-3','ws',WS0+'/duel/nows',WebSocket); await until(()=>stuck.hello.length&&refused.hello.length,4000);
+    await atest('and with it too, a swallowed upgrade falls back within 1.5 s and a refused one at once',()=>[stuck.links.length===1&&stuck.links[0][0]==='sse'&&stuck.links[0][1]>=1400&&stuck.links[0][1]<1900&&refused.links.length===1&&refused.links[0][0]==='sse'&&refused.links[0][1]<800,[stuck.links,refused.links]]);
+    stuck.line.close(); refused.line.close();
+  } else console.log('     (this Node has no WebSocket of its own, so the tests with an independent client were left out)');
   deadEnd.close();
 
   /* ---------- 7. the page itself, in a pretend browser, in a real room ---------- */
@@ -415,7 +433,7 @@ try{
       history:{replaceState(){},pushState(){}}, navigator:{userAgent:'node',maxTouchPoints:0}, performance:{now:()=>performance.now()},
       requestAnimationFrame:f=>{ frames.push(f); return frames.length; }, cancelAnimationFrame(){},
       fetch:(url,opts)=>{ if(opts&&opts.method==='POST'&&opts.body) try{ posts.push(JSON.parse(opts.body)); }catch(e){} return fetch(/^https?:/.test(url)?url:HTTP0+url,opts); },
-      WebSocket:NodeWebSocket, EventSource:NodeEventSource, Wire, ForgeScript:require('../forgescript.js'),
+      WebSocket:typeof WebSocket==='function'?WebSocket:NodeWebSocket, EventSource:NodeEventSource, Wire, ForgeScript:require('../forgescript.js'),      // Node's own WebSocket where it has one: the nearest thing here to a browser's
       ResizeObserver:function(){ return {observe(){},disconnect(){}}; }, MutationObserver:function(){ return {observe(){},disconnect(){}}; },
       matchMedia:()=>({matches:false,addEventListener(){},addListener(){}}), innerWidth:1200, innerHeight:800, devicePixelRatio:1,
       sessionStorage:keep(), localStorage:keep(), addEventListener(){}, removeEventListener(){}, alert(){}, getComputedStyle:()=>el(), Image:function(){ return el(); }, Audio:function(){ return el(); }};
@@ -454,8 +472,8 @@ try{
       onWs.get("post({type:'rematch'})"); await until(()=>onWs.get('view.phase')==='draw'&&onSse.get('view.phase')==='draw'&&onWs.get('!art[0][0]')&&onSse.get('!art[0][0]'),3000);
       await atest('a rematch asked for by the socket page resets both pages',()=>onWs.get('view.phase')==='draw'&&onSse.get('view.phase')==='draw'&&onWs.get('!art[0][0]&&!art[1][0]')&&onSse.get('!art[0][0]&&!art[1][0]')&&onWs.posts.some(b=>b.type==='rematch'));
       // Leaving the room closes the link (the page's own way out: another mode).
-      const sockets=NodeWebSocket.made.filter(w=>w.readyState===1).length; onWs.get("setMode('bot')"); await sleep(200);
-      await atest('leaving the room closes its socket',()=>[onWs.get('net')===null&&NodeWebSocket.made.filter(w=>w.readyState===1).length===sockets-1,sockets]);
+      const before=onSse.get('net.present.join()'); onWs.get("setMode('bot')"); await until(()=>onSse.get('net.present.join()')==='false,true',2000);
+      await atest('leaving the room closes its socket: the other page sees the seat empty',()=>[onWs.get('net')===null&&before==='true,true'&&onSse.get('net.present.join()')==='false,true',before]);
     }catch(e){ ok('the page tests ran',false,String(e&&e.stack||e).slice(0,600)); }
     finally{ if(onWs) onWs.stop(); if(onSse) onSse.stop(); } }
   // The whole page, in a pretend browser good enough to load its script: does it parse, and does ?net= reach the link?
