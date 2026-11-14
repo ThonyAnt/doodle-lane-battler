@@ -26,6 +26,8 @@
 <script src="anim/fist.js"></script>
 <script src="anim/staff.js"></script>
 <script src="anim/hurl.js"></script>
+<script src="anim/dual.js"></script>
+<script src="anim/akimbo.js"></script>
 <script src="anim/ultimate.js"></script>
 <script>
 // Usage:
@@ -45,8 +47,9 @@ function at(t){ let acc=0; for(let i=0;i<seq.length;i++){ const c=ANIM.clips[seq
 function figure(x,y,k,time,alpha){
   const w=at(time), s=ANIM.sample(w.clip,w.t), kind=w.clip.weapon;
   g.save(); g.translate(x,y); g.scale(k,k); g.globalAlpha=alpha;
-  const tl=kind==='blade'?bladeLen:ANIM.placeholderLen[kind]; if(alpha===1&&tl) ANIM.trail(g,w.clip,w.t,tl);
-  ANIM.draw(g,s,{col:alpha===1?'#111':'#888',weapon:(c,ss)=>(ANIM.placeholder[kind]||ANIM.placeholder.none)(c,ss,bladeLen)});
+  const tl=kind==='blade'?bladeLen:ANIM.placeholderLen[kind], two=kind==='dual'||kind==='akimbo', hold=(c,ss)=>(ANIM.placeholder[kind]||ANIM.placeholder.none)(c,ss,bladeLen);
+  if(alpha===1&&tl){ ANIM.trail(g,w.clip,w.t,tl); if(two) ANIM.trail(g,w.clip,w.t,tl,null,true); }
+  ANIM.draw(g,s,{col:alpha===1?'#111':'#888',weapon:hold,weapon2:two?hold:null});
   g.restore(); return w;
 }
 function marksBetween(a,b){ const out=[]; let acc=0; for(const n of seq){ const c=ANIM.clips[n]; for(const m of c.marks){ const mt=acc+m.t; if(mt>a&&mt<=b) out.push(m.type.toUpperCase()); } acc+=c.dur; } return out; }

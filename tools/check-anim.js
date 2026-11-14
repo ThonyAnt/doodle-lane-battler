@@ -2,7 +2,7 @@
 // and that no clip puts a foot or hand through the floor. Run: node tools/check-anim.js
 const fs=require('fs'), path=require('path'), root=path.join(__dirname,'..');
 global.window=global;
-for(const f of ['core','locomotion','blade','bow','gun','spear','hammer','fist','staff','hurl','ultimate']) { const file=path.join(root,'anim',f+'.js'); if(fs.existsSync(file)) require(file); }
+for(const f of ['core','locomotion','blade','bow','gun','spear','hammer','fist','staff','hurl','dual','akimbo','ultimate']) { const file=path.join(root,'anim',f+'.js'); if(fs.existsSync(file)) require(file); }
 const src=fs.readFileSync(path.join(root,'duel.html'),'utf8');
 const D=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {MOVES,ALT};')();
 let bad=0; const fail=m=>{ bad++; console.log('FAIL '+m); };
