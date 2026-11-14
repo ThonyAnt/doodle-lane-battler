@@ -257,8 +257,9 @@ module.exports=function({D,ForgeScript:FS,ask,now,retryMs,onNew}){
   const SAY={num:'numbers',str:'text',bool:'true/false'}, ARG={num:'n',str:'text',bool:'b',who:'who'};
   const call=(name,t)=>{ const m=/^fn\((.*?)\)(?::(\w+))?$/.exec(t); return name+'('+(m[1]?m[1].split(',').map(a=>ARG[a.trim()]||a.trim()).join(', '):'')+')'+(m[2]==='bool'?' (true/false)':''); };
   function members(name,o){      // "numbers x y; text element; calls shot.reflect(n) ..."
-    const by={num:[],str:[],bool:[]}, fns=[]; for(const k of Object.keys(o)){ const t=o[k]; if(by[t]) by[t].push(k); else if(typeof t==='string'&&t.startsWith('fn')) fns.push(call(name+'.'+k,t)); }
-    return Object.keys(by).filter(t=>by[t].length).map(t=>SAY[t]+' '+by[t].join(' ')).concat(fns.length?[fns.join(' ')]:[]).join('; ');
+    const by={num:[],str:[],bool:[]}, fns=[], keys=Object.keys(o), bare=keys.every(k=>typeof o[k]==='string'&&o[k].startsWith('fn'));      // bare: nothing but functions (Math), named once
+    for(const k of keys){ const t=o[k]; if(by[t]) by[t].push(k); else if(typeof t==='string'&&t.startsWith('fn')) fns.push(call(bare?k:name+'.'+k,t)); }
+    return Object.keys(by).filter(t=>by[t].length).map(t=>SAY[t]+' '+by[t].join(' ')).concat(fns.length?[fns.join(' ')+(bare?', written '+name+'.'+keys[0]+'(n)':'')]:[]).join('; ');
   }
   function names(o,keys){
     const lines=[], objs=new Map(), nums=[], fns=[];
@@ -290,13 +291,13 @@ module.exports=function({D,ForgeScript:FS,ask,now,retryMs,onNew}){
     '- At most '+FS.LIMITS.chars+' characters. Values are numbers, true/false and text; text + number is an error.',
     '- mem.name keeps a value between runs of the same rule: lowercase names, 0 until set, emptied every round.',
     '',
-    'Everything the code can name (nothing else exists):',
+    'Everything the code can name (nothing else exists). Apart from mem it is all read-only: things change only through the calls.',
     apiText(),
     '',
     'What they mean. Anything past a limit is cut down to it:',
     '- me is whoever holds item a, foe the other. x runs 0 to '+WIDE+' left to right, y is height above the floor, vx and vy are px/s, face is 1 (right) or -1 (left), hp is out of '+HP+'.',
     '- mine is item a, theirs item b. kind: '+KINDS.join(' ')+'. element: '+ELS.join(' ')+'. power, range, speed: 1 to 9.',
-    '- dist: px between us. time: seconds into the round. chance(p): true with probability p. who is the bare name me or foe.',
+    '- dist: px between us. time: seconds into the round. chance(p): true with probability p (there is no Math.random). who is the bare name me or foe.',
     '- push(who, vx, vy): throws them at that speed, vy upward, at most '+FL.pushX+' each way; push(foe, me.face * 300, 150) knocks the foe away from me.',
     '- burn(who, s), soak(who, s): on fire, or slowed, for at most '+FL.burn+' s. stun(who, s): frozen for at most '+FL.stun+' s, '+FL.stunBudget+' s a round.',
     '- heal(who, hp), hurt(who, hp): at most '+FL.heal+' a call, and a rule heals and hurts at most '+FL.hpBudget+' in all a round.',
@@ -304,12 +305,11 @@ module.exports=function({D,ForgeScript:FS,ask,now,retryMs,onNew}){
     '- shot.reflect(f): sends it back at f times its speed ('+R(FL.reflect)+') as mine. shot.destroy(): gone. shot.slow(f): '+R(FL.slow)+'. shot.power(f): its damage times '+R(FL.shotPower)+'. shot.turn(deg): bends its path, upward if positive, '+R(FL.turn)+'. shot.bomb: it is a bomb.',
     '- hit.scale(f): multiplies my blow\'s damage, '+R(FL.hitScale)+'. hit.damage is what it would do.',
     '',
-    'Reply with JSON only, 2 or 3 rules, in this shape:',
-    '{"rules":[{"name":"...","blurb":"...","a":"blue.0","b":"red.0","on":"swat","cooldown":1,"code":"..."}]}',
+    'Reply with JSON only: {"rules":[...]} holding 2 or 3 rules, each shaped as in the example below.',
     '- name: at most 22 characters. blurb: one sentence, at most 70. a and b: "<blue|red>.<0|1>", on different sides. cooldown: seconds between two firings, '+R(FL.cooldown)+'. code: one string.',
     '- Give each player an interaction: at most two rules may have a on the same side.',
     '- Prefer the physically obvious and the funny: what would these two things really do to each other?',
-    '- Write rules that happen in ordinary play. A rule only fires when its code calls an effect, so do something every time, or under a condition that is usually true. Keep effects small.',
+    '- Write rules that happen in ordinary play. A rule only fires when its code calls an effect, so do something every time, or under a condition that is usually true. Keep effects small and code short: a condition and one to three calls.',
     '- say() is a short shout in capitals.',
     '',
     'Example, for blue.0 Tennis Racket (melee), blue.1 Torch (melee, fire), red.0 Ball (ranged), red.1 Ice Cream (heal):',
@@ -352,8 +352,8 @@ module.exports=function({D,ForgeScript:FS,ask,now,retryMs,onNew}){
   }
   const rawSide=r=>{ const m=/^\s*(blue|red)\./i.exec(r&&typeof r.a==='string'?r.a:''); return m?SIDES.indexOf(m[1].toLowerCase()):-1; };
   const label=r=>cleanName(r&&r.name)||'(a rule with no name)';
-  // Rules for these items: {rules:[rule with source ('ai', 'repaired' or 'built-in') and checks], ms, calls}. Never
-  // rejects. The same items are answered from memory; two asks at once share one forge. Rules are at most three, at
+  // Rules for these items: {rules:[rule with source ('ai', 'repaired' or 'built-in') and checks], ms, calls, log}, log
+  // being what went wrong on the way, in words. Never rejects. The same items are answered from memory; two asks at once share one forge. Rules are at most three, at
   // most two of them with a on the same side.
   function forgeRules(items,opts){
     const its=cleanItems(items), none={rules:[],ms:0,calls:0};
