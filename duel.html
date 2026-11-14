@@ -729,8 +729,38 @@ const MOVES={
   throw:    {dur:0.22,end:1},
   // The ultimate, paid for with a full overdrive bar: the fighter floats up, copies of the held drawing fan out behind
   // them one by one, and from `cast` on they fly at the foe in turn. A stunning hit before `cast` breaks it off.
-  fleet:    {dur:1.5,fleet:1,cast:0.62,end:1}
+  fleet:    {dur:1.5,ult:1,fleet:1,cast:0.62,end:1},
+  // The other casting moves (see ULTS): a leaping slam, a rushing flurry, a blink-and-cut, a braced shot, and guns out to both sides.
+  ult_slam: {dur:1.15,ult:1,cast:0.56,end:1},
+  ult_rush: {dur:1.1,ult:1,cast:0.3,end:1},
+  ult_dash: {dur:1.05,ult:1,cast:0.36,end:1},
+  ult_shoot:{dur:1.2,ult:1,cast:0.5,end:1},
+  ult_akimbo:{dur:1.2,ult:1,cast:0.45,end:1}
 };
+// Every weapon style has its own ultimate. They all cost a full overdrive bar and are all worth FLEET_DMG if everything
+// lands, so they differ in shape and in how the foe gets out of the way, not in strength. `move` is the casting move,
+// `kind` picks the behaviour in ultStep, min / max are the distances at which the bot will try it. Drawings that are
+// not weapons (bomb, shield, wings, snack) use the blade's.
+//   fan     copies gather in a fan overhead and fly at the foe one by one, curving a little
+//   rain    copies line up high above the foe and dive at wherever the foe is, one by one, without curving
+//   ring    copies circle the fighter and all let go at once, curving
+//   meteor  one big orb drops on the spot where the foe stood at the cast and bursts
+//   quake   a leap and a slam; a shock wave runs along the ground both ways (jump it)
+//   rush    a lunge and eight quick blows up close
+//   cross   three blinks through the foe, a cut each time, if the foe is near enough
+//   pierce  one huge arrow straight ahead
+//   storm   twelve bullets in a tight spray
+//   fire    six shots to the front and six to the back
+const ULTS={
+  blade:{name:'INK FLEET',move:'fleet',kind:'fan'},     spear:{name:'INK RAIN',move:'fleet',kind:'rain'},
+  hurl:{name:'STAR RING',move:'fleet',kind:'ring'},      staff:{name:'METEOR',move:'fleet',kind:'meteor'},
+  hammer:{name:'EARTHSHAKER',move:'ult_slam',kind:'quake',min:0,max:520},
+  fist:{name:'HUNDRED HANDS',move:'ult_rush',kind:'rush',min:0,max:300},
+  dual:{name:'CROSS CUT',move:'ult_dash',kind:'cross',min:0,max:420},
+  bow:{name:'SKY PIERCER',move:'ult_shoot',kind:'pierce'}, gun:{name:'BULLET STORM',move:'ult_shoot',kind:'storm'},
+  akimbo:{name:'CROSSFIRE',move:'ult_akimbo',kind:'fire',min:60}
+};
+const ultOf=it=>(it&&ULTS[it.style])||ULTS.blade;
 const FLEET_DMG=30, FLEET_GAP=0.09, FLEET_SPEED=1150;   // damage of the whole volley (shared between the copies), time between launches, flight speed
 // What a melee or ranged drawing is fought with. Each style has its own moves and animation set.
 const RUN_SPEED=330;   // top ground speed in px/s; fighters reach it in about an eighth of a second
@@ -935,17 +965,24 @@ function createDuel(opts){
     if(i.q!==undefined&&i.q!==c.q){ c.q=i.q; S.startHack(side,i.h|0); }       // run the selected hack
     if(i.u!==undefined&&i.u!==c.u){ c.u=i.u; S.startUlt(side); }              // the ultimate
   };
-  // The ultimate: a fleet of copies of the held drawing (or the other one, if that hand is empty). More ink in the
-  // drawing means more copies, but the volley's total damage is fixed, so ink buys spread and spectacle, not damage.
+  // The ultimate of the held drawing (or of the other one, if that hand is empty); see ULTS. Where it throws copies of the
+  // drawing, more ink means more copies, but the total damage is fixed, so ink buys spread and spectacle, not damage.
   S.startUlt=side=>{
-    const f=S.f[side], e=S.f[1-side]; if(S.phase!=='fight'||f.od<100||f.hp<=0||f.stun>0||f.hurt>0||f.trap>0||f.dash>0||(f.act&&f.act.m==='fleet')) return false;
+    const f=S.f[side], e=S.f[1-side]; if(S.phase!=='fight'||f.od<100||f.hp<=0||f.stun>0||f.hurt>0||f.trap>0||f.dash>0||(f.act&&MOVES[f.act.m].ult)) return false;
     const k=S.items[side][f.held]?f.held:S.items[side][1-f.held]?1-f.held:-1; if(k<0) return false;
-    const it=S.items[side][k], n=Math.max(3,Math.min(7,3+Math.floor(it.cost/12)));
+    const it=S.items[side][k], U=ultOf(it), copies=Math.max(3,Math.min(7,3+Math.floor(it.cost/12))), n={fan:copies,rain:copies,ring:copies+1,rush:8,cross:3,storm:12,fire:6}[U.kind]||1;
     f.od=0; f.held=k; f.shield=0; f.buf[0]=f.buf[1]=0; if(e.x!==f.x) f.face=Math.sign(e.x-f.x);
-    f.act={k,m:'fleet',v:0,t:0,dur:MOVES.fleet.dur,rate:1,done:0,lunged:false,n};
+    f.act={k,m:U.move,u:U.kind,v:0,t:0,dur:MOVES[U.move].dur,rate:1,done:0,lunged:false,n};
     S.stop=Math.max(S.stop,0.3);                                              // the world holds its breath
-    S.events.push({e:'ult',side,x:Math.round(f.x),y:Math.round(f.y),n},{e:'flash',text:'INK FLEET',sub:(side?'Red':'Blue')+' calls up '+n+' × '+it.name,side},{e:'log',side,msg:'✦ INK FLEET — '+n+' copies of '+it.name});
+    S.events.push({e:'ult',side,x:Math.round(f.x),y:Math.round(f.y),n},{e:'flash',text:U.name,sub:(side?'Red':'Blue')+'’s '+it.name,side},{e:'log',side,msg:'✦ '+U.name+' — '+it.name});
     return true;
+  };
+  // For the move tester page (/moves): start any ordinary move outright, whatever the fighter is doing. Practice only, so
+  // it can never be used in a match. alt picks the move's second animation where it has one.
+  S.play=(side,m,alt)=>{
+    const f=S.f[side]; if(!S.practice||S.phase!=='fight'||!MOVES[m]||MOVES[m].ult) return false;
+    f.act=null; f.hurt=0; f.stun=0; f.dash=0; if(/_air$/.test(m)&&f.ground){ f.y+=120; f.vy=160; f.ground=false; f.jumps=1; }
+    startMove(f,f.held,m); if(alt!==undefined&&ALT.includes(m)) f.act.v=alt?1:0; return true;
   };
   // fin marks the last hit of a finishing move or a charged shot: it freezes the fight a little longer and the screen flashes.
   function hurt(t,dmg,el,kx,ky,by,fromX,stun,tr,hap,fin){
@@ -972,7 +1009,7 @@ function createDuel(opts){
     const w=blocked?0:Math.min(1,dmg/20+(fin?0.3:0));
     if(stun>0&&!blocked) S.stop=Math.max(S.stop,0.03+0.07*w);
     if(!blocked){
-      if(stun>0){ if(t.act&&t.act.m==='fleet'&&t.act.t<MOVES.fleet.cast) t.od=Math.max(t.od,50);   // an ultimate broken off gives half the bar back
+      if(stun>0){ if(t.act&&MOVES[t.act.m].ult&&t.act.t<MOVES[t.act.m].cast) t.od=Math.max(t.od,50);   // an ultimate broken off gives half the bar back
         t.hurt=Math.max(t.hurt,stun); t.act=null; t.dash=0; }
       if(el==='fire'){ t.burn=2; t.burnDps=dmg*0.15; }
       if(el==='water') t.slow=1.8;
@@ -1012,17 +1049,55 @@ function createDuel(opts){
     }
   }
   // Advance the fighter's current move: lunges, hits, shots, chaining and the end.
+  // One step of an ultimate (see ULTS). a.n is how many pieces it has, a.done how many are out; each is worth an equal
+  // share of FLEET_DMG, and the last one carries `fin`. Everything it hits with is marked tr:'fleet', which also keeps
+  // the caster's own overdrive from refilling off it.
+  function ultStep(f,a,M,it,e,k){
+    const U=a.u, n=a.n, t=a.t, each=FLEET_DMG/n;
+    const shot=o=>S.pr.push(Object.assign({id:nextId++,k:'shot',side:f.side,slot:k,el:it.el,tr:'fleet',stun:0.16,kb:60,grav:0,dmg:each,life:1.3,ttl:1.3},o));
+    const bang=(x,y,st,dir)=>S.events.push({e:'shot',x:Math.round(x),y:Math.round(y),st,side:f.side,f:dir,el:it.el});
+    if(U==='fan'||U==='rain'||U==='ring'){
+      // The copies appear one at a time through the wind-up and wait in formation (see projectiles) until their turn.
+      while(a.done<n&&t>=0.1+a.done*(M.cast-0.26)/n){ const j=a.done++, last=j===n-1, o={st:'fleet',x:f.x,y:f.y+62,vx:0,vy:0,hover:1,own:f,ang:Math.PI/2,kb:last?240:60,fin:last?1:0,ttl:9};
+        if(U==='fan') Object.assign(o,{th:(n>1?j/(n-1)-0.5:0)*2.2,go:M.cast+j*FLEET_GAP,home:1});
+        else if(U==='ring') Object.assign(o,{th:j/n*Math.PI*2,ring:1,go:M.cast+j*0.02,home:1});
+        else{ if(a.x0===undefined){ a.x0=e.x; a.y0=e.y; }
+          const fx=Math.max(20,Math.min(W-20,a.x0+f.face*(j-(n-1)/2)*58)); Object.assign(o,{fx,fy:a.y0+340,x:fx,y:a.y0+420,rest:-Math.PI/2,go:M.cast+j*0.1,sp:1400}); }
+        shot(o); }
+    }else if(U==='storm'){
+      while(a.done<n&&t>=M.cast+a.done*0.045){ const j=a.done++, last=j===n-1, aim=Math.sin(j*2.4)*0.07;
+        shot({st:'gun',x:f.x+f.face*48,y:f.y+71,vx:f.face*1000*Math.cos(aim),vy:1000*Math.sin(aim),stun:0.1,kb:last?260:30,fin:last?1:0,life:0.7,ttl:0.7});
+        f.vx-=f.face*18; bang(f.x+f.face*62,f.y+71,'gun',f.face); }
+    }else if(U==='fire'){
+      while(a.done<n&&t>=M.cast+a.done*0.08){ const j=a.done++, last=j===n-1;
+        for(const dir of [1,-1]){ shot({st:'akimbo',x:f.x+dir*46,y:f.y+68,vx:dir*950,vy:0,stun:0.1,kb:last?260:30,fin:last?1:0,life:0.7,ttl:0.7}); bang(f.x+dir*60,f.y+68,'akimbo',dir); } }
+    }else if(U==='rush'){
+      if(t>=M.cast&&!a.cast){ a.cast=1; f.vx=f.face*900; S.events.push({e:'dash',x:Math.round(f.x),y:Math.round(f.y+40),side:f.side}); }
+      if(a.cast&&Math.abs(e.x-f.x)<60&&Math.abs(e.y-f.y)<84) f.vx*=0.2;                 // close enough: stop and hit
+      while(a.done<n&&t>=M.cast+0.1+a.done*0.065){ const j=a.done++, last=j===n-1, dx=(e.x-f.x)*f.face;
+        if(dx>-24&&dx<86&&Math.abs(e.y-f.y)<84) hurt(e,each,it.el,f.face*(last?460:20),last?300:0,f,f.x,0.2,'fleet',undefined,last?1:0); }
+    }else if(U==='cross'){
+      // Each pass: if the foe is near enough, appear on their far side with a cut through them.
+      while(a.done<n&&t>=M.cast+a.done*0.2){ const j=a.done++, last=j===n-1, dx=e.x-f.x;
+        if(Math.abs(dx)>=460||Math.abs(e.y-f.y)>=110) continue;
+        const side=Math.sign(dx)||f.face, from=f.x; f.x=Math.max(18,Math.min(W-18,e.x+side*66)); f.y=e.y; f.vx=f.vy=0; f.face=-side;
+        S.events.push({e:'slash',x:Math.round(from),y:Math.round(e.y+58),x2:Math.round(f.x),side:f.side});
+        hurt(e,each,it.el,last?-side*380:0,last?320:0,f,from,0.24,'fleet',undefined,last?1:0); }
+    }else{
+      if(U==='quake'){ if(!a.hop&&t>=0.1){ a.hop=1; f.vy=540; f.ground=false; } if(a.hop&&t>=0.4&&t<M.cast&&!f.ground) f.vy=Math.min(f.vy,-1500); f.vx*=0.8; }
+      if(t>=M.cast&&!a.cast){ a.cast=1; a.done=n;
+        if(U==='meteor') S.pr.push({id:nextId++,k:'bomb',st:'meteor',side:f.side,slot:k,x:e.x,y:Math.min(e.y+540,BOARD&&!S.broken&&!S.breached?BOARD.top-30:1e9),vx:0,vy:-1150,grav:0,dmg:FLEET_DMG,el:it.el,kb:420,radius:120,tr:'fleet',fin:1,ttl:2});
+        else if(U==='quake'){ S.events.push({e:'quake',x:Math.round(f.x),y:Math.round(f.y),n:150});
+          for(const dir of [1,-1]) shot({st:'wave',big:1,x:f.x+dir*24,y:f.y+8,vx:dir*760,vy:0,dmg:FLEET_DMG,kb:320,lift:420,stun:0.3,fin:1,life:0.75,ttl:0.75}); }
+        else{ shot({st:'bow',big:3,x:f.x+f.face*40,y:f.y+72,vx:f.face*1500,vy:0,dmg:FLEET_DMG,kb:520,stun:0.3,fin:1,life:0.9,ttl:0.9}); f.vx-=f.face*300; bang(f.x+f.face*44,f.y+72,'bow',f.face); }
+      }
+    }
+    if(t>=a.dur){ f.act=null; f.cd[k]=f.cdMax[k]=0.25; }
+  }
   function act(f,dt){
     const a=f.act, M=MOVES[a.m], it=a.m==='mine'?PICK:itemOf(f.side,a.k), st=it.st, e=S.f[1-f.side], k=a.k, sty=STYLE[it.style]||STYLE.blade;
     a.t+=dt*a.rate;
-    if(M.fleet){
-      // The copies appear one at a time through the wind-up, spread in a fan above the fighter, and wait there (see projectiles).
-      while(a.done<a.n&&a.t>=0.1+a.done*(M.cast-0.26)/a.n){ const j=a.done++;
-        S.pr.push({id:nextId++,k:'shot',st:'fleet',side:f.side,slot:k,x:f.x,y:f.y+62,vx:0,vy:0,hover:1,own:f,th:(a.n>1?j/(a.n-1)-0.5:0)*2.2,go:M.cast+j*FLEET_GAP,ang:Math.PI/2,
-          dmg:FLEET_DMG/a.n,el:it.el,kb:j===a.n-1?240:60,stun:0.16,tr:'fleet',fin:j===a.n-1?1:0,life:1.3,ttl:9}); }
-      if(a.t>=a.dur){ f.act=null; f.cd[k]=f.cdMax[k]=0.25; }
-      return;
-    }
+    if(M.ult){ ultStep(f,a,M,it,e,k); return; }
     if(M.lunge&&!a.lunged&&a.t>=(M.lungeAt||0.04)){ a.lunged=true; if(f.ground) f.vx=f.face*Math.max(Math.abs(f.vx)*0.5,M.lunge); }
     const marks=M.hits||M.shots||[];
     while(a.done<marks.length&&a.t>=marks[a.done]){
@@ -1107,14 +1182,15 @@ function createDuel(opts){
       if(p.hover){
         // A copy from the ultimate, waiting in the fan. ang is where it points (0 = right, positive = up).
         const o=p.own, a=o.act;
-        if(!a||a.m!=='fleet'||o.hp<=0){ S.events.push({e:'puff',x:Math.round(p.x),yd:Math.round(-p.y),col:'#999',n:5}); p.ttl=0; continue; }   // broken off: it dissolves
-        const tx=o.x+Math.sin(p.th)*122, ty=o.y+64+Math.cos(p.th)*106, q=Math.min(1,dt*14), aim=Math.atan2(e.y+50-p.y,e.x-p.x), rest=Math.PI/2-p.th;
+        if(!a||!MOVES[a.m].ult||o.hp<=0){ S.events.push({e:'puff',x:Math.round(p.x),yd:Math.round(-p.y),col:'#999',n:5}); p.ttl=0; continue; }   // broken off: it dissolves
+        // fan: spread above the caster; ring: all round them; rain (fx, fy): a fixed row high above where the foe stood
+        const R=p.ring?[104,92,112]:[122,106,64], tx=p.fx!==undefined?p.fx:o.x+Math.sin(p.th)*R[0], ty=p.fx!==undefined?p.fy:o.y+R[2]+Math.cos(p.th)*R[1], q=Math.min(1,dt*14), aim=Math.atan2(e.y+50-p.y,e.x-p.x), rest=p.rest!==undefined?p.rest:Math.PI/2-p.th;
         p.x+=(tx-p.x)*q; p.y+=(ty-p.y)*q;
         const u=Math.max(0,Math.min(1,(a.t-(p.go-0.24))/0.18)), turn=((aim-rest+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI; p.ang=rest+turn*u*u*(3-2*u);
-        if(a.t>=p.go){ p.hover=0; p.ang=aim; p.vx=Math.cos(aim)*FLEET_SPEED; p.vy=Math.sin(aim)*FLEET_SPEED; p.ttl=p.life; S.events.push({e:'zip',x:Math.round(p.x),y:Math.round(p.y),side:p.side}); }
+        if(a.t>=p.go){ p.hover=0; p.ang=aim; p.vx=Math.cos(aim)*(p.sp||FLEET_SPEED); p.vy=Math.sin(aim)*(p.sp||FLEET_SPEED); p.ttl=p.life; S.events.push({e:'zip',x:Math.round(p.x),y:Math.round(p.y),side:p.side}); }
         continue;
       }
-      if(p.st==='fleet'&&e.hp>0){   // light homing: it can curve a little toward the foe, not chase them down
+      if(p.home&&e.hp>0){   // light homing: it can curve a little toward the foe, not chase them down
         const sp=Math.hypot(p.vx,p.vy)||1, cur=Math.atan2(p.vy,p.vx), d=((Math.atan2(e.y+50-p.y,e.x-p.x)-cur+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI, a2=cur+Math.max(-1.6*dt,Math.min(1.6*dt,d));
         p.vx=Math.cos(a2)*sp; p.vy=Math.sin(a2)*sp;
       }
@@ -1133,16 +1209,16 @@ function createDuel(opts){
       }
       if(e.bubble&&p.k!=='bomb'&&Math.hypot(p.x-e.x,p.y-(e.y+55))<e.bubble.r){ p.vx*=-1; p.vy*=-0.5; p.side=e.side; e.bubble.hp--; if(e.bubble.hp<=0) e.bubble=null; ring(p.x,-p.y,'#2bd'); log(e,'shield reflected a projectile'); continue; }
       if(p.k!=='bomb'){
-        if(touch){ hurt(e,p.dmg,p.el,Math.sign(p.vx)*p.kb,90,S.f[p.side],p.x-Math.sign(p.vx)*30,p.stun,p.tr,undefined,p.fin); if(p.tr==='boomerang'&&!p.back) turn(); else p.ttl=0; }
+        if(touch){ hurt(e,p.dmg,p.el,Math.sign(p.vx)*p.kb,p.lift||90,S.f[p.side],p.x-Math.sign(p.vx)*30,p.stun,p.tr,undefined,p.fin); if(p.tr==='boomerang'&&!p.back) turn(); else p.ttl=0; }
         else if(p.y<=0){ if(p.tr==='bounce'&&!p.hop){ p.hop=1; p.y=1; p.vy=Math.abs(p.vy)*0.7+170; } else p.ttl=0; }
         if(p.ttl<=0&&p.tr==='boomerang'&&!p.back) turn();
       }else if(p.tr==='bounce'&&!p.hop&&!touch&&!wall&&p.ttl>0&&p.y<=0){ p.hop=1; p.y=1; p.vy=Math.abs(p.vy)*0.55+150; p.vx*=0.8; }
       else if(touch||wall||p.y<=0||p.ttl<=0){
         const by=Math.max(0,p.y);
         for(const g of S.f){
-          const d=Math.hypot(g.x-p.x,g.y+45-by); if(d>=p.radius+20) continue;
-          const fall=1-0.5*Math.min(1,d/p.radius), own=g.side===p.side;
-          hurt(g,p.dmg*fall*(own?0.4:1),p.el,(Math.sign(g.x-p.x)||1)*p.kb*fall,260*fall,own?null:S.f[p.side],p.x,undefined,own?undefined:p.tr);
+          const d=Math.hypot(g.x-p.x,g.y+45-by), own=g.side===p.side; if(d>=p.radius+20||(own&&p.st==='meteor')) continue;
+          const fall=p.st==='meteor'&&d<p.radius*0.75?1:1-0.5*Math.min(1,d/p.radius);
+          hurt(g,p.dmg*fall*(own?0.4:1),p.el,(Math.sign(g.x-p.x)||1)*p.kb*fall,260*fall,own?null:S.f[p.side],p.x,undefined,own?undefined:p.tr,undefined,own?0:p.fin);
         }
         S.events.push({e:'boom',x:Math.round(p.x),y:Math.round(by),n:Math.round(p.radius),el:p.el}); p.ttl=0;
       }
@@ -1469,7 +1545,7 @@ function makeBot(side,skillOf){
       if(kind==='melee'){ melee=true; ideal=Math.min(ideal,reach*0.75); press[k]=dist<reach+10&&Math.abs(dy)<64&&facing; }
       else if(kind==='ranged'){ press[k]=Math.abs(dy)<42&&dist<Math.min(640,it.st.dist*0.95)&&facing; far=Math.max(far,it.st.dist); }
       else if(kind==='bomb') press[k]=dist>110&&dist<430&&facing;
-      else if(kind==='shield') press[k]=(incoming||(e.act&&dist<130)||(e.act&&e.act.m==='fleet'&&e.act.t>0.4))&&facing;
+      else if(kind==='shield') press[k]=(incoming||(e.act&&dist<130)||(e.act&&MOVES[e.act.m].ult&&e.act.t>0.3))&&facing;
       else if(kind==='dash') press[k]=dist>300&&facing&&Math.random()<0.5;
       else press[k]=f.hp<55&&f.uses[k]>0;
     }
@@ -1483,7 +1559,9 @@ function makeBot(side,skillOf){
     // his decide(): hacks when the overdrive bar is full, and glyphs for the situation
     const busy=!!dr.task;
     // a full bar goes on the ultimate about half the time, when there is a drawing to copy and room for it to fly
-    if(f.od>=100&&(S.items[side][0]||S.items[side][1])&&dist>110&&Math.abs(dy)<160&&Math.random()<0.5*(0.2+0.4*d)) i.u++;
+    const uIt=S.items[side][f.held]||S.items[side][1-f.held], U=ultOf(uIt), uMin=U.min===undefined?110:U.min;   // each ultimate has its own working distance
+    if(e.act&&MOVES[e.act.m].ult&&U.kind!=='quake'&&e.act.u==='quake'&&e.act.t>0.3&&f.ground&&Math.random()<0.7) i.j++;   // jump the shock wave
+    if(f.od>=100&&uIt&&dist>=uMin&&dist<=(U.max||1e9)&&Math.abs(dy)<(U.kind==='quake'?40:160)&&Math.random()<0.5*(0.2+0.4*d)) i.u++;
     else if(f.od>=100&&!S.hack&&Math.random()<0.2+0.4*d){ const opts=[2,3]; if(S.cells.length&&!S.broken) opts.push(0); if(S.items[1-side][e.held]) opts.push(1,1); if(S.items[side][f.held]) opts.push(4,4); i.h=pick(opts); i.q++; }
     else if(!busy&&f.ink2>55&&dist>240&&Math.random()<0.14*d) dr.draw('lightning',f.x+dir*80,-(f.y+110),0.8,dir);
     else if(!busy&&f.ink2>45&&e.act&&dist<130&&Math.random()<0.25*d) dr.draw('wall',f.x+dir*42,-(f.y+46),0.9);
@@ -1545,7 +1623,9 @@ const DESK=new URLSearchParams(location.search).has('desk'), DESK_SCALE=1.15, ho
 // Tablets and phones keep the plain layout, and ?plain=1 turns it off.
 // ?stage=sheet plays on the spreadsheet stage. On the retro desktop the sheet is the document open in the app window.
 const STAGE=new URLSearchParams(location.search).get('stage')==='sheet'?'sheet':'';
-const RETRO=!DESK&&!new URLSearchParams(location.search).has('plain')&&innerWidth>=900&&!matchMedia('(pointer:coarse)').matches, TASK_H=32;
+// /moves is the move tester: this page in practice mode with a panel of buttons, one for every move and ultimate.
+const LAB=location.pathname==='/moves';
+const RETRO=!DESK&&!LAB&&!new URLSearchParams(location.search).has('plain')&&innerWidth>=900&&!matchMedia('(pointer:coarse)').matches, TASK_H=32;
 const deskLike=()=>DESK||RETRO, floorGap=()=>RETRO?TASK_H:0;
 let ARENA_W=960, ARENA_PLATS=PLATS, deskStage=true, deskEdges=null, deskSent='', deskMenu=false, deskPaused=false, deskLive=null, OY=0;
 if(deskLike()){ document.documentElement.classList.add('deskmode'); document.body.classList.add('deskmode'); }
@@ -2200,7 +2280,7 @@ function syncUI(){
       return `<div class="loitem"><div class="top">${a&&a.ver===it.ver?`<img alt="" src="${a.sprite.cv.toDataURL()}">`:''}<div class="nm">${esc(it.name)}<small>${TRAITS[it.tr]?TRAITS[it.tr].label:''} · ${it.cost} ink</small></div></div>${statBars(it)}</div>`; }).join('')}</div>`).join(''); }
   document.querySelectorAll('.tc').forEach(el=>{ const s=+el.dataset.side;
     { const q=el.querySelector('[data-k="q"]'), od=v.f[s].od||0; if(q){ q.style.setProperty('--cd',1-od/100); const nm=INK.HACKS[FXI.hackSel].name.replace('.exe',''), sm=q.querySelector('small'); if(sm.textContent!==nm) sm.textContent=nm; }
-      const u=el.querySelector('[data-k="u"]'); if(u){ u.style.setProperty('--cd',1-od/100); u.classList.toggle('full',od>=100&&v.phase==='fight'&&!!(v.items[s][0]||v.items[s][1])); } }
+      const u=el.querySelector('[data-k="u"]'); if(u){ const un=ultOf(v.items[s][v.f[s].held]||v.items[s][1-v.f[s].held]).name.toLowerCase(), us=u.querySelector('small'); if(us.textContent!==un) us.textContent=un; u.style.setProperty('--cd',1-od/100); u.classList.toggle('full',od>=100&&v.phase==='fight'&&!!(v.items[s][0]||v.items[s][1])); } }
     for(const k of [0,1]){ const b=el.querySelector(`[data-k="${'ab'[k]}"]`), it=v.items[s][k], f=v.f[s];
       b.style.setProperty('--cd',f.cd[k]||0); const label=it?it.name+(it.kind==='heal'?' ×'+f.uses[k]:''):'Punch';
       const sm=b.querySelector('small'); if(sm.textContent!==label) sm.textContent=label; } });
@@ -2590,7 +2670,8 @@ function render(now){
   L.globalAlpha=1; L.strokeStyle='#111';
   worldBack(v,now);
   // the ultimate's wind-up: the stage darkens around the fighter who is casting it (not on the desktop overlay, where it would dim the user's own screen)
-  if(!DESK) for(const f of v.f) if(f.act&&f.act.m==='fleet'&&f.act.t<0.95){ const t=f.act.t, a=Math.min(1,t/0.12)*Math.min(1,(0.95-t)/0.3)*(v.hs?1:0.85), cx=f.x, cy=GY-f.y-70;
+  if(!DESK) for(const f of v.f){ const UM=f.act&&MOVES[f.act.m.replace(/_b$/,'')], end=UM&&UM.ult?UM.cast+0.33:0; if(!end||f.act.t>=end) continue;
+    const t=f.act.t, a=Math.min(1,t/0.12)*Math.min(1,(end-t)/0.3)*(v.hs?1:0.85), cx=f.x, cy=GY-f.y-70;
     const g=L.createRadialGradient(cx,cy,40,cx,cy,520); g.addColorStop(0,'rgba(10,12,30,0)'); g.addColorStop(1,'rgba(10,12,30,'+(0.62*a).toFixed(3)+')');
     L.save(); L.fillStyle=g; if(v.board&&!v.breached&&!v.broken) L.fillRect(v.board.x0,GY-v.board.top,v.board.x1-v.board.x0,v.board.top-v.board.floor); else L.fillRect(-OX-20,-OY/VS-20,VW+40,cv.height/VS+40); L.restore(); }
   // projectiles
@@ -2598,6 +2679,17 @@ function render(now){
     const x=p.x+p.vx*age, y=GY-(p.y+p.vy*age), it=v.items[p.side][p.slot];
     if(p.k==='bolt'){ const path=wBolt[p.id]=wBolt[p.id]||[]; path.push({x:x+(Math.random()-.5)*12,y:y+(Math.random()-.5)*12}); if(path.length>10) path.shift();
       L.save(); L.strokeStyle='#fc0'; L.shadowColor='#ff0'; L.shadowBlur=12; L.lineWidth=3; if(path.length>1) FXI.strokePath(path); L.restore(); continue; }
+    if(p.st==='wave'){   // the hammer's shock wave: a crest of ink running along the ground, with grit thrown up behind it
+      const dir=Math.sign(p.vx)||1, col=p.el==='none'?'#111':PEN[p.el]; L.save(); L.translate(x,y+8); L.scale(dir,1); L.strokeStyle=col; L.fillStyle=col; L.lineCap='round'; L.lineJoin='round';
+      L.beginPath(); L.moveTo(-70,0); L.quadraticCurveTo(-8,-6,6,-62); L.quadraticCurveTo(22,-22,30,0); L.closePath(); L.fill();
+      L.lineWidth=3; for(let n=0;n<4;n++){ const bx=-28-n*26, h=10+((now/40+n*7)%18); L.globalAlpha=.7-n*.15; L.beginPath(); L.moveTo(bx,0); L.lineTo(bx-6,-h); L.stroke(); }
+      L.restore(); continue; }
+    if(p.st==='meteor'){   // the staff's meteor: a mark on the ground where it will land, then the orb and its tail
+      const col=p.el==='none'?PCOL[p.side]:PEN[p.el], r=30; L.save();
+      L.strokeStyle=col; L.lineWidth=3; L.globalAlpha=.5+.4*Math.sin(now/45); L.setLineDash([9,7]); L.beginPath(); L.ellipse(x,Math.min(GY,y+Math.max(0,p.y)),96,10,0,0,7); L.stroke(); L.setLineDash([]);
+      L.globalAlpha=.3; L.fillStyle=col; L.beginPath(); L.moveTo(x-r,y); L.lineTo(x,y-r*6); L.lineTo(x+r,y); L.closePath(); L.fill();
+      L.globalAlpha=1; L.shadowColor=col; L.shadowBlur=22; L.beginPath(); L.arc(x,y,r,0,7); L.fill(); L.shadowBlur=0; L.fillStyle='#fff'; L.beginPath(); L.arc(x-r*0.25,y-r*0.25,r*0.42,0,7); L.fill();
+      L.restore(); continue; }
     if(p.st==='fleet'){
       // a copy of the drawing from the ultimate: it pops into place in the fan, glows in its owner's colour, and leaves a streak once it flies
       const born=fleetSeen.get(p.id)||(fleetSeen.set(p.id,now),now), pop=Math.min(1,(now-born)/140), size=(it?it.sz:50)*1.25*(0.4+0.6*pop*(2-pop));
@@ -2609,7 +2701,7 @@ function render(now){
       else if(!sprite(p.side,p.slot,size)){ L.fillStyle=PCOL[p.side]; L.beginPath(); L.arc(0,0,10,0,7); L.fill(); }
       L.restore(); continue; }
     if(p.k==='shot'){ const col=p.el==='none'?'#111':PEN[p.el]; L.save(); L.translate(x,y); L.rotate(Math.atan2(-p.vy,p.vx)); L.strokeStyle=col; L.fillStyle=col; L.lineCap='round'; L.lineJoin='round';
-      if(p.st==='bow'){ L.lineWidth=3.5; L.beginPath(); L.moveTo(-44,0); L.lineTo(0,0); L.moveTo(-9,-5); L.lineTo(0,0); L.lineTo(-9,5); L.moveTo(-44,0); L.lineTo(-50,-5); L.moveTo(-44,0); L.lineTo(-50,5); L.stroke(); }
+      if(p.st==='bow'){ if(p.big>1){ L.scale(1+0.5*p.big,1+0.5*p.big); L.globalAlpha=.35; L.lineWidth=9; L.beginPath(); L.moveTo(-120,0); L.lineTo(-44,0); L.stroke(); L.globalAlpha=1; } L.lineWidth=3.5; L.beginPath(); L.moveTo(-44,0); L.lineTo(0,0); L.moveTo(-9,-5); L.lineTo(0,0); L.lineTo(-9,5); L.moveTo(-44,0); L.lineTo(-50,-5); L.moveTo(-44,0); L.lineTo(-50,5); L.stroke(); }
       else if(p.st==='staff'){ const r=8+5*(p.big||0); L.globalAlpha=.3; L.beginPath(); L.moveTo(0,-r); L.lineTo(-r*4.5,0); L.lineTo(0,r); L.closePath(); L.fill(); L.globalAlpha=1; L.beginPath(); L.arc(0,0,r,0,7); L.fill(); L.fillStyle='#fff'; L.beginPath(); L.arc(r*0.2,-r*0.2,r*0.45,0,7); L.fill();
         L.lineWidth=2.5; for(let n=0;n<3;n++){ const a2=now/70+n*2.1; L.beginPath(); L.arc(0,0,r+5,a2,a2+0.9); L.stroke(); } }
       else if(p.st==='hurl'){ L.rotate(now/40); if(!it||!sprite(p.side,p.slot,it.sz*0.85)){ L.beginPath(); for(let n=0;n<8;n++){ const q=n%2?4:11, a2=n*Math.PI/4; n?L.lineTo(Math.cos(a2)*q,Math.sin(a2)*q):L.moveTo(Math.cos(a2)*q,Math.sin(a2)*q); } L.closePath(); L.fill(); } }
@@ -2630,6 +2722,9 @@ function render(now){
       L.font='26px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=PEN[e.el]; L.fillText('-'+e.n,e.x,y-30-a*30); }
     else if(e.e==='block'){ L.font='22px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle='#111'; L.fillText('BLOCK',e.x,y-30-a*24); L.strokeStyle='#111'; L.lineWidth=2; L.beginPath(); L.arc(e.x,y,15+a*35,-1.3,1.3); L.stroke(); }
     else if(e.e==='shot'){ if((e.st==='gun'||e.st==='akimbo')&&a<0.14){ L.globalAlpha=1-a/0.14; L.strokeStyle=e.el==='none'?'#111':PEN[e.el]; L.lineCap='round'; for(let n=0;n<7;n++){ const t=(n-3)*0.42, r0=6, r1=(n%2?16:28)*(0.6+a*3); L.lineWidth=n%2?2:3; L.beginPath(); L.moveTo(e.x+Math.cos(t)*r0*e.f,y+Math.sin(t)*r0); L.lineTo(e.x+Math.cos(t)*r1*e.f,y+Math.sin(t)*r1); L.stroke(); } } }
+    else if(e.e==='slash'){ if(a<0.4){ const g=1-a/0.4, col=PCOL[e.side], x0=Math.min(e.x,e.x2)-40, x1=Math.max(e.x,e.x2)+40, tilt=((e.x*3)%7-3)*6;   // the cut left behind by a blink
+        L.globalAlpha=g; L.fillStyle=col; L.beginPath(); L.moveTo(x0,y+tilt); L.lineTo((x0+x1)/2,y-7*g); L.lineTo(x1,y-tilt); L.lineTo((x0+x1)/2,y+7*g); L.closePath(); L.fill();
+        L.fillStyle='#fff'; L.beginPath(); L.moveTo(x0+30,y+tilt*0.8); L.lineTo((x0+x1)/2,y-2.5*g); L.lineTo(x1-30,y-tilt*0.8); L.lineTo((x0+x1)/2,y+2.5*g); L.closePath(); L.fill(); L.globalAlpha=1-a; } }
     else if(e.e==='quake'){ L.strokeStyle='#111'; L.lineCap='round'; L.lineWidth=4*(1-a)+1; L.beginPath(); L.ellipse(e.x,y+2,e.n*(0.3+a*1.1),6+a*8,0,Math.PI,Math.PI*2); L.stroke();
       L.lineWidth=3; for(let n=0;n<7;n++){ const dx=(n-3)*e.n*0.26*(0.5+a), h=(n%2?26:44)*Math.sin(Math.min(1,a*1.6)*Math.PI); L.beginPath(); L.moveTo(e.x+dx,y-4); L.lineTo(e.x+dx*1.15,y-4-h); L.stroke(); } }
     else if(e.e==='heal'){ L.font='26px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=PEN.plant; L.fillText('+'+e.n,e.x,y-a*30); }
@@ -2657,8 +2752,8 @@ let last=performance.now(), fpsT=0, fpsN=0;
 function frame(now){
   const dt=Math.min(0.05,(now-last)/1000); last=now;
   deskSync();
-  const ts=RETRO?FXI.P.speed:1;                                          // his Time scale slider (local matches)
-  if(sim&&!deskPaused){ if(bot){ bot(sim,dt*ts); if(sim.phase==='draw'&&!sim.ready[1]) sim.setReady(1); } sim.step(dt*ts); accept(sim.snapshot()); }
+  const ts=LAB?lab.speed:RETRO?FXI.P.speed:1;                                          // his Time scale slider (local matches)
+  if(sim&&!deskPaused){ if(bot){ bot(sim,dt*ts); if(sim.phase==='draw'&&!sim.ready[1]) sim.setReady(1); } sim.step(dt*ts); if(LAB) labTick(dt*ts); accept(sim.snapshot()); }
   FXI.step(dt);
   if(RETRO){ fpsT+=dt; fpsN++; if(fpsT>0.5){ document.querySelector('#st-fps').textContent=Math.round(fpsN/fpsT)+' fps'; fpsT=0; fpsN=0; } }
   if(view){ syncUI(); render(now); if(padView&&net&&net.side>=0){ const tc=document.querySelector('.tcs'); if(tc) document.body.style.setProperty('--pad',(tc.getBoundingClientRect().height+12)+'px'); $('strip').hidden=$('stripbar').hidden=false; drawStrip(view); } }
@@ -2666,7 +2761,65 @@ function frame(now){
 }
 if(canRead) fetch('/info').then(r=>r.json()).then(o=>{ serverInfo=o; $('reader').textContent='Drawings read by: '+o.reader; canRead=/OpenAI/.test(o.reader); overlayKey=overlayKey.startsWith('wait')?'':overlayKey; }).catch(()=>{ canRead=false; });
 if(RETRO) retroBuild();
-setMode('online');      // every match is a room: a screen, and phones or tablets as controllers
+/* ---------- move tester (/moves) ---------- */
+// Pick a weapon, press a move: the fighter does it against a dummy with everything the game draws (trails, hit-stop,
+// shake, projectiles, the ultimates). Slow it down, loop it, and move the dummy nearer or further. The keyboard still
+// works, so runs, jumps and combos can be tried by hand too.
+const LAB_STOCK={blade:'sword',spear:'spear',hammer:'hammer',fist:'gloves',dual:'twins',bow:'bow',gun:'gun',akimbo:'pistols',staff:'staff',hurl:'star'};
+const LAB_NAME={blade:'Sword',spear:'Spear',hammer:'Hammer',fist:'Fists',dual:'Twin blades',bow:'Bow',gun:'Gun',akimbo:'Twin pistols',staff:'Staff',hurl:'Thrown'};
+const lab={style:'blade',el:'none',speed:1,loop:false,gap:220,last:null,idle:0};
+function labEquip(){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,st.spec,50); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0; if(desk[0]) updateDesk(desk[0]); }
+function labPlace(gap){ const a=sim.f[0], b=sim.f[1], g=gap||lab.gap, x0=Math.max(60,Math.min(ARENA_W-60-g,ARENA_W/2-g/2-60));
+  for(const f of [a,b]){ f.y=0; f.vx=f.vy=0; f.ground=true; f.act=null; f.hurt=0; f.stun=0; f.dash=0; f.burn=0; f.slow=0; f.shield=0; f.hp=100; }
+  a.x=x0; b.x=x0+g; a.face=1; b.face=-1; sim.pr.length=0; }
+function labPlay(m,alt){
+  if(!sim||sim.phase!=='fight') return; lab.last=[m,alt]; lab.idle=0;
+  document.querySelectorAll('#labMoves button').forEach(b=>b.classList.toggle('on',b.dataset.m===m&&(b.dataset.alt||'')===(alt===undefined?'':String(alt))));
+  if(m==='hit'||m==='bighit'){ labPlace(48); sim.play(1,m==='hit'?'fist1':'fist4'); return; }   // the dummy hits back, to see the reactions
+  labPlace(); const f=sim.f[0];
+  if(m==='ult'){ f.od=100; sim.startUlt(0); } else sim.play(0,m,alt);
+}
+function labTick(dt){ const f=sim.f[0], e=sim.f[1]; lab.idle=f.act||e.act||sim.pr.length||f.hurt>0||e.hurt>0||!f.ground||!e.ground?0:lab.idle+dt; if(lab.loop&&lab.last&&lab.idle>0.6) labPlay(lab.last[0],lab.last[1]); }
+function labMoves(){
+  const st=lab.style, re=new RegExp('^'+st+'(\\d|_)'), box=$('labMoves'), label=m=>m.replace(st+'_','').replace(st,'hit ').replace('_',' ');
+  const list=Object.keys(MOVES).filter(m=>re.test(m)), btn=(m,text,alt,cls)=>`<button data-m="${m}" data-alt="${alt===undefined?'':alt}" class="${cls||''}">${text}</button>`;
+  box.innerHTML=list.map(m=>btn(m,label(m),ALT.includes(m)?0:undefined)+(ALT.includes(m)?btn(m,label(m)+' (alt)',1):'')).join('')
+    +btn('ult','Ultimate: '+ULTS[st].name,undefined,'ult')+btn('hit','Take a hit')+btn('bighit','Take a big hit');
+  box.querySelectorAll('button').forEach(b=>b.onclick=()=>{ b.blur(); labPlay(b.dataset.m,b.dataset.alt===''?undefined:+b.dataset.alt); });
+}
+function labBuild(){
+  document.body.classList.add('lab'); document.title='Doodle Duel: move tester';
+  const css=document.createElement('style'); css.textContent=`
+    body.lab #desks,body.lab .rules,body.lab #loadouts,body.lab header .seg,body.lab #restart{display:none}
+    #lab{background:var(--card);border:2px solid var(--ink);border-radius:14px;padding:12px 14px;margin:10px 0}
+    #lab h2{margin:0 0 4px;font-size:20px} #lab p{margin:0 0 10px;color:var(--muted);font-size:13px}
+    #lab .row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0} #lab .row>b{min-width:64px;font-size:13px}
+    #lab button{padding:5px 10px;font-size:13px} #lab button.on{background:var(--hi)} #lab button.ult{border-style:double;border-width:4px}
+    #lab label{display:flex;align-items:center;gap:6px;font-size:13px;margin-right:14px} #lab input[type=range]{width:130px}
+    #lab .pen{width:26px;height:26px;border-radius:50%;padding:0} #lab .pen.on{outline:3px solid var(--hi);outline-offset:1px}`; document.head.appendChild(css);
+  const el=document.createElement('section'); el.id='lab';
+  el.innerHTML=`<h2>Move tester</h2><p>Pick a weapon, then a move. The blue fighter does it on the red dummy, which never dies. Keys still work (A D move, W jump, J attack, U ultimate), so combos and running attacks can be tried by hand. <a href="/duel">Back to the game</a></p>
+    <div class="row"><b>Weapon</b><span id="labStyles" class="row" style="margin:0"></span></div>
+    <div class="row"><b>Move</b><span id="labMoves" class="row" style="margin:0"></span></div>
+    <div class="row"><b>Ink</b><span id="labEls" class="row" style="margin:0 14px 0 0"></span>
+      <label>Speed <input type="range" id="labSpeed" min="0.1" max="1" step="0.05" value="1"><span id="labSpeedV">1.00×</span></label>
+      <label>Distance <input type="range" id="labGap" min="40" max="520" step="10" value="220"></label>
+      <label><input type="checkbox" id="labLoop"> Loop</label></div>`;
+  document.querySelector('.arenawrap').after(el);
+  const styles=$('labStyles'), els=$('labEls');
+  styles.innerHTML=Object.keys(LAB_STOCK).map(s=>`<button data-s="${s}">${LAB_NAME[s]}</button>`).join('');
+  const pickStyle=s=>{ lab.style=s; lab.last=null; styles.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.s===s)); labEquip(); labMoves(); labPlace(); };
+  styles.querySelectorAll('button').forEach(b=>b.onclick=()=>{ b.blur(); pickStyle(b.dataset.s); });
+  els.innerHTML=ELS.map(e=>`<button class="pen" data-e="${e}" style="background:${PEN[e]}" title="${e==='none'?'plain':e} ink" aria-label="${e==='none'?'plain':e} ink"></button>`).join('');
+  const pickEl=e=>{ lab.el=e; els.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.e===e)); labEquip(); };
+  els.querySelectorAll('button').forEach(b=>b.onclick=()=>{ b.blur(); pickEl(b.dataset.e); if(lab.last) labPlay(lab.last[0],lab.last[1]); });
+  $('labSpeed').oninput=e=>{ lab.speed=+e.target.value; $('labSpeedV').textContent=lab.speed.toFixed(2)+'×'; };
+  $('labGap').oninput=e=>{ lab.gap=+e.target.value; labPlace(); };
+  $('labLoop').onchange=e=>{ lab.loop=e.target.checked; };
+  sim.step(0.05); pickEl('none'); pickStyle('blade');
+}
+setMode(LAB?'practice':'online');      // the move tester is practice; otherwise every match starts from the room menu
+if(LAB) labBuild();
 requestAnimationFrame(frame);
 </script>
 </body>
