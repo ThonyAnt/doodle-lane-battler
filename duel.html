@@ -26,6 +26,10 @@ h1{font-family:var(--display);font-weight:400;font-size:32px;line-height:1;margi
 .seg{display:flex;border:2px solid var(--ink);border-radius:10px;overflow:hidden;background:var(--card)}
 .seg button{border:0;background:transparent;border-radius:0;padding:6px 12px}
 .ultlock .tc button{filter:grayscale(1);opacity:.4;transition:opacity .12s}
+/* an ultimate is playing: the desktop behind the fight goes soft and dim; the fight itself is drawn on the canvas above and stays sharp */
+body.retro #inkos #desktop,body.retro #inkos #taskbar{transition:filter .3s ease}
+body.retro.ultdim #inkos #desktop,body.retro.ultdim #inkos #taskbar{filter:blur(2.6px) brightness(.72) saturate(.6)}
+@media (prefers-reduced-motion:reduce){ body.retro #inkos #desktop,body.retro #inkos #taskbar{transition:none} }
 .seg .herelabel{align-self:center;padding:0 4px 0 10px;font-size:13px;color:var(--muted);white-space:nowrap}
 .seg button[aria-pressed="true"]{background:var(--ink);color:#fff}
 button{font:600 14px var(--body);color:var(--ink);background:var(--card);border:2px solid var(--ink);border-radius:10px;padding:6px 14px;cursor:pointer}
@@ -789,7 +793,7 @@ const ultOf=it=>(it&&ULTS[it.style])||ULTS.blade;
 // Pacing of an ultimate. It is announced while everything holds still (ULT_INTRO), the casting move then plays slower than
 // it was animated (ULT_RATE; the clip and its marks are untouched), every blow that lands holds the picture for a beat
 // (ULT_BEAT) so the blows read one by one, and the last one holds it much longer (ULT_FINAL) under the screen flash.
-const ULT_INTRO=0.85, ULT_RATE=0.8, ULT_BEAT=0.09, ULT_FINAL=0.55;
+const ULT_INTRO=0.85, ULT_INTRO_RATE=0.11, ULT_RATE=0.8, ULT_BEAT=0.09, ULT_FINAL=0.55;      // ULT_INTRO_RATE: how fast the casting move creeps forward during the announcement
 const FLEET_DMG=30, FLEET_GAP=0.12, FLEET_SPEED=1150;   // damage of the whole volley (shared between the copies), time between launches, flight speed
 // What a melee or ranged drawing is fought with. Each style has its own moves and animation set.
 const RUN_SPEED=330;   // top ground speed in px/s; fighters reach it in about an eighth of a second
@@ -1014,8 +1018,8 @@ function createDuel(opts){
     const k=S.items[side][f.held]?f.held:S.items[side][1-f.held]?1-f.held:-1; if(k<0) return false;
     const it=S.items[side][k], U=ultOf(it), copies=Math.max(3,Math.min(7,3+Math.floor(it.cost/12))), n={fan:copies,rain:copies,ring:copies+1,rush:8,cross:3,storm:12,fire:6}[U.kind]||1;
     f.od=0; f.held=k; f.shield=0; f.buf[0]=f.buf[1]=0; if(e.x!==f.x) f.face=Math.sign(e.x-f.x);
-    f.act={k,m:U.move,u:U.kind,v:0,t:0,dur:MOVES[U.move].dur,rate:ULT_RATE,done:0,lunged:false,n};
-    S.stop=Math.max(S.stop,ULT_INTRO);                                        // the world holds its breath while it is announced
+    f.act={k,m:U.move,u:U.kind,v:0,t:0,dur:MOVES[U.move].dur,rate:ULT_INTRO_RATE,intro:ULT_INTRO,done:0,lunged:false,n};
+    // While it is announced (ULT_INTRO) the casting move only creeps forward, so the caster eases into it; see the lock in tick.
     S.ult=side; S.ultT=0; S.ultDmg=0; e.buf[0]=e.buf[1]=0; e.jq=0; e.mbuf=0;      // and stays stopped for the other fighter until it is over (see ultLock)
     S.events.push({e:'ult',side,x:Math.round(f.x),y:Math.round(f.y),n,name:U.name,sub:(side?'Red':'Blue')+'’s '+it.name,slot:k,intro:ULT_INTRO},{e:'log',side,msg:'✦ '+U.name+' — '+it.name});
     return true;
@@ -1540,6 +1544,7 @@ function createDuel(opts){
       // the caster stands and waits too, so nobody gets free hits on a fighter who cannot answer.
       S.ult=lk; S.ultT+=dt; S.t+=dt; SOL=solids();
       const c=S.f[lk], held=S.inp[lk]; if(!casting(c)){ S.inp[lk]={l:0,r:0,d:0}; c.buf[0]=c.buf[1]=0; c.jq=0; c.mbuf=0; }
+      if(c.act&&c.act.intro>0){ c.act.intro-=dt; if(c.act.intro<=0) c.act.rate=ULT_RATE; }      // the announcement is over: the move plays out
       control(c,dt); S.inp[lk]=held; projectiles(dt,lk);
       if(S.ultT>6) S.pr=S.pr.filter(p=>p.tr!=='fleet');                          // never hold the fight for ever
     }else{
@@ -2214,7 +2219,8 @@ function accept(v){
     // A hit shakes the screen by its weight. Only the ultimate gets an impact frame: when its last copy lands, the picture
     // is inverted for a few frames (on a white stage a plain white flash would not show). Ordinary attacks and knockouts
     // never black the screen out.
-    if(e.e==='hit'){ shake=Math.max(shake,(2.5+9*(e.w||0))*soft); if(e.fin&&e.ult&&now-impactAt>900){ impactAt=now; impactUntil=now+IMPACT_MS; shake=Math.max(shake,18*soft); } }
+    if(e.e==='hit'){ shake=Math.max(shake,(2.5+9*(e.w||0))*soft); if(e.ult&&!e.fin) ultPops.push({x:e.x,y:e.y,t0:now,seed:now%991});
+      if(e.fin&&e.ult&&now-impactAt>900){ impactAt=now; impactUntil=now+IMPACT_MS; impactPt={x:e.x,y:e.y,side:1-e.side}; impactJolt=true; } }
     if(e.e==='hit'&&e.ult){                              // add this piece to the running total over the victim
       let u=ultDmg[e.side]; const by=1-e.side, it=v.items[by][v.f[by].held];
       if(!u||u.fin||now-u.last>1500) u=ultDmg[e.side]={sum:0,shown:0,hits:0,t0:now,fin:0,by,name:(ULTS[it&&it.style]||ULTS.blade).name};
@@ -2223,7 +2229,7 @@ function accept(v){
     }
     if(e.e==='ko') shake=Math.max(shake,14*soft);
     if(e.e==='ult'){ ultFx={side:e.side,name:e.name||'ULTIMATE',sub:e.sub||'',slot:e.slot|0,intro:e.intro||0.85,t0:now}; ultEnd=null; shake=Math.max(shake,10*soft); FXI.ring(e.x,-(e.y+60),PCOL[e.side]); FXI.burst(e.x,-(e.y+60),PCOL[e.side],22); }
-    if(e.e==='ultend'){ ultEnd={side:e.side,x:e.x,y:e.y,n:e.n,t0:now}; shake=Math.max(shake,14*soft); }
+    if(e.e==='ultend') ultEnd={side:e.side,x:e.x,y:e.y,n:e.n,t0:now};
     if(e.e==='zip') FXI.spark(e.x,-e.y,PCOL[e.side]);
     if(e.e==='del'){ shake=Math.max(shake,12); sheetDels.push({x:e.x,y:e.y,t0:performance.now()}); }
     if(e.e==='hit'&&navigator.vibrate&&local[e.side]&&navigator.userActivation&&navigator.userActivation.hasBeenActive) navigator.vibrate(30);
@@ -2452,6 +2458,7 @@ function retroSync(menu){
 }
 function syncUI(){
   const v=view;
+  document.body.classList.toggle('ultdim',!!(v.ul&&v.phase==='fight')&&!DESK);      // and everything behind the fight blurs (retro desktop)
   document.body.classList.toggle('ultlock',!!(v.ul&&v.phase==='fight'));      // an ultimate is playing: the controller greys out
   for(const s of [0,1]){
     $('hp'+s).style.width=(v.phase==='draw'?100:v.f[s].hp*100/HP)+'%';
@@ -2572,7 +2579,7 @@ function drawFighter(v,i,now,age,dt){
   // While the other fighter's ultimate plays this one is held: drawn in grey, pose and place frozen.
   const held=!!(v.ul&&v.ul[0]!==i&&v.phase==='fight'); if(held){ dt=0; age=0; }
   // During hit-stop the fighter who was hit rattles in place and pales.
-  const f=v.f[i], rattle=v.hs&&f.hurt&&v.phase==='fight', col=rattle&&!CALM?PFLASH[i]:held?'#7b8294':PCOL[i], d=f.face, fight=v.phase==='fight', st=anim[i];
+  const f=v.f[i], rattle=v.hs&&f.hurt&&v.phase==='fight', col=impactLive(now)?'#000':rattle&&!CALM?PFLASH[i]:held?'#7b8294':PCOL[i], d=f.face, fight=v.phase==='fight', st=anim[i];
   const x=f.x+(fight?f.vx*age:0)+(rattle?Math.sin(now*0.9)*2.6:0), base=GY-Math.max(0,f.y+(fight&&!f.g?f.vy*age:0));
   const hideItems=net&&v.phase==='draw'&&i!==net.side&&net.side>=0, items=v.items[i];
   const k=f.held, it=hideItems?null:items[k], kind=it?it.kind:'melee';
@@ -2909,37 +2916,80 @@ function sheetFront(v,now){
 /* ---------- the ultimate, on screen ----------
    While an ultimate plays (snapshot field ul = [whose, seconds so far]) the rules hold everything but the caster still.
    The page shows that as a cut scene:
-     - the stage goes dark with a pool of light on the caster, darkest while the ultimate is announced
+     - the stage darkens with a pool of light on the caster, easing in, easing down a step once the announcement is over
+       and easing out; on the retro desktop everything behind the fight also blurs (body class ultdim)
      - black bars close in at the top and bottom, with the ultimate's name in the top one for as long as it plays
      - during the announcement a slanted band crosses the stage carrying the name in large type and the drawing itself,
-       lines streak in toward the caster and rings close on them
+       focus lines point in at the caster and rings close on them; the caster eases into the move meanwhile
      - the held fighter and held shots are drawn in grey (see drawFighter)
-     - each blow holds the picture for a beat; the last one inverts the screen (see impactOn) and, when time starts
-       again, the total damage is stamped over the fighter who took it
-   Nothing here runs on the desktop overlay's own screen dimming, and people who ask for reduced motion get the dark
-   stage and the name without the streaks, the shake or the flash. */
-let ultFx=null, ultEnd=null;
+     - each blow holds the picture for a beat and pops a small jagged star where it lands
+     - the last blow is an impact frame (see impactFrame), and the camera jolts the moment it ends
+   Lines and bursts are redrawn a little differently about eleven times a second, the way drawn animation holds a
+   drawing for a few frames, instead of sliding smoothly.
+   Nothing here dims the desktop overlay's own screen, and people who ask for reduced motion get the dark stage and the
+   name without the lines, the shake or the impact frame. */
+let ultFx=null, ultEnd=null, ultPops=[], impactPt=null, impactJolt=false;
 const ultRect=v=>{ const b=v.board&&!v.breached&&!v.broken?v.board:null; return b?[b.x0,GY-b.top,b.x1-b.x0,b.top-b.floor]:[-OX-20,-OY/VS-20,VW+40,cv.height/VS+40]; };
 const ease=t=>{ t=Math.max(0,Math.min(1,t)); return 1-Math.pow(1-t,3); };
-// The final blow: the picture is inverted, held, let go for a moment and inverted again. Two flashes in under half a
-// second, which stays inside the usual limit of three a second.
-const IMPACT_MS=460, impactOn=now=>{ const k=now-impactAt; return k>=0&&k<IMPACT_MS&&(k<240||k>=320); };
+const sstep=t=>{ t=Math.max(0,Math.min(1,t)); return t*t*(3-2*t); };
+const back=t=>{ t=Math.max(0,Math.min(1,t)); const c=1.9; return 1+(c+1)*Math.pow(t-1,3)+c*Math.pow(t-1,2); };       // eases in a little past the mark and settles
+const hash=n=>{ const s=Math.sin(n*127.1+311.7)*43758.5453; return s-Math.floor(s); };
+// Wedges pointing at (cx,cy): thin at the centre end (r0), wide at the far end (r1). seed changes the drawing.
+function focusLines(cx,cy,r0,r1,n,seed,col,alpha,wide){
+  L.save(); L.fillStyle=col; L.globalAlpha=alpha;
+  for(let i=0;i<n;i++){ const a=(i+hash(seed+i*1.7)*0.9)/n*Math.PI*2, w=(0.004+hash(seed*3.1+i)*0.02)*(wide||1), ra=r0*(0.7+hash(seed*5.3+i)*0.9);
+    L.beginPath(); L.moveTo(cx+Math.cos(a)*ra,cy+Math.sin(a)*ra*0.8); L.lineTo(cx+Math.cos(a-w)*r1,cy+Math.sin(a-w)*r1*0.8); L.lineTo(cx+Math.cos(a+w)*r1,cy+Math.sin(a+w)*r1*0.8); L.closePath(); L.fill(); }
+  L.restore();
+}
+// A jagged star: path only, the caller fills or strokes it.
+function starPath(cx,cy,r,spikes,seed,inner){
+  L.beginPath(); const rot=hash(seed)*6.28;
+  for(let i=0;i<spikes*2;i++){ const a=i/(spikes*2)*Math.PI*2+rot, rr=i%2?r*(inner||0.42)*(0.75+hash(seed+i*1.3)*0.5):r*(0.7+hash(seed+i*2.3)*0.6), x=cx+Math.cos(a)*rr, y=cy+Math.sin(a)*rr*0.9; i?L.lineTo(x,y):L.moveTo(x,y); }
+  L.closePath();
+}
+// The last blow of an ultimate is drawn as an impact frame, the way stick-fight animation does it: the picture is
+// flattened to pure ink (everything dark goes black, the rest white) and alternates white stage with black figures and
+// black stage with white figures, while a jagged star and thin force lines grow from the point of impact, a second
+// star outline joins them, shards multiply, and the last frame glows before the camera jolts. Four held pictures in
+// 400 ms: white, black, white, black. That is two flashes, inside the usual limit of three a second, and none at all
+// for people who ask for reduced motion.
+const IMPACT_MS=400, IMPACT_CUTS=[0,70,150,215], impactLive=now=>{ const k=now-impactAt; return k>=0&&k<IMPACT_MS&&!DESK&&!CALM; };
+function impactFrame(v,now){
+  const k=now-impactAt;
+  if(impactJolt&&k>=IMPACT_MS){ impactJolt=false; shake=Math.max(shake,(CALM?5:24)); }           // the jolt lands as the frame drops
+  if(!impactLive(now)||!impactPt) return;
+  let ph=0; while(ph<3&&k>=IMPACT_CUTS[ph+1]) ph++;
+  const dark=ph%2===1, R=ultRect(v), ink=dark?'#fff':'#000', paper=dark?'#000':'#fff', x=impactPt.x, y=GY-impactPt.y, seed=impactAt%977+ph*13.7, col=PFLASH[impactPt.side];
+  const flat=typeof L.filter==='string', r=[64,112,160,214][ph], far=Math.hypot(R[2],R[3]);
+  // 1. flatten everything already drawn into ink (browsers without canvas filters get a plain inversion over white paper)
+  if(flat){ L.save(); L.setTransform(1,0,0,1,0,0); L.filter='grayscale(1) contrast(12)'+(dark?' invert(1)':''); L.globalCompositeOperation='copy'; L.drawImage(cv,0,0); L.restore(); }
+  else{ L.save(); L.globalCompositeOperation='destination-over'; L.fillStyle='#fff'; L.fillRect(R[0],R[1],R[2],R[3]); if(dark){ L.globalCompositeOperation='difference'; L.fillRect(R[0],R[1],R[2],R[3]); } L.restore(); }
+  // 2. the burst, slipped in UNDER what is already drawn so the figures stay on top. Listed from the top of the pile
+  //    down: the hollow the struck fighter shows through, the star, its outline, shards, force lines, and last the paper.
+  L.save(); L.beginPath(); L.rect(R[0],R[1],R[2],R[3]); L.clip(); if(flat) L.globalCompositeOperation='destination-over';
+  if(flat){ L.fillStyle=paper; starPath(x,y,r*0.6,9,seed+3,0.5); L.fill(); }
+  if(ph===3){ L.shadowColor=col; L.shadowBlur=26; }
+  L.fillStyle=ink; starPath(x,y,r,11+ph,seed,0.4); L.fill();
+  if(ph>=1){ L.strokeStyle=ink; L.lineWidth=3+ph; L.lineJoin='miter'; starPath(x,y,r*(1.5+ph*0.14),14+ph*2,seed+7,0.62); L.stroke(); }
+  for(let i=0;i<4+ph*5;i++){ const a=hash(seed+i*9.1)*6.28, d=r*(1.1+hash(seed+i*4.7)*1.9), s=6+hash(seed+i)*16, px=x+Math.cos(a)*d, py=y+Math.sin(a)*d*0.8;
+    L.fillStyle=ink; L.beginPath(); L.moveTo(px+Math.cos(a)*s,py+Math.sin(a)*s); L.lineTo(px+Math.cos(a+2.3)*s*0.45,py+Math.sin(a+2.3)*s*0.45); L.lineTo(px+Math.cos(a-2.3)*s*0.45,py+Math.sin(a-2.3)*s*0.45); L.closePath(); L.fill(); }
+  focusLines(x,y,r*1.25,far,26+ph*8,seed,ink,1,0.55+ph*0.12);
+  L.shadowBlur=0; if(flat){ L.fillStyle=paper; L.fillRect(R[0],R[1],R[2],R[3]); }
+  L.restore();
+}
 function ultBack(v,now){
-  const ul=v.phase==='fight'?v.ul:null, out=!ul&&ultEnd?1-(now-ultEnd.t0)/380:0; if((!ul&&out<=0)||DESK) return;
-  const side=ul?ul[0]:ultEnd.side, c=v.f[side], t=ul?ul[1]:9, intro=ultFx?ultFx.intro:0.85, R=ultRect(v), k=ul?Math.min(1,t/0.14):out;
-  const cx=c.x, cy=GY-c.y-70, deep=(t<intro?0.88:0.7)*k;
+  if(impactLive(now)) return;                                                 // the impact frame paints its own stage
+  const ul=v.phase==='fight'?v.ul:null, out=!ul&&ultEnd?1-sstep((now-ultEnd.t0)/420):0; if((!ul&&out<=0)||DESK) return;
+  const side=ul?ul[0]:ultEnd.side, c=v.f[side], t=ul?ul[1]:9, intro=ultFx?ultFx.intro:0.85, R=ultRect(v), k=ul?sstep(t/0.24):out;
+  const cx=c.x, cy=GY-c.y-70, calm=sstep((t-intro+0.05)/0.4), deep=(0.86-0.24*calm)*k;       // darkest while it is announced, easing down a step afterwards
   L.save(); L.beginPath(); L.rect(R[0],R[1],R[2],R[3]); L.clip();
-  const g=L.createRadialGradient(cx,cy,50,cx,cy,460); g.addColorStop(0,'rgba(8,10,28,'+(deep*0.18).toFixed(3)+')'); g.addColorStop(1,'rgba(8,10,28,'+deep.toFixed(3)+')');
+  const g=L.createRadialGradient(cx,cy,60,cx,cy,480); g.addColorStop(0,'rgba(8,10,28,'+(deep*0.12).toFixed(3)+')'); g.addColorStop(0.55,'rgba(8,10,28,'+(deep*0.7).toFixed(3)+')'); g.addColorStop(1,'rgba(8,10,28,'+deep.toFixed(3)+')');
   L.fillStyle=g; L.fillRect(R[0],R[1],R[2],R[3]);
   if(ul&&!CALM){
-    // streaks: drawn in toward the caster while it is announced, flung outward once it is let go
-    const inward=t<intro, T=now/1000; L.lineCap='round';
-    for(let i=0;i<30;i++){ const a=i*2.399+0.3, p=((T*(inward?1.5:2.3)+i*0.371)%1), r=inward?520-420*p:150+520*p, len=inward?70:110, al=Math.sin(Math.PI*p)*(inward?0.5:0.32);
-      L.strokeStyle=i%4?'rgba(255,255,255,'+al.toFixed(3)+')':PFLASH[side]; L.globalAlpha=i%4?1:al; L.lineWidth=i%3?1.5:3;
-      L.beginPath(); L.moveTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r*0.7); L.lineTo(cx+Math.cos(a)*(r+len),cy+Math.sin(a)*(r+len)*0.7); L.stroke(); }
-    L.globalAlpha=1;
-    // rings closing on the caster as the power gathers
-    if(inward) for(let i=0;i<3;i++){ const p=((t*1.9+i/3)%1); L.strokeStyle=PFLASH[side]; L.globalAlpha=0.75*p; L.lineWidth=2+4*p; L.beginPath(); L.ellipse(cx,cy,150-118*p,(150-118*p)*0.82,0,0,7); L.stroke(); }
+    const seed=Math.floor(now/90), far=Math.hypot(R[2],R[3]);
+    focusLines(cx,cy,230-50*(1-calm),far,34,seed,'#fff',(0.3*(1-calm)+0.055)*k,0.75);                  // strong while it is announced, faint afterwards
+    focusLines(cx,cy,250,far,8,seed+50,PFLASH[side],(0.34*(1-calm)+0.07)*k,1.05);
+    if(calm<1) for(let i=0;i<3;i++){ const p=((t*1.7+i/3)%1), q=ease(p); L.strokeStyle=PFLASH[side]; L.globalAlpha=0.8*q*(1-calm); L.lineWidth=1.5+5*q; L.beginPath(); L.ellipse(cx,cy,160-128*q,(160-128*q)*0.82,0,0,7); L.stroke(); }
     L.globalAlpha=1;
   }
   L.restore();
@@ -2947,50 +2997,53 @@ function ultBack(v,now){
 function ultFront(v,now){
   const ul=v.phase==='fight'?v.ul:null;
   if(ultFx&&!ul&&!ultFx.end&&now-ultFx.t0>250) ultFx.end=now;                 // it is over: the bars open again
-  if(ultFx&&ultFx.end&&now-ultFx.end>320) ultFx=null;
-  if(ultEnd&&now-ultEnd.t0>1300) ultEnd=null;
+  if(ultFx&&ultFx.end&&now-ultFx.end>360) ultFx=null;
+  if(ultEnd&&now-ultEnd.t0>700) ultEnd=null;
   const R=ultRect(v), mx=R[0]+R[2]/2;
+  // each blow pops a small jagged star where it lands
+  ultPops=ultPops.filter(p=>now-p.t0<150);
+  if(!CALM) for(const p of ultPops){ const u=(now-p.t0)/150, r=22+46*ease(u), seed=p.seed+Math.floor(u*3)*5.1; L.save(); L.globalAlpha=1-u*u;
+    L.fillStyle='#fff'; starPath(p.x,GY-p.y,r,9,seed,0.4); L.fill(); L.strokeStyle='#111'; L.lineWidth=2.5; L.lineJoin='miter'; L.stroke(); L.restore(); }
   if(ultFx){
-    const el=(now-ultFx.t0)/1000, side=ultFx.side, col=PCOL[side], pale=PFLASH[side], k=ultFx.end?1-ease((now-ultFx.end)/300):ease(el/0.16), bar=Math.min(46,R[3]*0.09)*k;
+    const el=(now-ultFx.t0)/1000, side=ultFx.side, col=PCOL[side], pale=PFLASH[side], k=ultFx.end?1-sstep((now-ultFx.end)/340):ease(el/0.2), bar=Math.min(46,R[3]*0.09)*k;
     L.save(); L.beginPath(); L.rect(R[0],R[1],R[2],R[3]); L.clip();
     if(!DESK){ L.fillStyle='#05060f'; L.fillRect(R[0],R[1],R[2],bar); L.fillRect(R[0],R[1]+R[3]-bar,R[2],bar); }
     if(bar>20){ L.font='italic 900 '+Math.round(bar*0.5)+'px "Arial Black",Impact,sans-serif'; L.textBaseline='middle'; L.textAlign=side?'right':'left'; L.fillStyle=pale; L.globalAlpha=k;
       L.fillText('✦ '+ultFx.name,side?R[0]+R[2]-18:R[0]+18,R[1]+bar/2+1); L.globalAlpha=1; }
-    // the announcement: a slanted band with the name on it, in from the caster's side and out the other
-    const intro=ultFx.intro, inK=ease(el/0.16), outK=ease((el-(intro-0.14))/0.2), dir=side?-1:1;
-    if(el<intro+0.08&&!ultFx.end){
-      const h=Math.min(150,R[3]*0.3), cy=R[1]+R[3]*0.42, slide=dir*((1-inK)*-R[2]*1.1+outK*R[2]*1.2), drift=dir*(el-intro/2)*46;
+    // the announcement: a slanted band with the name on it, in from the caster's side (a touch past its place, then
+    // settling) and out the other
+    const intro=ultFx.intro, inK=back(el/0.26), outK=sstep((el-(intro-0.16))/0.22), dir=side?-1:1;
+    if(el<intro+0.1&&!ultFx.end){
+      const h=Math.min(150,R[3]*0.3), cy=R[1]+R[3]*0.42, slide=dir*((1-inK)*-R[2]*1.15+outK*outK*R[2]*1.3), drift=dir*(el-intro/2)*40;
       L.save(); L.translate(mx+slide,cy); L.transform(1,0,-0.22,1,0,0);
-      L.fillStyle='rgba(6,8,22,.94)'; L.fillRect(-R[2],-h/2,R[2]*2,h);
+      L.fillStyle='rgba(6,8,22,.95)'; L.fillRect(-R[2],-h/2,R[2]*2,h);
       L.fillStyle=col; L.fillRect(-R[2],-h/2-7,R[2]*2,7); L.fillRect(-R[2],h/2,R[2]*2,7); L.fillStyle=pale; L.fillRect(-R[2],-h/2-10,R[2]*2,2); L.fillRect(-R[2],h/2+8,R[2]*2,2);
       if(!CALM){ L.save(); L.beginPath(); L.rect(-R[2],-h/2,R[2]*2,h); L.clip(); L.lineCap='butt';
-        for(let i=0;i<16;i++){ const y=-h/2+((i*37)%100)/100*h, p=((now/1000*(2.2+i%3)+i*0.29)%1), x=dir*(R[2]*(1-2*p)), w=90+((i*53)%120);
-          L.strokeStyle=i%3?'rgba(255,255,255,.16)':col; L.globalAlpha=i%3?1:0.5; L.lineWidth=i%4?2:5; L.beginPath(); L.moveTo(x,y); L.lineTo(x+dir*w,y); L.stroke(); }
+        for(let i=0;i<18;i++){ const y=-h/2+((i*37)%100)/100*h, p=((now/1000*(2.2+i%3)+i*0.29)%1), x=dir*(R[2]*(1-2*p)), w=90+((i*53)%120);
+          L.strokeStyle=i%3?'rgba(255,255,255,.14)':col; L.globalAlpha=i%3?1:0.5; L.lineWidth=i%4?2:5; L.beginPath(); L.moveTo(x,y); L.lineTo(x+dir*w,y); L.stroke(); }
         L.restore(); L.globalAlpha=1; }
-      const name=ultFx.name, size=Math.max(26,Math.min(h*0.56,R[2]*0.74/(name.length*0.66)));
+      // the drawing itself on a white panel at the band's leading end (dark ink would not show on the band)
+      const px=-dir*Math.min(R[2]*0.34,320)+drift*1.5, pw=h*1.25;
+      if(art[side]&&art[side][ultFx.slot]){ L.fillStyle=col; L.fillRect(px-pw/2-6,-h/2,pw+12,h); L.fillStyle='#f6f8ff'; L.fillRect(px-pw/2,-h/2,pw,h);
+        L.save(); L.translate(px,0); L.transform(1,0,0.22,1,0,0); L.rotate(-0.55*dir); sprite(side,ultFx.slot,h*0.92); L.restore(); }
+      const name=ultFx.name, size=Math.max(26,Math.min(h*0.56,R[2]*0.62/(name.length*0.66))), tx=dir*Math.min(R[2]*0.1,90)+drift;
       L.font='italic 900 '+Math.round(size)+'px "Arial Black",Impact,sans-serif'; L.textAlign='center'; L.textBaseline='middle';
-      const pop=1+0.5*(1-ease(el/0.22)); L.save(); L.translate(drift,-h*0.08); L.scale(pop,pop);
+      const pop=1+0.6*(1-ease(el/0.24)); L.save(); L.translate(tx,-h*0.08); L.scale(pop,pop);
       L.fillStyle=col; L.fillText(name,5,5); L.fillStyle='#fff'; L.fillText(name,0,0); L.restore();
-      L.font='600 '+Math.round(Math.max(13,size*0.26))+'px "Arial",sans-serif'; L.fillStyle=pale; L.fillText(ultFx.sub||'',drift*0.6,h*0.3);
-      // the drawing itself, large, at the leading end of the band
-      if(art[side]&&art[side][ultFx.slot]){ L.save(); L.translate(-dir*Math.min(R[2]*0.36,330)+drift*1.6,0); L.fillStyle=pale; L.globalAlpha=0.92; L.beginPath(); L.ellipse(0,0,h*0.62,h*0.44,-0.5*dir,0,7); L.fill(); L.rotate(-0.5*dir); L.globalAlpha=1; sprite(side,ultFx.slot,h*0.95); L.restore(); }      // on a pale plate, so dark ink shows against the dark band
+      L.font='600 '+Math.round(Math.max(13,size*0.26))+'px "Arial",sans-serif'; L.fillStyle=pale; L.fillText(ultFx.sub||'',tx*0.9,h*0.3);
       L.restore();
     }
     L.restore();
   }
   // time starts again: a ring bursts from the fighter who took it
-  if(ultEnd){
-    const el=(now-ultEnd.t0)/1000, x=ultEnd.x, y=GY-ultEnd.y-70, col=PCOL[ultEnd.side];
-    if(!CALM&&el<0.5){ L.save(); L.strokeStyle=PFLASH[ultEnd.side]; L.globalAlpha=1-el/0.5; L.lineWidth=10*(1-el/0.5)+1; L.beginPath(); L.arc(x,GY-ultEnd.y,30+el*520,0,7); L.stroke(); L.restore(); }
-    // (the running total over the fighter, drawn with the other hit effects, already shows what the ultimate took)
-  }
+  if(ultEnd&&!CALM){ const el=(now-ultEnd.t0)/1000; if(el<0.55){ const u=ease(el/0.55); L.save(); L.strokeStyle=PFLASH[ultEnd.side]; L.globalAlpha=1-u; L.lineWidth=12*(1-u)+1; L.beginPath(); L.arc(ultEnd.x,GY-ultEnd.y,30+u*340,0,7); L.stroke(); L.restore(); } }
 }
 function render(now){
   const v=view, age=net&&!v.hs?Math.min(0.08,(now-viewAt)/1000):0, dt=Math.max(0,Math.min(0.05,(now-(lastRender||now))/1000)); lastRender=now;
   fitCanvas(); L.setTransform(1,0,0,1,0,0); L.clearRect(0,0,cv.width,cv.height); L.setTransform(VS,0,0,VS,OX*VS,OY);
   if(!deskLike()){ L.fillStyle='#fff'; L.fillRect(-OX,0,VW,440); }
   if(v.sheet) sheetBack(v,now);
-  shake*=Math.exp(-dt*22); if(shake>0.1) L.translate(Math.sin(now*0.112)*shake,Math.cos(now*0.091)*shake*0.35); else shake=0;
+  shake*=Math.exp(-dt*22); if(shake>0.1&&impactLive(now)){ /* the impact frame is held dead still; the jolt comes when it drops */ } else if(shake>0.1) L.translate(Math.sin(now*0.112)*shake,Math.cos(now*0.091)*shake*0.35); else shake=0;
   // ground and platforms: plain ink lines, no scenery
   L.strokeStyle='#111'; L.lineCap='round'; L.lineWidth=DESK?3:4; if(RETRO) L.globalAlpha=0; L.beginPath(); L.moveTo(-OX-10,GY+2); L.lineTo(ARENA_W+10+OX,GY+2); L.stroke(); L.globalAlpha=1;
   // corner posts mark where the arena ends when the view is wider than it
@@ -3061,10 +3114,9 @@ function render(now){
       L.font='30px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=L.strokeStyle; L.fillText('BOOM',e.x,y-e.n*0.6-a*20); }
   }
   L.globalAlpha=1; L.setTransform(VS,0,0,VS,OX*VS,OY);
-  // impact frame: put white behind everything, then invert it, so the stage goes black and the ink white for a few frames
+  // the cut scene's front layer, then the impact frame over everything drawn so far (see impactFrame)
   ultFront(v,now);
-  if(impactOn(now)&&!DESK&&!CALM){ L.save(); const b=v.board&&!v.breached&&!v.broken?v.board:null, R=b?[b.x0,GY-b.top,b.x1-b.x0,b.top-b.floor]:[-OX-20,-OY/VS-20,VW+40,cv.height/VS+40];
-    L.fillStyle='#fff'; L.globalCompositeOperation='destination-over'; L.fillRect(R[0],R[1],R[2],R[3]); L.globalCompositeOperation='difference'; L.fillRect(R[0],R[1],R[2],R[3]); L.restore(); }
+  impactFrame(v,now);
   // banners
   ultDamageDraw(v,now,dt);
   const banner=(t,size,y,col)=>{ L.font=size+'px "Gochi Hand",cursive'; L.textAlign='center'; L.lineWidth=8; const bx=v.board?(v.board.x0+v.board.x1)/2:ARENA_W/2, by=v.board?y-(v.board.floor+Math.max(0,v.board.top-v.board.floor-330)):y; L.strokeStyle='#fffdf6'; L.strokeText(t,bx,by); L.fillStyle=col||'#1c2541'; L.fillText(t,bx,by); };
