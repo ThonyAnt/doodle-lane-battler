@@ -21,10 +21,10 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
 }
 { // 2. mining through the wall
   const S=fresh(), f=S.f[0]; inp(S,0,{l:1}); run(S,3); inp(S,0,{l:0});
-  inp(S,0,{m:1}); run(S,0.6); const one=S.cells.filter(c=>c.hp<2).length;
+  inp(S,0,{m:1}); run(S,0.6); const one=S.cells.filter(c=>c.hp<=0).length;
   inp(S,0,{m:2}); run(S,0.6); inp(S,0,{m:3}); run(S,0.6); inp(S,0,{m:4}); run(S,0.6);
   const dead=S.cells.filter(c=>c.hp<=0).length;
-  ok('one swing chips a cell, two break it',one===1&&dead>=1,{one,dead,breached:S.breached});
+  ok('one swing breaks a cell',one===1&&dead>=1,{one,dead,breached:S.breached});
   inp(S,0,{m:5}); run(S,0.6); inp(S,0,{m:6}); run(S,0.6); inp(S,0,{m:7}); run(S,0.6); inp(S,0,{m:8}); run(S,0.6);
   inp(S,0,{l:1}); run(S,2.5);
   ok('the fighter walks out through the hole and drops to the desktop',f.x<BOARD.x0-10&&f.y<BOARD.floor,[Math.round(f.x),f.y,S.cells.filter(c=>c.hp<=0).map(c=>c.side+c.y0)]);
