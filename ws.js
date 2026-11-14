@@ -119,7 +119,7 @@ function attach(server,path,onSocket,opts){
   let paths=attached.get(server);
   if(!paths){
     attached.set(server,paths=new Map());
-    const refuse=(tcp,status,extra)=>{ tcp.on('error',()=>{}); tcp.end('HTTP/1.1 '+status+'\r\nConnection: close\r\nContent-Length: 0\r\n'+(extra||'')+'\r\n'); };
+    const refuse=(tcp,status,extra)=>{ tcp.on('error',()=>{}); tcp.end('HTTP/1.1 '+status+'\r\nConnection: close\r\nContent-Length: 0\r\n'+(extra||'')+'\r\n'); const t=setTimeout(()=>tcp.destroy(),1000); if(t.unref) t.unref(); };
     server.on('upgrade',(req,tcp,head)=>{
       let p=''; try{ p=new URL(req.url,'http://x').pathname; }catch(e){}
       const entry=paths.get(p), key=req.headers['sec-websocket-key'];

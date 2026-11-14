@@ -2206,7 +2206,7 @@ function koNote(k,snap,ms,winsToEnd){
 // A room is reached over the event stream (GET /duel/events, with a request for every button) unless the page's
 // address says ?net=ws: then a WebSocket to /duel/ws carries the events, the state (as binary frames: wire.js) and the
 // buttons, and the event stream is the fallback. ?net=ws-only never falls back (for tests).
-const LINK_WAIT_MS=1500, LINK_RETRY_MS=1000, ACK_EVERY=3, PING_MS=2000;
+const LINK_WAIT_MS=1500, LINK_RETRY_MS=1000, LINK_SILENT_MS=3000, ACK_EVERY=3, PING_MS=2000;
 // Which link to use now. param: the ?net= value; opened: the socket has opened; elapsedMs: since it was asked for;
 // closed: it has closed or failed. 'wait' means neither yet.
 function chooseLink(o){
@@ -2245,9 +2245,9 @@ const linkText=st=>!st.link?'connecting':st.link+' · '+(st.rttMs<0?'--':Math.ro
 // whether it could; .rtt(ms) notes a round trip the page timed itself; .stats() is for the status bar; .close() ends it.
 function openLink(o){
   const meter=linkMeter(), L={link:''};
-  let ws=null, es=null, rx=null, t0=0, opened=false, closed=false, timer=null, shut=false, seq=0, acked=0, pingAt=-Infinity;
+  let ws=null, es=null, rx=null, t0=0, opened=false, closed=false, timer=null, shut=false, seq=0, acked=0, pingAt=-Infinity, heardAt=0, deaf=0, watch=null;
   const setLink=l=>{ if(L.link!==l){ L.link=l; if(o.onLink) o.onLink(l); } };
-  const dropSocket=()=>{ if(!ws) return; const s=ws; ws=null; s.onopen=s.onmessage=s.onclose=s.onerror=null; try{ s.close(); }catch(e){} };
+  const dropSocket=()=>{ o.clearTimeout(watch); if(!ws) return; const s=ws; ws=null; s.onopen=s.onmessage=s.onclose=s.onerror=null; try{ s.close(); }catch(e){} };
   // The event stream, as the page has always used it: one listener for each name.
   function startEvents(){
     const e=es=new o.EventSource(o.sseUrl); setLink('sse');
@@ -2260,18 +2260,22 @@ function openLink(o){
     else if(want==='sse'){ o.clearTimeout(timer); dropSocket(); if(!es) startEvents(); }
     else if(closed){ dropSocket(); setLink(''); o.clearTimeout(timer); timer=o.setTimeout(startSocket,LINK_RETRY_MS); }      // ?net=ws-only: the socket again, a little later
   }
-  // The socket could not be followed any further (it closed, failed, or sent something that makes no sense).
+  // The socket could not be followed any further (it closed, failed, went silent, or sent something that makes no sense).
   const lost=()=>{ closed=true; decide(); };
+  // A room sends its state at least four times a second, so a socket that has said nothing for LINK_SILENT_MS is dead
+  // though nobody has told the browser (a tablet that slept, a network that went away). Looked at once a second; it
+  // has to be found silent twice running, so that messages held up behind a busy page get their turn first.
+  const listen=()=>{ o.clearTimeout(watch); watch=o.setTimeout(()=>{ if(shut||!ws||!opened||closed) return; if(o.now()-heardAt<LINK_SILENT_MS) deaf=0; else if(++deaf>=2) return lost(); listen(); },1000); };
   function startSocket(){
     if(shut) return;
     opened=false; closed=false; t0=o.now(); seq=0; acked=0; pingAt=-Infinity; rx=o.Wire.createReceiver();
     let s; try{ s=new o.WebSocket(o.wsUrl); }catch(e){ return lost(); }
     ws=s; s.binaryType='arraybuffer';
-    s.onopen=()=>{ if(ws===s){ opened=true; decide(); } };
+    s.onopen=()=>{ if(ws===s){ opened=true; heardAt=o.now(); deaf=0; listen(); decide(); } };
     s.onclose=s.onerror=()=>{ if(ws===s) lost(); };
     s.onmessage=e=>{
       if(ws!==s||shut) return;
-      const now=o.now();
+      const now=heardAt=o.now();
       if(typeof e.data==='string'){
         meter.got(e.data.length+2,now,false,0);
         let m=null; try{ m=JSON.parse(e.data); }catch(err){}
@@ -2297,7 +2301,7 @@ function openLink(o){
   };
   L.rtt=ms=>meter.rtt(ms);
   L.stats=()=>Object.assign({link:L.link},meter.read());
-  L.close=()=>{ shut=true; o.clearTimeout(timer); dropSocket(); if(es){ es.close(); es=null; } };
+  L.close=()=>{ shut=true; o.clearTimeout(timer); o.clearTimeout(watch); dropSocket(); if(es){ es.close(); es=null; } };
   if(chooseLink({param:o.param,opened:false,elapsedMs:0,closed:false})==='sse') startEvents(); else startSocket();
   return L;
 }
@@ -2786,7 +2790,7 @@ function resetLocal(){
 function setMode(m){
   deskMenu=false;
   mode=m; for(const b of ['Bot','2p','Online','Practice']) $('mode'+b).setAttribute('aria-pressed',m===b.toLowerCase());
-  if(net){ net.line.close(); net=null; } setScreen(false); setPad(); sim=null; bot=null; resetLocal(); lastPhase=''; overlayKey='';
+  if(net){ hangUp(); net=null; } setScreen(false); setPad(); sim=null; bot=null; resetLocal(); lastPhase=''; overlayKey='';
   deskStage=m==='online'&&!RETRO; deskSent=''; rEdgesSent=''; rLayoutSent=''; rTick=7; wobj.clear(); wPending[0]=[]; wPending[1]=[];
   if(m==='online'){ local=[false,false]; ARENA_W=960; ARENA_PLATS=PLATS; view=createDuel().snapshot(); buildDesks(); buildControls(); const code=(location.hash||'').slice(1).toUpperCase(); if(/^[A-Z]{4}$/.test(code)) joinRoom(code,watched()===code); return; }
   if(location.hash) history.replaceState(null,'',location.pathname);
@@ -2833,7 +2837,7 @@ function replayBuild(){
 // Fetch a room's recording and play it. Anything that stops it is said in words under the bar.
 function setReplay(code){
   deskMenu=false; mode='replay'; for(const b of ['Bot','2p','Online','Practice']) $('mode'+b).setAttribute('aria-pressed',false);
-  if(net){ net.line.close(); net=null; } setScreen(false); setPad(); sim=null; bot=null; rep=null; resetLocal(); lastPhase=''; overlayKey=''; deskStage=false; wobj.clear(); wPending[0]=[]; wPending[1]=[];
+  if(net){ hangUp(); net=null; } setScreen(false); setPad(); sim=null; bot=null; rep=null; resetLocal(); lastPhase=''; overlayKey=''; deskStage=false; wobj.clear(); wPending[0]=[]; wPending[1]=[];
   local=[false,false]; ARENA_W=960; ARENA_PLATS=PLATS; view=createDuel().snapshot(); buildDesks(); buildControls(); $('overlay').hidden=true;
   replayBuild(); const say=t=>{ $('repMsg').textContent=t; };
   if(!/^[A-Z]{4}$/.test(code)){ say('A replay link ends in a room\u2019s four letters, like duel?replay=ABCD.'); return; }
@@ -2909,7 +2913,7 @@ function setBrain(b){
 }
 $('cpuBrain').onclick=()=>setBrain(cpuBrain==='net'?'classic':'net');
 function startMatch(bot){
-  wantBot=!!bot; if(mode!=='online') setMode('online'); else if(net){ net.line.close(); net=null; resetLocal(); lastPhase=''; overlayKey=''; }
+  wantBot=!!bot; if(mode!=='online') setMode('online'); else if(net){ hangUp(); net=null; resetLocal(); lastPhase=''; overlayKey=''; }
   history.replaceState(null,'',location.pathname+location.search); createRoom(true);
 }
 async function createRoom(watch){
@@ -2918,7 +2922,7 @@ async function createRoom(watch){
   catch(e){ alert('Could not create a room: '+(e.message||'the server did not answer')); }
 }
 function joinRoom(code,watch){
-  if(net) net.line.close();
+  hangUp();
   watch=!!watch; try{ if(watch) sessionStorage.setItem('dd-watch',code); else sessionStorage.removeItem('dd-watch'); }catch(e){}
   // line: the link to the room (openLink), opened at the end of this function; link: which one is in use, 'sse', 'ws' or '' while connecting.
   const me={code,line:null,link:'',side:-1,watch,bot:false,screen:false,present:[false,false],seq:Date.now(),gone:false}, subs=[]; net=me;
@@ -2934,13 +2938,15 @@ function joinRoom(code,watch){
   on('forge',setForge);      // the room's rules: being written, or written (see RuleForge)
   on('plats',d=>{ if(!(deskLike()&&deskEdges&&net.watch)) ARENA_PLATS=d.plats||PLATS; });
   on('hello',()=>{ deskSent=''; rLayoutSent=''; rEdgesSent=''; deskTerrain(); });
-  on('gone',()=>{ net.gone=true; net.line.close(); });
+  on('gone',()=>{ net.gone=true; hangUp(); });
   const q='room='+code+'&id='+cid+(watch?'&watch=1':'');
   me.line=openLink({param:NET_LINK,wsUrl:(location.protocol==='https:'?'wss://':'ws://')+location.host+'/duel/ws?'+q,sseUrl:'/duel/events?'+q,names:[...new Set(subs.map(x=>x[0]))],
     emit:(name,d)=>{ if(net===me) for(const [n,fn] of subs) if(n===name) fn(d); },
     WebSocket:window.WebSocket,EventSource:window.EventSource,Wire:window.Wire,now:()=>performance.now(),setTimeout:(f,ms)=>setTimeout(f,ms),clearTimeout:t=>clearTimeout(t),
     onLink:l=>{ me.link=l; if(net===me&&padView) $('who').textContent='You are '+NAME[me.side]+linkNote(); }});
 }
+// Closes the link to the room this page is in, if it has one.
+function hangUp(){ if(net&&net.line) net.line.close(); }
 // With ?net= in the address, a player's badge also says which link the device is on.
 function linkNote(){ return NET_LINK&&net&&net.link?' \u00b7 '+net.link:''; }
 // The art board and everything drawn in it. Shapes arrive once, with their strokes; after that only positions change.
