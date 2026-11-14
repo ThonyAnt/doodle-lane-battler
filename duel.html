@@ -2330,7 +2330,7 @@ function forgeCards(d,items,off,typed){
 // How many characters of each rule's code are on show, n characters into the typing: one rule after another.
 function forgeTyped(rules,n){ const out=[]; for(const r of Array.isArray(rules)?rules:[]){ const len=typeof (r&&r.code)==='string'?r.code.length:0; out.push(Math.max(0,Math.min(len,Math.floor(n)))); n-=len; } return out; }
 // The names of the rules one item is part of, for the line under it in the sketchbook.
-function forgeLine(d,side,slot){ if(!d||d.state!=='done'||!Array.isArray(d.rules)) return ''; const id=(side?'red':'blue')+'.'+slot; return d.rules.filter(r=>r&&(r.a===id||r.b===id)).map(r=>String(r.name)).join(', '); }
+function forgeLine(d,side,slot){ if(!d||d.state!=='done'||!Array.isArray(d.rules)) return ''; const id=(side?'red':'blue')+'.'+slot; return [...new Set(d.rules.filter(r=>r&&(r.a===id||r.b===id)).map(r=>String(r.name)))].join(', '); }      // each name once: two players can hold the same built-in rule against each other
 // What a `rule` event shows over the fighter: the rule's shout, or failing that its name, and the name of one rule
 // not more often than every `every` ms. said (rule id -> when it last showed anything) is kept by the caller.
 function forgeCallout(e,d,said,now,every){
