@@ -8,7 +8,7 @@ if(!clip){ console.error('usage: node tools/strip.js <clip[,clip...]> [frames] [
 
 // Load the clip files in Node first, so syntax errors and bad keys show up as readable messages.
 global.window=global;
-for(const f of ['core','example','locomotion','blade','bow','gun','spear','hammer','fist','staff','hurl']){
+for(const f of ['core','example','locomotion','blade','bow','gun','spear','hammer','fist','staff','hurl','dual','akimbo']){
   const file=path.join(root,'anim',f+'.js'); if(!fs.existsSync(file)) continue;
   try{ require(file); }catch(e){ console.error('ERROR in anim/'+f+'.js: '+e.message); process.exit(1); }
 }

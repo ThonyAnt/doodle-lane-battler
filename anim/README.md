@@ -15,6 +15,8 @@ Fighter animation for `duel.html` is authored as data: keyframed skeleton poses 
 | `fist.js` | Punches and kicks; also used when nothing is drawn. |
 | `staff.js` | Magic staff casts. |
 | `hurl.js` | Thrown weapons (shuriken, knives, rocks). |
+| `dual.js` | A one-handed weapon in each hand (twin swords, daggers). |
+| `akimbo.js` | A pistol in each hand. |
 
 ## Style target
 
@@ -36,6 +38,7 @@ Alan Becker's stick fights and the Chinese game 火柴人联盟 (League of Stick
 - A clip that follows another in a combo should start from roughly the pose the previous one is in at its cancel time. The game cross-fades about 0.05 s between clips.
 - Non-loop clips should end in a pose close to the set's stance so they blend back cleanly. Loops must have identical first and last keys.
 - Use 6 to 14 keys per clip. Put keys close together around contact.
+- Two weapons: the back hand's weapon has its own angle, `ang2` on each key (same convention as `ang`), and its own slash windows, `trail2`. A key without `ang2` carries the back weapon just below the front one, which is how the shared clips (idle, run, hit reactions) look when played with a pair. Set the clip's `weapon` to `'dual'` or `'akimbo'` so the lab draws both hands.
 
 ## Preview
 

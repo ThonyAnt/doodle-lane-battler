@@ -84,24 +84,28 @@
   //          orbit  0..1: 1 pins the front arm straight along the weapon angle from the shoulder, so a swing is a true arc
   //          grip   0..1: 1 puts the back hand on the hilt too (two-handed)
   //          pull   0..1: bow string draw amount
+  //          ang2   angle of a second weapon held in the BACK hand (dual-wield styles), same convention as the weapon angle.
+  //                 Left out, it follows the front weapon a little lower, so every clip can be played with two weapons.
   //   trail  [[t0,t1],...] time windows where the blade leaves a painted slash trail
+  //   trail2 the same for the back-hand weapon
   //   marks  [{t,type}] gameplay moments (hit, shot, step, land). Must match the move spec.
-  //   weapon 'blade' | 'spear' | 'hammer' | 'fist' | 'bow' | 'gun' | 'staff' | 'star' | 'none'  (what the lab draws in the front hand)
+  //   weapon 'blade' | 'spear' | 'hammer' | 'fist' | 'bow' | 'gun' | 'staff' | 'star' | 'dual' | 'akimbo' | 'none'  (what the lab draws in the front hand; dual and akimbo also fill the back hand)
   //   spline false to interpolate linearly instead of with a smooth curve through the keys
   A.add=function(name,c){
     if(!c||!c.keys||c.keys.length<2) throw new Error('ANIM.add('+name+'): need at least 2 keys');
     const keys=c.keys.map(k=>{
       const pose=typeof k.p==='string'?A.POSES[k.p]:k.p;
       if(!pose||pose.length!==23) throw new Error('ANIM.add('+name+'): bad pose at t='+k.t);
-      return {t:k.t,p:pose.slice(),ease:k.ease||'smooth',rot:k.rot||0,turn:k.turn===undefined?1:k.turn,orbit:k.orbit||0,grip:k.grip||0,pull:k.pull||0};
+      return {t:k.t,p:pose.slice(),ease:k.ease||'smooth',rot:k.rot||0,turn:k.turn===undefined?1:k.turn,orbit:k.orbit||0,grip:k.grip||0,pull:k.pull||0,ang2:k.ang2===undefined?pose[22]+A.OFF2:k.ang2};
     }).sort((a,b)=>a.t-b.t);
     for(const k of keys) if(!EASE[k.ease]) throw new Error('ANIM.add('+name+'): unknown ease '+k.ease);
     const dur=c.dur||keys[keys.length-1].t;
-    A.clips[name]={name,dur,loop:!!c.loop,keys,trail:c.trail||[],marks:c.marks||[],weapon:c.weapon||'none',spline:c.spline!==false,notes:c.notes||''};
+    A.clips[name]={name,dur,loop:!!c.loop,keys,trail:c.trail||[],trail2:c.trail2||[],marks:c.marks||[],weapon:c.weapon||'none',spline:c.spline!==false,notes:c.notes||''};
     return A.clips[name];
   };
 
-  const CH=['rot','turn','orbit','grip','pull'];
+  A.OFF2=0.3;   // default lag of the back-hand weapon behind the front one
+  const CH=['rot','turn','orbit','grip','pull','ang2'];
   function cr(a,b,c,d,u){ const u2=u*u,u3=u2*u; return 0.5*((2*b)+(-a+c)*u+(2*a-5*b+4*c-d)*u2+(-a+3*b-3*c+d)*u3); }
   // Sample a clip at time t (seconds). Returns {p, rot, turn, orbit, grip, pull, t, clip}.
   A.sample=function(clip,t){
@@ -137,18 +141,21 @@
   };
   function bone(ctx,pts,w){ ctx.lineWidth=w; ctx.beginPath(); for(let i=0;i<pts.length;i+=2) i?ctx.lineTo(pts[i],pts[i+1]):ctx.moveTo(pts[i],pts[i+1]); ctx.stroke(); }
   // Draw the skeleton for a sample in local units. Caller has translated to the feet and scaled (flip x for facing left).
-  // opts: col, halo (white outline), noodle (the InkShop figure style), weapon(ctx,sample) callback drawn at the front hand with the weapon angle applied, back(ctx,sample) drawn behind the body.
+  // opts: col, halo (white outline), noodle (the InkShop figure style), weapon(ctx,sample) callback drawn at the front hand with the weapon angle applied,
+  // weapon2(ctx,sample) the same for a second weapon in the back hand (drawn behind the torso), back(ctx,sample) drawn behind the body.
   A.draw=function(ctx,s,opts){
     const p=s.p,col=(opts&&opts.col)||'#111';
     ctx.save();
     ctx.translate(p[4],p[5]); if(s.rot) ctx.rotate(s.rot); if(s.turn!==undefined&&s.turn!==1) ctx.scale(Math.abs(s.turn)<0.08?0.08*(s.turn<0?-1:1):s.turn,1); ctx.translate(-p[4],-p[5]);
     if(opts&&opts.back) opts.back(ctx,s);
+    const off=()=>{ if(!(opts&&opts.weapon2)) return; ctx.save(); ctx.translate(p[8],p[9]); ctx.rotate(s.ang2===undefined?p[22]+A.OFF2:s.ang2); opts.weapon2(ctx,s); ctx.restore(); };
     if(opts&&opts.noodle){
       // The InkShop figure (from Alex's prototype): solid-colour limbs drawn as curves bowed through the elbow and knee,
       // the far-side limbs slightly faded, a gently bellied torso, and a filled round head.
       const q=(a,b,e)=>{ const k=s.bow===undefined?0.68:s.bow, mx=(p[a]+p[e])/2, my=(p[a+1]+p[e+1])/2; ctx.moveTo(p[a],p[a+1]); ctx.quadraticCurveTo(p[b]+(p[b]-mx)*k,p[b+1]+(p[b+1]-my)*k,p[e],p[e+1]); };
       const al=ctx.globalAlpha; ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=7.4; ctx.lineCap='round'; ctx.lineJoin='round';
       ctx.globalAlpha=al*0.78; ctx.beginPath(); q(4,14,16); q(2,6,8); ctx.stroke(); ctx.globalAlpha=al;
+      if(opts.weapon2){ off(); ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=7.4; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.globalAlpha=al; }
       ctx.beginPath(); ctx.moveTo(p[4],p[5]); ctx.quadraticCurveTo((p[4]+p[2])/2+(s.belly?s.belly[0]:9),(p[5]+p[3])/2+(s.belly?s.belly[1]:0),p[2],p[3]); ctx.lineTo(p[0],p[1]); ctx.stroke();
       if(opts.weapon){ ctx.save(); ctx.translate(p[12],p[13]); ctx.rotate(p[22]); opts.weapon(ctx,s); ctx.restore(); ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=7.4; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.globalAlpha=al; }
       ctx.beginPath(); q(4,18,20); q(2,10,12); ctx.stroke();
@@ -165,6 +172,7 @@
     ctx.strokeStyle=col;
     bone(ctx,[p[4],p[5],p[14],p[15],p[16],p[17]],9.5);
     bone(ctx,[p[2],p[3],p[6],p[7],p[8],p[9]],9.5);
+    if(opts&&opts.weapon2){ off(); ctx.strokeStyle=col; ctx.lineCap='round'; ctx.lineJoin='round'; }
     bone(ctx,[p[4],p[5],p[18],p[19],p[20],p[21]],9.5);
     bone(ctx,[p[2],p[3],p[4],p[5]],11);
     ctx.fillStyle='#fff'; ctx.lineWidth=8; ctx.beginPath(); ctx.ellipse(p[0],p[1],17,19,-0.1,0,7); ctx.fill(); ctx.stroke();
@@ -180,11 +188,13 @@
   //  - needle-sharp at the tail, widest past the middle, meeting the weapon at the head
   //  - it hangs in the air after the cut and dissolves from the tail while thinning, instead of just fading
   // len = weapon length in local units. cols = [edge, body, highlight]. Draw before the body.
-  A.trail=function(ctx,clip,t,len,cols){
+  //  off = true paints the trail of the back-hand weapon instead, in the clip's trail2 windows.
+  const hnd=(s,off)=>off?[s.p[8],s.p[9],s.ang2===undefined?s.p[22]+A.OFF2:s.ang2]:[s.p[12],s.p[13],s.p[22]];
+  A.trail=function(ctx,clip,t,len,cols,off){
     if(typeof clip==='string') clip=A.clips[clip];
     cols=cols||A.TRAIL.none;
     const LINGER=0.12, SPAN=0.14;
-    for(const w of clip.trail){
+    for(const w of off?clip.trail2:clip.trail){
       if(t<=w[0]||t>=w[1]+LINGER) continue;
       const head=Math.min(t,w[1]), after=t>w[1]?(t-w[1])/LINGER:0;
       let tail=Math.max(w[0],head-SPAN); tail+=(head-tail)*0.8*after*(2-after);
@@ -192,8 +202,8 @@
       const n=Math.max(8,Math.min(56,Math.ceil(span/0.0025))), tips=[],dirs=[];
       let path=0;
       for(let j=0;j<=n;j++){
-        const s=A.sample(clip,tail+span*j/n),p=s.p,c=Math.cos(p[22]),q=Math.sin(p[22]);
-        const tip=A.xf(s,p[12]+c*len*1.04,p[13]+q*len*1.04), base=A.xf(s,p[12]+c*len*0.2,p[13]+q*len*0.2);
+        const s=A.sample(clip,tail+span*j/n),H=hnd(s,off),c=Math.cos(H[2]),q=Math.sin(H[2]);
+        const tip=A.xf(s,H[0]+c*len*1.04,H[1]+q*len*1.04), base=A.xf(s,H[0]+c*len*0.2,H[1]+q*len*0.2);
         const dx=base[0]-tip[0],dy=base[1]-tip[1],d=Math.hypot(dx,dy)||1;
         tips.push(tip); dirs.push([dx/d,dy/d,d]);
         if(j) path+=Math.hypot(tip[0]-tips[j-1][0],tip[1]-tips[j-1][1]);
@@ -231,12 +241,12 @@
   };
 
   // Weapon smear (from Alex's prototype): a translucent fan filling everything the weapon swept in the last moments,
-  // from the hand out to the tip. len = weapon length in local units. Draw before the body.
-  A.smear=function(ctx,clip,t,len,col,alpha){
+  // from the hand out to the tip. len = weapon length in local units. Draw before the body. off = true: the back-hand weapon.
+  A.smear=function(ctx,clip,t,len,col,alpha,off){
     if(typeof clip==='string') clip=A.clips[clip];
     const span=Math.min(0.15,t); if(span<0.02) return;
     const n=10, hand=[], tip=[];
-    for(let j=0;j<=n;j++){ const s=A.sample(clip,t-span*j/n), p=s.p, cs=Math.cos(p[22]), sn=Math.sin(p[22]); hand.push(A.xf(s,p[12],p[13])); tip.push(A.xf(s,p[12]+cs*len,p[13]+sn*len)); }
+    for(let j=0;j<=n;j++){ const s=A.sample(clip,t-span*j/n), H=hnd(s,off), cs=Math.cos(H[2]), sn=Math.sin(H[2]); hand.push(A.xf(s,H[0],H[1])); tip.push(A.xf(s,H[0]+cs*len,H[1]+sn*len)); }
     ctx.save(); ctx.globalAlpha=alpha===undefined?0.2:alpha; ctx.fillStyle=col||'#111'; ctx.beginPath(); ctx.moveTo(hand[0][0],hand[0][1]);
     for(const b of tip) ctx.lineTo(b[0],b[1]);
     for(let j=n;j>=0;j--) ctx.lineTo(hand[j][0],hand[j][1]);
@@ -263,9 +273,13 @@
       ctx.lineWidth=3; ctx.fillStyle='#d9ddff'; ctx.beginPath(); ctx.arc(88,0,14,0,7); ctx.fill(); ctx.stroke(); },
     star(ctx){ ctx.strokeStyle='#111'; ctx.lineJoin='round'; ctx.lineWidth=3; ctx.fillStyle='#d9ddff'; ctx.beginPath();
       for(let i=0;i<8;i++){ const r=i%2?7:19,a=i*Math.PI/4; i?ctx.lineTo(8+Math.cos(a)*r,Math.sin(a)*r):ctx.moveTo(8+Math.cos(a)*r,Math.sin(a)*r); } ctx.closePath(); ctx.fill(); ctx.stroke(); },
+    // One of a pair: a short one-handed sword, and a pistol. The lab draws the same thing in both hands.
+    dual(ctx){ A.placeholder.blade(ctx,null,88); },
+    akimbo(ctx){ ctx.strokeStyle='#111'; ctx.fillStyle='#d9ddff'; ctx.lineJoin='round'; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.moveTo(-5,-8); ctx.lineTo(36,-8); ctx.lineTo(36,1); ctx.lineTo(7,1); ctx.lineTo(4,15); ctx.lineTo(-7,15); ctx.closePath(); ctx.fill(); ctx.stroke(); },
     fist(ctx){ ctx.strokeStyle='#111'; ctx.lineWidth=3; ctx.fillStyle='#d9ddff'; ctx.beginPath(); ctx.arc(4,0,12,0,7); ctx.fill(); ctx.stroke(); },
     none(){}
   };
   // Length from the hand to the weapon tip, for the slash trail in the lab.
-  A.placeholderLen={blade:110,spear:172,hammer:128};
+  A.placeholderLen={blade:110,spear:172,hammer:128,dual:88};
 })(typeof window!=='undefined'?window:globalThis);

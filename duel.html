@@ -437,6 +437,8 @@ Window titlebars = platforms
 <script src="/anim/fist.js"></script>
 <script src="/anim/staff.js"></script>
 <script src="/anim/hurl.js"></script>
+<script src="/anim/dual.js"></script>
+<script src="/anim/akimbo.js"></script>
 <script>
 /*DUEL-START*/
 // Pure match rules for Doodle Duel. No DOM access in this block: the server runs the same code for online rooms.
@@ -490,9 +492,11 @@ function traitChoices(kind,asked,seed){
 // Words that give away what something is for, used when the reader's answer does not name one of the kinds or styles.
 const KIND_HINTS=[['bomb',/bomb|explo|grenade|dynamite|mine|firework|flask|meteor|molotov/],['shield',/shield|armou?r|wall|helmet|umbrella|barrier|door|lid|block|protect|defen/],
   ['heal',/heal|heart|food|snack|drink|fruit|apple|pizza|burger|cake|bandage|medic|medkit|soup|candy/],['dash',/wing|rocket|boot|shoe|skate|wheel|bike|jet|speed|spring|lightning|horse|move|mobility|dash/],
-  ['ranged',/gun|bow|shoot|shot|throw|laser|wand|staff|cannon|star|dart|arrow|sling|ranged|projectile|magic|spell|missile|blaster/],
-  ['melee',/sword|blade|knife|axe|club|bat|hammer|fist|claw|whip|spear|stick|melee|swing|stab|punch|saw|mace|lance/]];
-const STYLE_HINTS=[['spear',/spear|lance|trident|pole|pike|whip|chain|rope|rod|fork|pitchfork|stick/],['hammer',/hammer|mace|club|bat|maul|wrench|pan|log|brick|rock|guitar|chair|fish|heavy|blunt/],
+  ['ranged',/gun|pistol|revolver|akimbo|bow|shoot|shot|throw|laser|wand|staff|cannon|star|dart|arrow|sling|ranged|projectile|magic|spell|missile|blaster/],
+  ['melee',/sword|blade|knife|knives|dagger|katana|sickle|axe|club|bat|hammer|fist|claw|whip|spear|stick|melee|swing|stab|punch|saw|mace|lance/]];
+// The two paired styles come first: "twin swords" is a pair before it is a blade. Each is only tried for its own kind.
+const STYLE_HINTS=[['dual',/dual|twin|pair|two(?![- ]hand)|both hands|swords|daggers|knives|axes|blades|sickles|kamas?\b|sais?\b|tonfa|nunchu/],['akimbo',/akimbo|dual|twin|pair|two(?![- ]hand)|both hands|pistols|guns|revolvers|blasters|uzis/],
+  ['spear',/spear|lance|trident|pole|pike|whip|chain|rope|rod|fork|pitchfork|stick/],['hammer',/hammer|mace|club|bat|maul|wrench|pan|log|brick|rock|guitar|chair|fish|heavy|blunt/],
   ['fist',/fist|glove|gauntlet|claw|punch|kick|hand|foot|paw|knuckle/],['blade',/sword|blade|knife|axe|saw|scythe|katana|dagger|scissor|cleaver|edge/],
   ['bow',/bow|crossbow|sling|arrow|harpoon/],['gun',/gun|cannon|laser|pistol|rifle|blaster|trigger|hose|launcher/],['staff',/staff|wand|orb|magic|spell|book|crystal|scept/],
   ['hurl',/throw|hurl|star|shuriken|boomerang|dart|card|ball|disc|frisbee|banana|rock|egg|pie/]];
@@ -517,7 +521,21 @@ function validItem(o,strokes){
 }
 function nameFor(spec){
   const el={none:'Scribble',fire:'Fire',water:'Water',plant:'Leafy'}[spec.element];
-  return el+' '+({spear:'Spear',hammer:'Hammer',fist:'Gloves',bow:'Bow',gun:'Blaster',staff:'Staff',hurl:'Star'}[spec.style]||{melee:'Blade',ranged:'Blaster',bomb:'Bomb',shield:'Shield',dash:'Wings',heal:'Snack'}[spec.kind]);
+  return el+' '+({spear:'Spear',hammer:'Hammer',fist:'Gloves',dual:'Twin Blades',akimbo:'Twin Pistols',bow:'Bow',gun:'Blaster',staff:'Staff',hurl:'Star'}[spec.style]||{melee:'Blade',ranged:'Blaster',bomb:'Bomb',shield:'Shield',dash:'Wings',heal:'Snack'}[spec.kind]);
+}
+// A drawing of two similar things next to each other (side by side, or one above the other), as two groups of strokes;
+// null if it is one thing. The groups must be parted by a clear gap that no stroke crosses, and be alike in size and ink.
+function splitPair(strokes){
+  if(!Array.isArray(strokes)||strokes.length<2) return null;
+  const box=g=>{ let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(const s of g) for(const p of s.pts){ x0=Math.min(x0,p[0]); y0=Math.min(y0,p[1]); x1=Math.max(x1,p[0]); y1=Math.max(y1,p[1]); } return [x0,y0,x1,y1]; };
+  const B=strokes.map(s=>box([s])); let best=null;
+  for(const ax of [0,1]){
+    const ord=B.map((b,i)=>i).sort((a,b)=>B[a][ax]-B[b][ax]); let hi=B[ord[0]][ax+2];
+    for(let n=1;n<ord.length;n++){ const gap=B[ord[n]][ax]-hi; if(gap>=6&&(!best||gap>best.gap)) best={gap,a:ord.slice(0,n),b:ord.slice(n)}; hi=Math.max(hi,B[ord[n]][ax+2]); }
+  }
+  if(!best) return null;
+  const g=[best.a,best.b].map(ix=>ix.sort((a,b)=>a-b).map(i=>strokes[i])), size=g.map(q=>{ const b=box(q); return Math.max(8,b[2]-b[0],b[3]-b[1]); }), ink=g.map(q=>strokeLen(q)+1);
+  return Math.min(size[0],size[1])>=Math.max(size[0],size[1])*0.6&&Math.min(ink[0],ink[1])>=Math.max(ink[0],ink[1])*0.5?g:null;
 }
 // Rough guess from shape and ink colour, used when no vision model is available.
 function localGuess(strokes){
@@ -526,8 +544,12 @@ function localGuess(strokes){
   const w=Math.max(8,x1-x0), h=Math.max(8,y1-y0), aspect=Math.max(w,h)/Math.min(w,h), size=Math.max(w,h);
   const a=strokes[0].pts, closed=Math.hypot(a[0][0]-a[a.length-1][0],a[0][1]-a[a.length-1][1])<size*0.25&&a.length>=4;
   let element='none', best=len.none*0.8; for(const e of ['fire','water','plant']) if(len[e]>best){ best=len[e]; element=e; }
-  const kind=aspect>=2.4?'melee':closed?(size<130?'bomb':'shield'):w>h*1.25?'ranged':strokes.length>=3?'dash':'heal';
-  const spec={kind,style:kind==='ranged'?(h>w?'bow':'gun'):'',element,name:''}; spec.name=nameFor(spec);
+  let kind=aspect>=2.4?'melee':closed?(size<130?'bomb':'shield'):w>h*1.25?'ranged':strokes.length>=3?'dash':'heal', style=kind==='ranged'?(h>w?'bow':'gun'):'';
+  // Two alike things drawn apart: a pair of long thin ones is twin blades, a pair of wide ones is twin pistols.
+  const pair=splitPair(strokes), dims=pair&&pair.map(q=>{ let a=1e9,b=1e9,c=-1e9,d=-1e9; for(const s of q) for(const p of s.pts){ a=Math.min(a,p[0]); b=Math.min(b,p[1]); c=Math.max(c,p[0]); d=Math.max(d,p[1]); } return [Math.max(8,c-a),Math.max(8,d-b)]; });
+  if(pair&&dims.every(([pw,ph])=>Math.max(pw,ph)>=2.4*Math.min(pw,ph))){ kind='melee'; style='dual'; }
+  else if(pair&&dims.every(([pw,ph])=>pw>ph*1.25)){ kind='ranged'; style='akimbo'; }
+  const spec={kind,style,element,name:''}; spec.name=nameFor(spec);
   // With no reader, the drawing's own shape sets how it leans: big reaches far, dense ink hits hard, small is quick.
   const total=len.none+len.fire+len.water+len.plant;
   spec.power=clampStat(2+total/(w+h)*2.2); spec.range=clampStat(1.5+size/45); spec.speed=clampStat(10.5-size/42);
@@ -599,18 +621,37 @@ const MOVES={
   hurl_quick: {dur:0.22,shots:[0.08],cancel:0.18,next:'hurl_quick',dmg:0.45,speed:820,grav:160,stun:0},
   hurl_air:   {dur:0.36,shots:[0.10,0.18,0.26],aims:[0.2,0.55,0.9],dmg:0.5,speed:780,stun:0.1,end:1},
   hurl_power: {dur:0.66,shots:[0.42],dmg:1.9,speed:1050,kbMul:2,end:1},
+  // A pair of one-handed weapons: quick alternating cuts (front hand, back hand, front hand) into a double finisher. Each
+  // hit is light and the reach is short; the damage over a full combo is about a blade's.
+  dual1:    {dur:0.24,hits:[0.08],cancel:0.16,next:'dual2',dmg:0.42,kb:110,lift:20,lunge:150},
+  dual2:    {dur:0.24,hits:[0.08],cancel:0.16,next:'dual3',dmg:0.42,kb:120,lift:40,lunge:150},
+  dual3:    {dur:0.28,hits:[0.09],cancel:0.19,next:'dual4',dmg:0.5,kb:140,lift:120,lunge:160},
+  dual4:    {dur:0.58,hits:[0.20,0.28],dmg:0.75,kb:300,lift:200,lunge:240,lungeAt:0.12,end:1},
+  dual_run: {dur:0.40,hits:[0.12,0.20],dmg:0.55,kb:240,lift:90,carry:400,end:1},
+  dual_air: {dur:0.40,hits:[0.10,0.20],dmg:0.55,kb:200,lift:-160,tall:110,end:1},
+  dual_up:  {dur:0.44,hits:[0.13,0.21],dmg:0.5,kb:100,lift:430,hop:260,tall:110,end:1},
+  // A pair of pistols: the front gun opens, then the two hands take turns (rapid = back hand, rapid2 = front hand).
+  // mz / mzs: where a shot leaves when it is not the style's usual muzzle (the back hand's gun sits lower and nearer).
+  akimbo_shot:  {dur:0.24,shots:[0.07],cancel:0.15,next:'akimbo_rapid',dmg:0.42,speed:900,recoil:30,stun:0.08},
+  akimbo_rapid: {dur:0.16,shots:[0.045],cancel:0.13,next:'akimbo_rapid2',dmg:0.27,speed:900,recoil:22,stun:0,mz:[44,64]},
+  akimbo_rapid2:{dur:0.16,shots:[0.045],cancel:0.13,next:'akimbo_rapid',dmg:0.27,speed:900,recoil:22,stun:0},
+  akimbo_air:   {dur:0.30,shots:[0.07,0.13],dmg:0.25,speed:900,recoil:90,stun:0.08,mzs:[[48,72],[44,64]],end:1},
+  akimbo_power: {dur:0.62,shots:[0.34,0.40],dmg:0.95,speed:1100,kbMul:1.7,recoil:140,mzs:[[48,72],[44,64]],end:1},
   mine:     {dur:0.32,hits:[0.13],mine:1,dmg:0.5,kb:120,lift:60,lunge:60,end:1},   // the built-in pick: chips walls, floors and drawn shapes
   throw:    {dur:0.22,end:1}
 };
 // What a melee or ranged drawing is fought with. Each style has its own moves and animation set.
 const RUN_SPEED=330;   // top ground speed in px/s; fighters reach it in about an eighth of a second
-const MELEE_STYLES=['blade','spear','hammer','fist'], RANGED_STYLES=['bow','gun','staff','hurl'];
+const MELEE_STYLES=['blade','spear','hammer','fist','dual'], RANGED_STYLES=['bow','gun','staff','hurl','akimbo'];
+const PAIRED=['dual','akimbo'];   // styles fought with a weapon in each hand
 // The damage numbers come from a round-robin of all eight styles with equal stats, trait and ink, played by the bot with
 // steady button presses added; each was adjusted until every style won about half its rounds. They even out the bot's play,
-// which is a guess at how people play, so expect to retune after watching real matches.
+// which is a guess at how people play, so expect to retune after watching real matches. The two paired styles (dual, akimbo)
+// were added later: their moves are scaled from blade and gun for the faster hit rate, and their damage set the same way.
 const STYLE={pick:{reach:1,dmg:1,kb:1},blade:{reach:1,dmg:0.97,kb:1},spear:{reach:1.4,dmg:0.58,kb:0.9},hammer:{reach:1.05,dmg:1.46,kb:1.3},fist:{reach:0.62,dmg:0.79,kb:0.9},
-  bow:{reach:1,dmg:1.3,kb:1},gun:{reach:1,dmg:1.55,kb:1},staff:{reach:1,dmg:1.03,kb:1},hurl:{reach:1,dmg:1.55,kb:1}};
-const MUZZLE={bow:[40,72],gun:[48,71],staff:[66,70],hurl:[46,68]};
+  bow:{reach:1,dmg:1.3,kb:1},gun:{reach:1,dmg:1.55,kb:1},staff:{reach:1,dmg:1.03,kb:1},hurl:{reach:1,dmg:1.55,kb:1},
+  dual:{reach:0.8,dmg:0.71,kb:0.85},akimbo:{reach:1,dmg:1.4,kb:0.9}};
+const MUZZLE={bow:[40,72],gun:[48,71],staff:[66,70],hurl:[46,68],akimbo:[48,72]};
 const styleOf=(kind,style)=>kind==='melee'?(MELEE_STYLES.includes(style)?style:'blade'):kind==='ranged'?(RANGED_STYLES.includes(style)?style:'gun'):'';
 const ALT=['blade1','blade2','bow_shot','bow_quick','gun_shot','gun_rapid','spear1','spear2','hammer1','hammer2','fist1','fist3','staff_shot','staff_quick','hurl_shot','hurl_quick'];   // moves with a second animation, name + '_b'
 /* ===== InkShop (Alex's prototype) =====
@@ -733,7 +774,7 @@ function boardCells(b){
   return out;
 }
 // Which glyph cancels an OVERCLOCK of each fighting style (his table, keyed by our styles).
-const STYLE_COUNTER={blade:'wall',fist:'wall',pick:'wall',spear:'circle',bow:'circle',gun:'circle',staff:'circle',hurl:'circle',hammer:'arrow'};
+const STYLE_COUNTER={blade:'wall',fist:'wall',pick:'wall',dual:'wall',akimbo:'circle',spear:'circle',bow:'circle',gun:'circle',staff:'circle',hurl:'circle',hammer:'arrow'};
 function elOfColor(hex){ const m=/^#?([0-9a-f]{6})$/i.exec(hex||''); if(!m) return ELS.includes(hex)?hex:'none';
   const n=parseInt(m[1],16), r=n>>16, g=(n>>8)&255, b=n&255; return r>g*1.35&&r>b*1.35?'fire':b>r*1.25&&b>=g?'water':g>r*1.2&&g>b*1.2?'plant':'none'; }
 function createDuel(opts){
@@ -866,13 +907,13 @@ function createDuel(opts){
         if(a.t<marks[a.done]+0.07) break;      // the blade stays dangerous for a moment
         a.done++;
       }else{
-        const aim=M.aims?M.aims[a.done]:M.aim||0, mz=MUZZLE[it.style]||MUZZLE.gun; a.done++;
+        const aim=M.aims?M.aims[a.done]:M.aim||0, mz=(M.mzs&&M.mzs[a.done])||M.mz||MUZZLE[it.style]||MUZZLE.gun; a.done++;
         // A shot flies as far as the item's range allows (a charged shot a third further), then fades.
         const sp=M.speed*(st.fly||1), life=Math.min(1.6,(st.dist||900)*(M.kbMul?1.35:1)/sp);
         S.pr.push({id:nextId++,k:'shot',st:it.style,big:M.big||0,side:f.side,slot:k,x:f.x+f.face*mz[0],y:f.y+mz[1],
           vx:f.face*sp*Math.cos(aim),vy:-sp*Math.sin(aim),grav:M.grav||0,dmg:st.dmg*M.dmg*sty.dmg,el:it.el,kb:st.kb*(M.kbMul||1),stun:M.stun,tr:it.trait,life,ttl:life});
         if(M.recoil) f.vx-=f.face*M.recoil;
-        S.events.push({e:'shot',x:Math.round(f.x+f.face*(mz[0]+(it.style==='gun'?14:4))),y:Math.round(f.y+mz[1]),st:it.style,side:f.side,f:f.face,el:it.el});
+        S.events.push({e:'shot',x:Math.round(f.x+f.face*(mz[0]+(it.style==='gun'||it.style==='akimbo'?14:4))),y:Math.round(f.y+mz[1]),st:it.style,side:f.side,f:f.face,el:it.el});
       }
     }
     if(!f.act||f.act!==a) return;                       // a trade knocked us out of the move
@@ -1243,9 +1284,13 @@ const STOCK=(()=>{
     sword: {label:'Sword',kind:'melee',style:'blade',s:[5,5,5],t:['flurry','guard'],pts:[[[240,285],[240,60]],[[200,235],[280,235]],[[240,30],[226,62],[226,235]],[[240,30],[254,62],[254,235]]]},
     spear: {label:'Spear',kind:'melee',style:'spear',s:[4,7,4],t:['pierce','pull'],pts:[[[240,290],[240,20]],[[240,20],[224,62],[256,62],[240,20]]]},
     hammer:{label:'Hammer',kind:'melee',style:'hammer',s:[8,4,3],t:['heavy','launch'],pts:[[[240,285],[240,90]],[[190,30],[290,30],[290,95],[190,95],[190,30]]]},
+    twins: {label:'Twin swords',kind:'melee',style:'dual',s:[4,3,8],t:['flurry','lucky'],pts:[[[185,280],[185,70]],[[160,230],[210,230]],[[185,45],[175,72],[175,230]],[[185,45],[195,72],[195,230]],
+      [[295,280],[295,70]],[[270,230],[320,230]],[[295,45],[285,72],[285,230]],[[295,45],[305,72],[305,230]]]},
     gloves:{label:'Gloves',kind:'melee',style:'fist',s:[4,2,9],t:['flurry','swift'],pts:[ring(240,150,60,52,0,T),[[190,150],[290,150]],[[215,202],[215,250],[265,250],[265,202]]]},
     bow:   {label:'Bow',kind:'ranged',style:'bow',s:[6,7,2],t:['pierce','homing'],pts:[ring(200,150,70,110,-T/4,T/4),[[200,40],[200,260]]]},
     gun:   {label:'Gun',kind:'ranged',style:'gun',s:[3,6,6],t:['lucky','bounce'],pts:[[[150,110],[330,110],[330,145],[205,145],[192,205],[150,205],[150,110]],[[215,145],[222,170],[200,172]]]},
+    pistols:{label:'Twin pistols',kind:'ranged',style:'akimbo',s:[3,5,7],t:['lucky','flurry'],pts:[[[150,60],[290,60],[290,88],[193,88],[183,134],[150,134],[150,60]],[[201,88],[206,107],[189,109]],
+      [[190,170],[330,170],[330,198],[233,198],[223,244],[190,244],[190,170]],[[241,198],[246,217],[229,219]]]},
     staff: {label:'Staff',kind:'ranged',style:'staff',s:[7,5,3],t:['homing','blast'],pts:[[[240,290],[240,85]],ring(240,52,32,32,0,T)]},
     star:  {label:'Throwing star',kind:'ranged',style:'hurl',s:[3,5,7],t:['boomerang','flurry'],pts:[[[240,60],[262,128],[330,150],[262,172],[240,240],[218,172],[150,150],[218,128],[240,60]]]},
     bomb:  {label:'Bomb',kind:'bomb',s:[8,5,2],t:['bounce','heavy'],pts:[ring(240,170,62,62,0,T),[[270,115],[300,80],[290,60]]]},
@@ -1262,7 +1307,7 @@ function stockItem(key,element){
 }
 function botLoadout(){
   const pick=a=>a[Math.floor(Math.random()*a.length)];
-  const main=pick(['sword','spear','hammer','gloves','bow','gun','staff','star','bomb']), side=pick(['shield','wings','snack','bomb','sword','spear','gun','star','staff'].filter(k=>k!==main));
+  const main=pick(['sword','spear','hammer','gloves','twins','bow','gun','pistols','staff','star','bomb']), side=pick(['shield','wings','snack','bomb','sword','spear','gun','star','staff'].filter(k=>k!==main));
   return [[main,46],[side,34]].map(([key,cost])=>Object.assign(stockItem(key,pick(ELS)),{cost}));
 }
 /*DUEL-END*/
@@ -1364,9 +1409,16 @@ function buildSprite(strokes,axis){
   const g=can.getContext('2d'); g.translate(m-x0*k,m-y0*k); g.scale(k,k); drawStrokes(g,R,31/k);
   return {cv:can,w:can.width,h:can.height};
 }
-function setArt(side,k,strokes,ver,kind,style){ artStrokes[side][k]=strokes||null; art[side][k]=strokes?{ver,strokes,sprite:buildSprite(strokes,(kind==='melee'&&style!=='fist')||style==='staff')}:null; }
-function sprite(side,k,size,grip){
-  const a=art[side][k]; if(!a) return false; const sp=a.sprite, sc=size/Math.max(sp.w,sp.h);
+// A paired style (twin blades, twin pistols) gets a sprite for each hand: when the drawing shows two things apart, each
+// hand holds its own one, turned grip-first by itself; when it cannot be split, both hands hold the whole drawing.
+function setArt(side,k,strokes,ver,kind,style){
+  artStrokes[side][k]=strokes||null; if(!strokes){ art[side][k]=null; return; }
+  const axis=(kind==='melee'&&style!=='fist')||style==='staff', pair=PAIRED.includes(style)?splitPair(strokes):null;
+  art[side][k]={ver,strokes,sprite:buildSprite(strokes,axis),hands:pair?pair.map(g=>buildSprite(g,axis)):null};
+}
+// hand: 1 or 2 picks the sprite for the front or back hand of a paired style; otherwise the whole drawing.
+function sprite(side,k,size,grip,hand){
+  const a=art[side][k]; if(!a) return false; const sp=hand&&a.hands?a.hands[hand-1]:a.sprite, sc=size/Math.max(sp.w,sp.h);
   L.drawImage(sp.cv,grip?-14*sc:-sp.w*sc/2,-sp.h*sc/2,sp.w*sc,sp.h*sc); return true;
 }
 
@@ -1457,7 +1509,7 @@ function updateDesk(d){
 const STAT_NAMES={melee:['Power','Range','Speed'],ranged:['Power','Range','Speed'],bomb:['Power','Blast size','Reload'],
   shield:['Block time','Mobility','Recharge'],dash:['Impact','Distance','Recharge'],heal:['Healing','Helpings','Recharge']};
 const statBars=it=>['pw','rg','sp'].map((k,n)=>[k,(STAT_NAMES[it.kind]||STAT_NAMES.melee)[n]]).map(([k,l])=>`<div class="stat ${k}"><span>${l}</span><div class="sbar"><i style="width:${Math.round(it[k]*100/9)}%"></i></div><b>${it[k].toFixed(1)}</b></div>`).join('');
-const FIXES=[['melee','blade','Sword'],['melee','spear','Spear or whip'],['melee','hammer','Hammer'],['melee','fist','Fists'],['ranged','bow','Bow'],['ranged','gun','Gun'],['ranged','staff','Magic'],['ranged','hurl','Thrown'],['bomb','','Bomb'],['shield','','Shield'],['dash','','Speed'],['heal','','Healing']];
+const FIXES=[['melee','blade','Sword'],['melee','spear','Spear or whip'],['melee','hammer','Hammer'],['melee','fist','Fists'],['melee','dual','Twin blades'],['ranged','bow','Bow'],['ranged','gun','Gun'],['ranged','akimbo','Twin guns'],['ranged','staff','Magic'],['ranged','hurl','Thrown'],['bomb','','Bomb'],['shield','','Shield'],['dash','','Speed'],['heal','','Healing']];
 function cardHTML(it,locked,showStock){
   const off=locked?'disabled':'', weapon=it.kind==='melee'||it.kind==='ranged';
   return `<div class="stats">${statBars(it)}</div>
@@ -1953,7 +2005,7 @@ function pickClip(v,i,st,age){
   if(Math.abs(f.vx)>40&&v.phase==='fight'){ const fast=!ranged&&Math.abs(f.vx)>RUN_SPEED*0.8&&ANIM.clips.sprint, c=clipFor(ranged?'run_aim':fast?'sprint':st.runName); return [c.name,((((f.x*f.face)/(fast?RUN_PX*1.35:RUN_PX))%1)+1)%1*c.dur]; }
   if(st.skidT<0.22) return ['skid'];
   if(st.spinT<0.5&&ranged&&it.style==='gun'&&ANIM.clips.gun_spin) return ['gun_spin'];
-  if(v.phase==='fight'||v.phase==='count') return [ranged?it.style+'_stance':(!it||it.style==='fist')&&ANIM.clips.fist_stance?'fist_stance':'fight_idle'];
+  if(v.phase==='fight'||v.phase==='count') return [ranged?it.style+'_stance':it&&it.style==='dual'&&ANIM.clips.dual_stance?'dual_stance':(!it||it.style==='fist')&&ANIM.clips.fist_stance?'fist_stance':'fight_idle'];
   return ['idle'];
 }
 function drawFighter(v,i,now,age,dt){
@@ -1972,7 +2024,7 @@ function drawFighter(v,i,now,age,dt){
   st.g=f.g; st.speed=Math.abs(f.vx); st.hurt=f.hurt;
   const [name,driven]=pickClip(v,i,st,age), clip=clipFor(name);
   if(clip.name!==st.name||(driven!==undefined&&!clip.loop&&driven<st.t-0.06)){
-    st.from=st.pose; st.fromRot=st.rot||0; st.fromTurn=st.turn===undefined?1:st.turn; st.blend=st.pose?0:1; st.name=clip.name; st.t=0;
+    st.from=st.pose; st.fromAng2=st.ang2; st.fromRot=st.rot||0; st.fromTurn=st.turn===undefined?1:st.turn; st.blend=st.pose?0:1; st.name=clip.name; st.t=0;
     // A body caught mid-flip or mid-spin needs a little longer to come round.
     const turned=Math.abs(Math.sin(st.fromRot/2))>0.25||st.fromTurn<0.6;
     st.blendDur=turned?0.11:f.hurt?0.05:f.act?0.05:0.09;
@@ -1984,9 +2036,10 @@ function drawFighter(v,i,now,age,dt){
     // Angles take the short way round so a wound-up twirl or a half-finished flip never unwinds.
     st.blend=Math.min(1,st.blend+dt/st.blendDur); const u=smooth(st.blend), near=(a,b)=>a+(((b-a+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI)*u, ang=near(st.from[22],s.p[22]);
     s.p=ANIM.mix(st.from,s.p,u); s.p[22]=ang; ANIM.solve(s.p);
+    if(st.fromAng2!==undefined) s.ang2=near(st.fromAng2,s.ang2);
     s.rot=near(st.fromRot,s.rot||0); s.turn=st.fromTurn+((s.turn===undefined?1:s.turn)-st.fromTurn)*u;
   }
-  st.pose=s.p.slice(); st.rot=s.rot||0; st.turn=s.turn===undefined?1:s.turn;
+  st.pose=s.p.slice(); st.ang2=s.ang2; st.rot=s.rot||0; st.turn=s.turn===undefined?1:s.turn;
   // Secondary motion (anim/rig.js): springs chase the clip pose. Display only; st.pose above stays the clip's own pose.
   const RG=ANIM.rig, rigAt={x,base,d,KS:K*(f.sc||1),dt};
   if(RG){ if(!st.rig) st.rig=RG.make();
@@ -1999,17 +2052,20 @@ function drawFighter(v,i,now,age,dt){
   L.save(); L.translate(x,base); L.scale(d*KS,KS);
   // speed smear behind a dash
   if(f.dash&&!RG) for(const [off,al] of [[-70,.12],[-36,.25]]){ L.save(); L.translate(off,0); L.globalAlpha=al; ANIM.draw(L,s,{col,noodle:true}); L.restore(); }
-  const wlen=it&&kind==='melee'?U(it.sz*STYLE[it.style].reach):0;
+  const wlen=it&&kind==='melee'?U(it.sz*STYLE[it.style].reach):0, two=!!it&&PAIRED.includes(it.style), gsz=it?U(it.sz)*(two?0.82:1):0;
   // weapon smear: everything the weapon swept in the last moments of an attack
-  if(wlen&&it.style!=='fist'&&f.act) ANIM.smear(L,clip,st.t,it.style==='spear'?wlen*0.96:wlen,it.el==='none'?col:PEN[it.el],0.2);
+  if(wlen&&it.style!=='fist'&&f.act){ ANIM.smear(L,clip,st.t,it.style==='spear'?wlen*0.96:wlen,it.el==='none'?col:PEN[it.el],0.2);
+    if(two) ANIM.smear(L,clip,st.t,wlen,it.el==='none'?col:PEN[it.el],0.2,true); }
   ANIM.draw(L,s,{col,halo:DESK,noodle:true,
     back(c){ if(hideItems) return; for(const n of [0,1]){ const o=items[n]; if(!o||n===k||(o.kind==='shield'&&f.sh)) continue;
       c.save(); c.translate(p[2]-14,p[3]+22); c.rotate(-1.15); c.globalAlpha=.55; sprite(i,n,U(o.sz*0.6),o.kind==='melee'); c.restore(); } },
+    // the second of a pair, in the back hand
+    weapon2:two?c=>{ if(kind==='melee') sprite(i,k,wlen,true,2); else{ c.translate(gsz*0.3,0); sprite(i,k,gsz,false,2); } }:null,
     weapon(c,ss){
       if(!it||(kind==='shield'&&f.sh)) return;
       if(kind==='melee'&&it.style==='fist'){ c.rotate(-ss.p[22]); sprite(i,k,U(it.sz*0.5)); }
       else if(kind==='melee'&&it.style==='spear'){ c.translate(-wlen*0.22,0); sprite(i,k,wlen*1.22,true); }
-      else if(kind==='melee') sprite(i,k,wlen,true);
+      else if(kind==='melee') sprite(i,k,wlen,true,two?1:0);
       else if(it.style==='staff'){ const n=U(it.sz*2.3); c.translate(-n*0.38,0); sprite(i,k,n,true); }
       else if(it.style==='hurl'){ if(!(f.act&&/^hurl/.test(f.act.m)&&f.act.t>0.1)) sprite(i,k,U(it.sz*0.75)); }
       else if(kind==='ranged'&&it.style==='bow'){
@@ -2018,7 +2074,7 @@ function drawFighter(v,i,now,age,dt){
           c.strokeStyle='#111'; c.lineCap='round'; c.lineJoin='round'; c.lineWidth=2.5; c.beginPath(); c.moveTo(bx,-h); c.lineTo(sx,0); c.lineTo(bx,h); c.stroke();
           c.strokeStyle=it.el==='none'?'#111':PEN[it.el]; c.lineWidth=4; c.beginPath(); c.moveTo(sx,0); c.lineTo(sx+78,0); c.moveTo(sx+66,-7); c.lineTo(sx+78,0); c.lineTo(sx+66,7); c.stroke(); }
       }
-      else if(kind==='ranged'){ c.translate(U(it.sz)*0.3,0); sprite(i,k,U(it.sz)); }
+      else if(kind==='ranged'){ c.translate(gsz*0.3,0); sprite(i,k,gsz,false,two?1:0); }
       else if(!(kind==='bomb'&&f.cd[k]>0.75)){ c.rotate(-ss.p[22]); sprite(i,k,U(it.sz*(kind==='bomb'?1:0.8))); }
     }});
   if(it&&kind==='shield'&&f.sh){ L.save(); L.translate(p[2]+50,p[3]+22); sprite(i,k,U(it.sz*1.25));
@@ -2145,7 +2201,7 @@ function render(now){
       if(a<0.3){ const g=1-a/0.3, tilt=((e.x*7+e.n*13)%10)/10*1.6-0.8, len=70+e.n*5, cx=Math.cos(tilt), sy=Math.sin(tilt); L.globalAlpha=g; L.fillStyle=e.el==='none'?'#111':PEN[e.el]; L.beginPath(); L.moveTo(e.x-cx*len,y-sy*len); L.lineTo(e.x+sy*5*g,y-cx*5*g); L.lineTo(e.x+cx*len,y+sy*len); L.lineTo(e.x-sy*5*g,y+cx*5*g); L.closePath(); L.fill(); L.fillStyle='#fff'; L.beginPath(); L.moveTo(e.x-cx*len*0.7,y-sy*len*0.7); L.lineTo(e.x+sy*1.6*g,y-cx*1.6*g); L.lineTo(e.x+cx*len*0.7,y+sy*len*0.7); L.lineTo(e.x-sy*1.6*g,y+cx*1.6*g); L.closePath(); L.fill(); L.globalAlpha=1-a; }
       L.font='26px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=PEN[e.el]; L.fillText('-'+e.n,e.x,y-30-a*30); }
     else if(e.e==='block'){ L.font='22px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle='#111'; L.fillText('BLOCK',e.x,y-30-a*24); L.strokeStyle='#111'; L.lineWidth=2; L.beginPath(); L.arc(e.x,y,15+a*35,-1.3,1.3); L.stroke(); }
-    else if(e.e==='shot'){ if(e.st==='gun'&&a<0.14){ L.globalAlpha=1-a/0.14; L.strokeStyle=e.el==='none'?'#111':PEN[e.el]; L.lineCap='round'; for(let n=0;n<7;n++){ const t=(n-3)*0.42, r0=6, r1=(n%2?16:28)*(0.6+a*3); L.lineWidth=n%2?2:3; L.beginPath(); L.moveTo(e.x+Math.cos(t)*r0*e.f,y+Math.sin(t)*r0); L.lineTo(e.x+Math.cos(t)*r1*e.f,y+Math.sin(t)*r1); L.stroke(); } } }
+    else if(e.e==='shot'){ if((e.st==='gun'||e.st==='akimbo')&&a<0.14){ L.globalAlpha=1-a/0.14; L.strokeStyle=e.el==='none'?'#111':PEN[e.el]; L.lineCap='round'; for(let n=0;n<7;n++){ const t=(n-3)*0.42, r0=6, r1=(n%2?16:28)*(0.6+a*3); L.lineWidth=n%2?2:3; L.beginPath(); L.moveTo(e.x+Math.cos(t)*r0*e.f,y+Math.sin(t)*r0); L.lineTo(e.x+Math.cos(t)*r1*e.f,y+Math.sin(t)*r1); L.stroke(); } } }
     else if(e.e==='quake'){ L.strokeStyle='#111'; L.lineCap='round'; L.lineWidth=4*(1-a)+1; L.beginPath(); L.ellipse(e.x,y+2,e.n*(0.3+a*1.1),6+a*8,0,Math.PI,Math.PI*2); L.stroke();
       L.lineWidth=3; for(let n=0;n<7;n++){ const dx=(n-3)*e.n*0.26*(0.5+a), h=(n%2?26:44)*Math.sin(Math.min(1,a*1.6)*Math.PI); L.beginPath(); L.moveTo(e.x+dx,y-4); L.lineTo(e.x+dx*1.15,y-4-h); L.stroke(); } }
     else if(e.e==='heal'){ L.font='26px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=PEN.plant; L.fillText('+'+e.n,e.x,y-a*30); }
