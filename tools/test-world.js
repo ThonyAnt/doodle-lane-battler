@@ -161,20 +161,20 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
   ok('fire on a soaked fighter bursts into steam and dries them',Math.abs(steam.d/base-1.25)<0.03&&steam.tag==='steam'&&steam.b.slow===0,+steam.d.toFixed(1));
   const g=hit('plant','plant',b=>{ b.slow=2; }); ok('a plant hit on a soaked fighter is tagged overgrown',g.tag==='grow');
 }
-{ // leaves: what a weapon leaves behind (LEAVES, S.customize)
-  const F=BOARD.floor, arm=(kind,style,cu,side)=>{ const S=fresh(); S.setItem(side||0,0,{kind,style,element:'none',name:'T'},50); S.customize(side||0,0,cu); return S; };
+{ // leaves: what a weapon leaves behind (LEAVES, S.leaveSet)
+  const F=BOARD.floor, arm=(kind,style,cu,side)=>{ const S=fresh(); S.setItem(side||0,0,{kind,style,element:'none',name:'T'},50); S.leaveSet(side||0,0,cu); return S; };
   const at=(S,ax,gap)=>{ const a=S.f[0], b=S.f[1]; a.x=ax; b.x=ax+gap; a.face=1; b.face=-1; return [a,b]; };
   const left=(S,side)=>S.lv.filter(o=>o.side===side).length+S.objs.filter(o=>o.leaf===side&&o.life>0).length;
-  { const S=fresh(); ok('leaves: no item, nothing to customize',S.customize(0,0,['fire'])===null);
+  { const S=fresh(); ok('leaves: no item, nothing to leaveSet',S.leaveSet(0,0,['fire'])===null);
     S.setItem(0,0,{kind:'melee',style:'blade',element:'none',name:'T'},50); let threw=0, outs=[];
-    for(const j of [undefined,null,7,'x',{},[null,3,'nope',{id:'__proto__'},{id:5}],[{id:'fire',size:'big',secs:NaN}],[{id:'fire',size:99,secs:-4}],['fire','fire','slick','mine'],['step']]){ try{ outs.push(S.customize(0,0,j)); }catch(e){ threw++; } }
-    for(const [a,b] of [[-1,0],[2,0],[0,5],['a','b']]){ try{ S.customize(a,b,['fire']); }catch(e){ threw++; } }
+    for(const j of [undefined,null,7,'x',{},[null,3,'nope',{id:'__proto__'},{id:5}],[{id:'fire',size:'big',secs:NaN}],[{id:'fire',size:99,secs:-4}],['fire','fire','slick','mine'],['step']]){ try{ outs.push(S.leaveSet(0,0,j)); }catch(e){ threw++; } }
+    for(const [a,b] of [[-1,0],[2,0],[0,5],['a','b']]){ try{ S.leaveSet(a,b,['fire']); }catch(e){ threw++; } }
     ok('leaves: bad ids, sides and numbers never throw and are dropped',threw===0&&outs.slice(0,6).every(o=>o.length===0),outs.map(o=>o.map(c=>c.id)));
     ok('leaves: size and time are held to 0.6..1.5 and scale the cost',outs[7][0].size===1.5&&outs[7][0].secs===0.6&&outs[7][0].cost===+(D.LEAVES.fire.cost*0.9).toFixed(1),outs[7]);
     ok('leaves: two at most, no repeats, only what the kind can carry',outs[8].map(c=>c.id).join()==='fire,slick'&&outs[9].length===0);
-    S.customize(0,0,['fire']); ok('leaves: a tweak keeps them',S.tweak(0,0,{tune:1}).customs[0].id==='fire'); ok('leaves: the snapshot shows them',S.snapshot().items[0][0].cu[0].id==='fire');
-    const M=D.createDuel({seed:1}); M.setItem(0,0,{kind:'melee',style:'blade',element:'none',name:'T'},50); const d=M.customize(0,0,['mine']); M.setReady(0);
-    ok('leaves: set while drawing, not once ready',d.length===1&&M.customize(0,0,['fire'])===null&&M.items[0][0].customs[0].id==='mine'); }
+    S.leaveSet(0,0,['fire']); ok('leaves: a tweak keeps them',S.tweak(0,0,{tune:1}).customs[0].id==='fire'); ok('leaves: the snapshot shows them',S.snapshot().items[0][0].cu[0].id==='fire');
+    const M=D.createDuel({seed:1}); M.setItem(0,0,{kind:'melee',style:'blade',element:'none',name:'T'},50); const d=M.leaveSet(0,0,['mine']); M.setReady(0);
+    ok('leaves: set while drawing, not once ready',d.length===1&&M.leaveSet(0,0,['fire'])===null&&M.items[0][0].customs[0].id==='mine'); }
   { const S=arm('melee','blade',['fire']), [a,b]=at(S,400,60); S.play(0,'blade1'); run(S,0.5); const o=S.lv.find(o=>o.k==='fire');
     ok('fire trail: a swing leaves flames on the ground in front',!!o&&o.x>a.x&&o.y===F&&o.side===0,o&&[Math.round(o.x),o.y,Math.round(o.w)]);
     b.x=o.x; b.y=F; b.vx=0; const hp=b.hp; a.x=o.x-10; const ha=a.hp; run(S,1); ok('fire trail: the foe standing in it burns, its owner does not',b.burn>0&&b.hp<hp-2&&a.burn<=0&&a.hp>=ha,+(hp-b.hp).toFixed(1));
@@ -215,10 +215,10 @@ const evs=S=>S.snapshot().ev.map(e=>e.e);
     for(let i=0;i<3;i++){ c.x=300; d.x=800; T.play(1,'blade1'); run(T,0.5); } const m=T.lv.find(o=>o.k==='mine'); c.x=m.x+30; d.x=m.x-300; c.od=100; const st=T.startUlt(0), hp=c.hp; let kept=true;
     for(let i=0;i<60;i++){ T.step(1/60); if(!c.act||!D.MOVES[c.act.m].ult) kept=false; }
     ok('leaves: a mine does not go off under a fighter whose ultimate is playing',st&&kept&&c.hp===hp&&T.lv.includes(m),{st,kept}); }
-  { const S=D.createDuel({practice:true,stage:'sheet'}); S.step(1/60); S.setItem(0,0,{kind:'melee',style:'blade',element:'none',name:'T'},50); S.customize(0,0,['fire','spikes']);
+  { const S=D.createDuel({practice:true,stage:'sheet'}); S.step(1/60); S.setItem(0,0,{kind:'melee',style:'blade',element:'none',name:'T'},50); S.leaveSet(0,0,['fire','spikes']);
     const a=S.f[0], b=S.f[1]; a.x=400; a.y=0; b.x=460; b.y=0; a.face=1; S.play(0,'blade3'); run(S,0.9); ok('leaves: they work on the spreadsheet stage',S.lv.length===2,S.lv.map(o=>o.k)); }
   { const S=D.createDuel({seed:9,record:true,width:1400,plats:[]}); S.setItem(0,0,{kind:'melee',style:'blade',element:'none',name:'A'},50); S.setItem(1,0,{kind:'ranged',style:'gun',element:'none',name:'B'},50);
-    S.customize(0,0,['fire','mine']); S.customize(1,0,['step','cloud']); S.setReady(0); S.setReady(1); const c=[{l:0,r:1,d:0,j:0,a:0,b:0},{l:1,r:0,d:0,j:0,a:0,b:0}]; let seen=0;
+    S.leaveSet(0,0,['fire','mine']); S.leaveSet(1,0,['step','cloud']); S.setReady(0); S.setReady(1); const c=[{l:0,r:1,d:0,j:0,a:0,b:0},{l:1,r:0,d:0,j:0,a:0,b:0}]; let seen=0;
     for(let i=0;i<120*12;i++){ if(i%30===0){ const s=i/30%2|0; c[s].a++; if(i%210===0) c[s].j++; S.setInput(s,Object.assign({},c[s])); } S.ticks(1); seen=Math.max(seen,S.lv.length); }
     const h=S.hash(), R=D.replayDuel(JSON.parse(JSON.stringify(S.log()))); ok('leaves: a match that uses them replays to the same hash',seen>0&&S.phase==='fight'&&R.hash()===h,{seen,phase:S.phase,h,r:R.hash()});
     const n=S.lv.length; S.lv.push({id:999,lq:999,k:'fire',side:0,x:5,y:0,w:10,life:1,max:1,t:0,cd:0}); ok('leaves: the hash covers what is left behind',S.hash()!==h); S.lv.length=n; }

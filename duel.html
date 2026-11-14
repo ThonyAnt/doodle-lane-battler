@@ -975,7 +975,7 @@ const SHEET_COL=96, SHEET_ROW=40, SHEET_HW=74, SHEET_HH=58;     // spreadsheet s
 // A recording holds about LOG_ROOM characters of commands (some forty long matches' worth). When it is full it stops:
 // the match goes on, the log is marked full, and it replays up to the tick it stopped at.
 const LOG_ROOM=2e6;
-const LOG_V=1, COMMANDS=['setItem','tweak','customize','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold'];
+const LOG_V=1, COMMANDS=['setItem','tweak','leaveSet','clearItem','setReady','setInput','startUlt','startHack','play','stroke','setLayout','setPlats','addRule','clearRules','setHold'];
 const INPUT_KEYS=['l','r','d','j','a','b','m','q','h','u'], viaJSON=v=>JSON.parse(JSON.stringify(v)), round1=v=>Math.round(v*10)/10;
 const packInput=i=>{ const o={}; for(const k of INPUT_KEYS){ const v=i?i[k]:undefined; o[k]=k==='l'||k==='r'||k==='d'?(v?1:0):v===undefined?null:v; } return viaJSON(o); };   // held buttons as 0 or 1, press counts as given, a missing one as null
 const unpackInput=o=>{ const i={}; for(const k of INPUT_KEYS) if(o[k]!==null&&o[k]!==undefined) i[k]=o[k]; return i; };
@@ -1051,7 +1051,7 @@ const FORGE_MATH=Object.freeze({abs:v=>Math.abs(v),sign:v=>Math.sign(v),floor:v=
    One of the axes of weapon customization. An item may carry customizations in it.customs, a list of
    {id,size,secs,cost}; the ids here are the "leaves" blocks. Each has a point cost (a first guess, not tuned), the item
    kinds that may carry it, and its own numbers. size (how big) and secs (how long it stays) are each 0.6 to 1.5 and
-   scale the cost. Set with S.customize(side,slot,list); cleanCustoms never throws and drops what it does not know.
+   scale the cost. Set with S.leaveSet(side,slot,list); leaveCustoms never throws and drops what it does not know.
    What each one does is in createDuel, section "leaves". */
 const LEAVES={
   fire:  {name:'Fire trail',cost:4,kinds:['melee','ranged','bomb'],life:3.5,shotLife:2,dps:4,
@@ -1069,13 +1069,13 @@ const LEAVES={
   cloud: {name:'Cloud',cost:2,kinds:['melee','ranged','bomb'],life:4.5,r:64,
           blurb:'A hit, or where a shot lands, leaves a cloud that hides whoever is inside and soaks the foe.'}
 };
-const LEAVE_CAP=6, CUSTOM_MAX=2;      // left-behind things one fighter may have at once (the oldest goes); customizations per item
-function cleanCustoms(list,kind){
+const LEAVE_CAP=6, LEAVE_MAX=2;      // left-behind things one fighter may have at once (the oldest goes); customizations per item
+function leaveCustoms(list,kind){
   const out=[]; if(!Array.isArray(list)) return out;
   const num=(v,d)=>{ v=+v; return Number.isFinite(v)?Math.max(0.6,Math.min(1.5,v)):d; };
   for(const c of list){
     const id=c&&typeof c==='object'?c.id:c; if(typeof id!=='string'||!Object.prototype.hasOwnProperty.call(LEAVES,id)) continue;
-    const L=LEAVES[id]; if(!L.kinds.includes(kind)||out.some(o=>o.id===id)||out.length>=CUSTOM_MAX) continue;
+    const L=LEAVES[id]; if(!L.kinds.includes(kind)||out.some(o=>o.id===id)||out.length>=LEAVE_MAX) continue;
     const size=num(c&&c.size,1), secs=num(c&&c.secs,1); out.push({id,size,secs,cost:Math.round(L.cost*size*secs*10)/10});
   }
   return out;
@@ -1250,7 +1250,7 @@ function createDuel(opts){
     const style=styleOf(spec.kind,spec.style), tune=Math.max(-2,Math.min(2,Math.round(+spec.tune||0)));
     const raw={power:clampStat(spec.power),range:clampStat(spec.range),speed:clampStat(spec.speed)}, stats=balanceStats(raw,tune);
     const traits=traitChoices(spec.kind,spec.traits,spec.name), trait=traits.includes(spec.trait)?spec.trait:traits[0];
-    return {name:spec.name||nameFor(spec),kind:spec.kind,style,el:spec.element,cost,raw,tune,stats,trait,traits,ammo:AMMO.includes(spec.ammo)?spec.ammo:undefined,st:itemStats(spec.kind,spec.element,cost,stats),ver:++S.ver,customs:cleanCustoms(spec.customs,spec.kind)};
+    return {name:spec.name||nameFor(spec),kind:spec.kind,style,el:spec.element,cost,raw,tune,stats,trait,traits,ammo:AMMO.includes(spec.ammo)?spec.ammo:undefined,st:itemStats(spec.kind,spec.element,cost,stats),ver:++S.ver,customs:leaveCustoms(spec.customs,spec.kind)};
   }
   // Change an item that is already made, while still drawing: what it is, which of its two traits it uses, or its tuning.
   S.tweak=(side,k,ch)=>{
@@ -1777,9 +1777,9 @@ function createDuel(opts){
   S.lv=[]; let lvSeq=1;
   // Set an item's customizations (see LEAVES): a list of ids or of {id,size,secs}. While drawing, or in practice.
   // Returns the list as kept (unknown ids, ones the item's kind cannot carry, repeats and extras are dropped) or null.
-  S.customize=(side,k,list)=>{
+  S.leaveSet=(side,k,list)=>{
     const it=(side===0||side===1)&&(k===0||k===1)?S.items[side][k]:null; if(!it||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
-    return it.customs=cleanCustoms(list,it.kind);
+    return it.customs=leaveCustoms(list,it.kind);
   };
   // The highest thing to stand on at x that is not above height y: the floor, a solid's top or a ledge.
   function surfaceUnder(x,y){
@@ -4208,10 +4208,10 @@ function labPlay(m,alt){
   labPlace(); const f=sim.f[0];
   if(m==='ult'){ f.od=100; sim.startUlt(0); } else sim.play(0,m,alt);
 }
-// leaves: the "Leaves behind" row. Each button switches one block on for the weapon under test (S.customize keeps at most
-// CUSTOM_MAX and only those the weapon's kind can carry); Clear removes everything left in the arena.
+// leaves: the "Leaves behind" row. Each button switches one block on for the weapon under test (S.leaveSet keeps at most
+// LEAVE_MAX and only those the weapon's kind can carry); Clear removes everything left in the arena.
 function labLeaves(){
-  const it=sim.items[0][0], kept=it?sim.customize(0,0,lab.leaves)||[]:[]; lab.leaves=kept.map(c=>c.id);
+  const it=sim.items[0][0], kept=it?sim.leaveSet(0,0,lab.leaves)||[]:[]; lab.leaves=kept.map(c=>c.id);
   document.querySelectorAll('#labLeaves button[data-id]').forEach(b=>{ const L=LEAVES[b.dataset.id]; b.classList.toggle('on',lab.leaves.includes(b.dataset.id)); b.disabled=!it||!L.kinds.includes(it.kind); });
   const note=$('labLeavesNote'); if(note) note.textContent=kept.length?kept.map(c=>LEAVES[c.id].name+' ('+c.cost+' pt): '+LEAVES[c.id].blurb).join('  '):'Nothing switched on.';
 }
