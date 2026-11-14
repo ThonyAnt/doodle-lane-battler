@@ -219,7 +219,7 @@ function createDuel(){
     if(it.kind==='melee'){ f.act={k,kind:'melee',t:0,wind:st.wind,dur:st.wind+0.17,hit:false}; cool(st.cd+st.wind); }
     else if(it.kind==='ranged'){
       f.act={k,kind:'ranged',t:0,wind:0,dur:0.14,hit:true}; cool(st.cd);
-      S.pr.push({id:nextId++,k:'shot',side:f.side,slot:k,x:f.x+f.face*26,y:f.y+56,vx:f.face*st.speed,vy:0,dmg:st.dmg,el:it.el,kb:st.kb,ttl:1.4});
+      S.pr.push({id:nextId++,k:'shot',side:f.side,slot:k,x:f.x+f.face*44,y:f.y+70,vx:f.face*st.speed,vy:0,dmg:st.dmg,el:it.el,kb:st.kb,ttl:1.4});
     }else if(it.kind==='bomb'){
       f.act={k,kind:'bomb',t:0,wind:0,dur:0.2,hit:true}; cool(st.cd);
       S.pr.push({id:nextId++,k:'bomb',side:f.side,slot:k,x:f.x+f.face*14,y:f.y+72,vx:f.face*340+f.vx*0.4,vy:420,dmg:st.dmg,el:it.el,kb:st.kb,radius:st.radius,ttl:3});
@@ -524,7 +524,7 @@ function buildControls(){
 
 /* ---------- modes ---------- */
 function resetLocal(){
-  for(const s of [0,1]){ art[s]=[null,null]; Object.assign(inp[s],{l:0,r:0,d:0}); } fx=[]; view=null;
+  for(const s of [0,1]){ art[s]=[null,null]; Object.assign(inp[s],{l:0,r:0,d:0}); } fx=[]; view=null; poseNow[0]=poseNow[1]=null;
 }
 function setMode(m){
   mode=m; for(const b of ['Bot','2p','Online']) $('mode'+b).setAttribute('aria-pressed',m===b.toLowerCase());
@@ -558,7 +558,8 @@ function joinRoom(code){
 function accept(v){
   for(const e of v.ev){
     e.t0=performance.now(); fx.push(e);
-    if(e.e==='hit'||e.e==='boom') shake=Math.min(10,shake+(e.e==='boom'?7:2+e.n/6));
+    if(e.e==='block') shake=Math.max(shake,3);
+    if(e.e==='hit'||e.e==='boom') shake=Math.max(shake,e.e==='boom'?8:Math.min(8,3+e.n/4));
     if(e.e==='hit'&&navigator.vibrate&&local[e.side]&&navigator.userActivation&&navigator.userActivation.hasBeenActive) navigator.vibrate(30);
   }
   view=v; viewAt=performance.now();
@@ -613,89 +614,145 @@ function syncUI(){
 }
 
 /* ---------- rendering ---------- */
-const boil=(n,now)=>{ const s=Math.sin(n*127.1+Math.floor(now/130)*311.7)*43758.5453; return (s-Math.floor(s)-0.5)*2.2; };
-function line(pts,now,seed){ L.beginPath(); pts.forEach((p,i)=>{ const x=p[0]+boil(seed+i,now), y=p[1]+boil(seed+i+50,now); i?L.lineTo(x,y):L.moveTo(x,y); }); L.stroke(); }
-function drawFighter(v,i,now,age){
-  const f=v.f[i], col=PCOL[i], d=f.face, moving=Math.abs(f.vx)>30, fight=v.phase==='fight';
+// Pose animation in the style of motion-review.html: keyframed skeleton poses blended over time,
+// with wind-up, a fast cut through contact, follow-through, a painted slash trail and ink-burst impacts.
+// A pose is: head, neck, hips, back elbow/hand, front elbow/hand, knee/foot x2 (x,y pairs), then the weapon angle.
+const K=0.6, ARM=54, POSES={
+  idle: [-7,-154,-4,-132,0,-77,-30,-112,-20,-83,22,-112,39,-91,-18,-39,-33,0,24,-40,41,0,-0.95],
+  ready:[-15,-137,-13,-116,0,-67,-37,-104,-25,-84,9,-102,27,-89,-22,-32,-47,0,30,-33,56,0,-0.85],
+  wind: [-24,-142,-18,-119,0,-73,-45,-101,-61,-78,-43,-145,-34,-167,-27,-35,-54,0,29,-38,53,0,-2.35],
+  slash:[35,-139,20,-119,0,-70,-17,-103,-41,-121,50,-110,77,-94,-25,-34,-55,0,39,-30,70,0,0.24],
+  follow:[43,-134,26,-113,0,-67,-6,-85,-32,-72,49,-90,54,-63,-25,-33,-53,0,35,-29,65,0,0.90],
+  hurt:[-29,-147,-22,-125,-8,-75,-53,-110,-68,-126,5,-108,28,-115,-31,-37,-45,0,19,-37,38,0,-0.6],
+  guard:[-17,-146,-12,-124,0,-76,10,-109,33,-112,21,-115,38,-124,-24,-36,-43,0,25,-38,47,0,-1.3],
+  thrust:[25,-145,14,-124,0,-76,-19,-108,-46,-116,46,-118,80,-116,-22,-37,-52,0,36,-35,62,0,0],
+  leap:[-15,-154,-8,-130,0,-78,-40,-151,-33,-183,16,-155,-2,-184,-29,-55,-48,-27,32,-57,48,-38,-1.95],
+  air:[2,-152,0,-130,0,-78,-34,-126,-52,-148,26,-122,44,-138,-16,-46,-28,-10,18,-48,24,-12,-1.1],
+  gather:[-19,-151,-15,-128,0,-75,-26,-108,10,-112,14,-100,5,-73,-23,-37,-43,0,28,-37,49,0,1.05],
+  cast:[16,-150,8,-129,0,-76,38,-127,66,-123,13,-100,-6,-73,-24,-36,-47,0,30,-37,52,0,1.10],
+  fall:[-57,-102,-47,-83,-23,-44,-77,-66,-100,-74,-25,-58,-2,-49,-53,-21,-76,0,11,-22,43,0,-0.3],
+  down:[-80,-21,-58,-17,-9,-14,-64,-3,-91,-1,-34,-3,-7,-1,24,-9,57,0,21,-23,61,-5,0.05],
+  cheer:[-4,-158,-2,-136,0,-80,-30,-150,-38,-180,22,-150,30,-182,-16,-40,-24,0,18,-40,26,0,-1.5]
+};
+// Run cycle: contact, passing, opposite contact, passing. Arms swing against the legs.
+const RUN=[
+  [24,-143,15,-122,0,-72,-12,-100,-34,-84,30,-104,48,-96,-22,-42,-50,-20,30,-44,46,0,-0.7],
+  [22,-148,14,-127,0,-78,2,-102,4,-80,24,-106,40,-92,10,-46,-8,-24,4,-38,0,0,-0.8],
+  [24,-143,15,-122,0,-72,14,-104,34,-110,20,-100,36,-84,30,-44,46,0,-22,-42,-50,-20,-0.9],
+  [22,-148,14,-127,0,-78,2,-102,4,-80,24,-106,40,-92,4,-38,0,0,10,-46,-8,-24,-0.8]
+];
+// The shoulder is the sweep centre of a cut, so the hand and the blade stay on one circle.
+function orbitArm(p){ const a=p[22], c=Math.cos(a), s=Math.sin(a), bend=Math.sqrt(36*36-27*27);
+  p[10]=p[2]+27*c+bend*s; p[11]=p[3]+27*s-bend*c; p[12]=p[2]+ARM*c; p[13]=p[3]+ARM*s; return p; }
+const swingPose=(base,angle,headX)=>{ const p=[...POSES[base]]; p[2]=12; p[3]=-125; p[0]=headX; p[1]=-150; p[22]=angle; return orbitArm(p); };
+POSES.sWind=swingPose('wind',-2.4,3); POSES.sHit=swingPose('slash',0.06,23); POSES.sEnd=swingPose('follow',1.08,28);
+const mixPose=(a,b,u)=>a.map((v,i)=>v+(b[i]-v)*u), smooth=t=>t*t*(3-2*t), clamp01=v=>Math.max(0,Math.min(1,v));
+const TRAIL={none:['#465793','#9eb8d3','#fbf8ef'],fire:['#b8381a','#f08a3c','#fff1c9'],water:['#1f5fae','#6fb7ee','#eefaff'],plant:['#1f7a3e','#7fcf7a','#f3ffe6']};
+const poseNow=[null,null]; let lastRender=0;
+
+// Which pose the fighter is heading for, and how fast to get there.
+function targetPose(v,i,now,age){
+  const f=v.f[i], it=v.items[i][f.held], a=f.act, P=POSES;
+  if(v.phase==='end'||v.phase==='over'){ if(f.hp<=0) return {pose:P.down,rate:10}; if(v.winner===i) return {pose:P.cheer,rate:9}; }
+  if(f.hurt) return {pose:f.g?P.hurt:P.fall,rate:45};
+  if(a&&a.kind==='melee'){
+    const w=a.w||0.3, p=Math.min(1,a.p+age/0.3);
+    if(!it) return {pose:mixPose(P.ready,P.thrust,Math.sin(p*Math.PI)),rate:70};
+    if(p<w) return {pose:mixPose(P.ready,P.sWind,smooth(p/w)),rate:70};
+    const s=(p-w)/(1-w), e=1-Math.pow(1-s,3), ang=-2.4+3.48*e;
+    const body=e<0.71?mixPose(P.sWind,P.sHit,e/0.71):mixPose(P.sHit,P.sEnd,(e-0.71)/0.29); body[22]=ang; orbitArm(body);
+    return {pose:body,rate:200,swing:{s,ang}};
+  }
+  if(a&&a.kind==='ranged') return {pose:P.thrust,rate:70};
+  if(a&&a.kind==='bomb') return {pose:P.cast,rate:55};
+  if(f.dash) return {pose:P.thrust,rate:70};
+  if(f.sh) return {pose:P.guard,rate:40};
+  if(!f.g) return {pose:f.vy>60?P.leap:P.air,rate:22};
+  if(Math.abs(f.vx)>40&&v.phase==='fight'){ const ph=(((f.x/58)%1)+1)%1*4, n=Math.floor(ph); return {pose:mixPose(RUN[n],RUN[(n+1)%4],ph-n),rate:40}; }
+  const rest=v.phase==='fight'||v.phase==='count'?P.ready:P.idle, b=Math.sin(now/420+i*2)*1.6, p=[...rest]; p[1]+=b; p[3]+=b*0.8; p[7]+=b*0.5; p[11]+=b*0.5;
+  return {pose:p,rate:14};
+}
+function bone(pts,width){ L.lineWidth=width; L.beginPath(); pts.forEach((p,i)=>i?L.lineTo(p[0],p[1]):L.moveTo(p[0],p[1])); L.stroke(); }
+function skeleton(p,col){
+  L.strokeStyle=col; L.lineCap='round'; L.lineJoin='round';
+  bone([[p[4],p[5]],[p[14],p[15]],[p[16],p[17]]],9.5);
+  bone([[p[2],p[3]],[p[6],p[7]],[p[8],p[9]]],9.5);
+  bone([[p[4],p[5]],[p[18],p[19]],[p[20],p[21]]],9.5);
+  bone([[p[2],p[3]],[p[4],p[5]]],11);
+  L.fillStyle='#fff'; L.lineWidth=8; L.beginPath(); L.ellipse(p[0],p[1],17,19,-0.1,0,7); L.fill(); L.stroke();
+  bone([[p[2],p[3]],[p[10],p[11]],[p[12],p[13]]],9.5);
+}
+// Painted crescent that follows the blade: full blade width at the leading edge, tapering to a point behind it.
+function slashTrail(sw,len,el){
+  const R=ARM+len, head=sw.ang, tail=-2.4+3.48*Math.pow(sw.s,2.2), N=22, cols=TRAIL[el]||TRAIL.none;
+  if(head-tail<0.05) return;
+  const band=(v0,v1,col)=>{
+    L.beginPath();
+    for(let j=0;j<=N;j++){ const u=j/N, a=tail+(head-tail)*u, r=R-(R-ARM)*Math.pow(u,1.4)*v0; j?L.lineTo(Math.cos(a)*r,Math.sin(a)*r):L.moveTo(Math.cos(a)*r,Math.sin(a)*r); }
+    for(let j=N;j>=0;j--){ const u=j/N, a=tail+(head-tail)*u, r=R-(R-ARM)*Math.pow(u,1.4)*v1; L.lineTo(Math.cos(a)*r,Math.sin(a)*r); }
+    L.closePath(); L.fillStyle=col; L.fill();
+  };
+  L.save(); L.translate(12,-125); L.globalAlpha=clamp01((1-sw.s)*3.5);
+  band(0,1,cols[0]); band(0.07,0.74,cols[1]); band(0.13,0.42,cols[2]); L.restore();
+}
+function drawFighter(v,i,now,age,dt){
+  const f=v.f[i], col=PCOL[i], d=f.face, fight=v.phase==='fight';
   const x=f.x+(fight?f.vx*age:0), base=GY-Math.max(0,f.y+(fight&&!f.g?f.vy*age:0));
-  const hideItems=net&&v.phase==='draw'&&i!==net.side&&net.side>=0;
-  const lean=f.hurt?-d*0.3:f.dash?d*0.5:Math.max(-0.22,Math.min(0.22,f.vx/900));
-  const hip=[x,base-34], neck=[x+lean*34,base-68], head=[neck[0]+lean*8,base-81], sh=[neck[0],neck[1]+5];
-  L.lineCap='round'; L.lineJoin='round';
-  // shadow
-  L.fillStyle='rgba(28,37,65,.10)'; L.beginPath(); L.ellipse(f.x,GY-shadowY(f)+3,20,5,0,0,7); L.fill();
-  if(f.dash){ L.strokeStyle=col; L.globalAlpha=.4; L.lineWidth=3; for(let n=0;n<3;n++) line([[x-d*(26+n*14),base-30-n*18],[x-d*(60+n*16),base-30-n*18]],now,i*9+n); L.globalAlpha=1; }
-  const items=v.items[i];
+  const hideItems=net&&v.phase==='draw'&&i!==net.side&&net.side>=0, items=v.items[i];
+  const tp=targetPose(v,i,now,age), u=1-Math.exp(-dt*tp.rate);
+  const p=poseNow[i]=poseNow[i]?mixPose(poseNow[i],tp.pose,u):[...tp.pose];
+  if(tp.swing){ p[22]=tp.swing.ang; orbitArm(p); }
+  const k=f.held, it=hideItems?null:items[k], kind=it?it.kind:'melee';
+  // contact shadow
+  L.fillStyle='rgba(0,0,0,.09)'; L.beginPath(); L.ellipse(f.x,GY-shadowY(f)+4,28,3.5,0,0,7); L.fill();
+  L.save(); L.translate(x,base); L.scale(d*K,K);
+  // speed smear behind a dash
+  if(f.dash) for(const [off,al] of [[-70,.12],[-36,.25]]){ L.save(); L.translate(off,0); L.globalAlpha=al; skeleton(p,col); L.restore(); }
+  if(tp.swing&&it) slashTrail(tp.swing,it.sz/K,it.el);
   // the item not in hand rides on the back
-  if(!hideItems) for(const k of [0,1]){ const it=items[k]; if(!it||k===f.held||(it.kind==='shield'&&f.sh)) continue;
-    L.save(); L.translate(x-d*13,base-54); L.scale(d,1); L.rotate(-1.1); L.globalAlpha=.6; sprite(i,k,it.sz*0.6,it.kind==='melee'); L.restore(); }
-  L.strokeStyle=col; L.lineWidth=4.5;
-  // legs
-  let fa,fb; if(!f.g){ fa=[x-10-lean*20,base-8]; fb=[x+11-lean*20,base-13]; }
-  else if(moving){ const ph=f.x/15; fa=[x+Math.sin(ph)*13,base-Math.max(0,Math.cos(ph))*7]; fb=[x-Math.sin(ph)*13,base-Math.max(0,-Math.cos(ph))*7]; }
-  else{ fa=[x-9,base]; fb=[x+9,base]; }
-  line([hip,[(hip[0]+fa[0])/2+d*4,(hip[1]+fa[1])/2],fa],now,i*100+1); line([hip,[(hip[0]+fb[0])/2+d*4,(hip[1]+fb[1])/2],fb],now,i*100+5);
-  line([hip,neck],now,i*100+9);
-  // back arm
-  line([sh,[sh[0]-d*9,sh[1]+13],[sh[0]-d*6+(moving?Math.sin(f.x/15)*6:0),sh[1]+25]],now,i*100+13);
-  // front arm and held item
-  const k=f.held, it=hideItems?null:items[k], kind=it?it.kind:'melee', a=f.act;
-  let hand=[sh[0]+d*17,sh[1]+11], ang=-0.95;
-  if(kind==='melee'){
-    if(a&&a.kind==='melee'){ const w=a.w||0.3; ang=a.p<w?-0.95-1.2*(a.p/w):-2.15+3.0*Math.min(1,(a.p-w)/(1-w)*1.6); }
-    if(it) hand=[sh[0]+d*Math.cos(ang)*17,sh[1]+Math.sin(ang)*17+4];
-    else hand=[sh[0]+d*(14+(a?Math.sin(a.p*Math.PI)*24:0)),sh[1]+6];
-  }else if(kind==='ranged'){ hand=[sh[0]+d*(20-(a?5:0)),sh[1]+2]; }
-  else if(kind==='bomb'&&a){ hand=[sh[0]+d*18,sh[1]-14]; }
-  else if(kind==='shield'&&f.sh){ hand=[sh[0]+d*22,sh[1]+4]; }
-  line([sh,[(sh[0]+hand[0])/2,(sh[1]+hand[1])/2+5],hand],now,i*100+17);
+  if(!hideItems) for(const s of [0,1]){ const o=items[s]; if(!o||s===k||(o.kind==='shield'&&f.sh)) continue;
+    L.save(); L.translate(p[2]-14,p[3]+22); L.rotate(-1.15); L.globalAlpha=.55; sprite(i,s,o.sz*0.6/K,o.kind==='melee'); L.restore(); }
+  skeleton(p,col);
   if(it){
     L.save();
-    if(kind==='shield'&&f.sh){ L.translate(x+d*30,base-46); L.scale(d,1); sprite(i,k,it.sz*1.25);
-      L.strokeStyle=PEN[it.el]; L.globalAlpha=.5; L.lineWidth=3; L.beginPath(); L.arc(-12,0,it.sz*0.85,-1.1,1.1); L.stroke(); }
-    else{ L.translate(hand[0],hand[1]); L.scale(d,1);
-      if(kind==='melee'){ L.rotate(ang); sprite(i,k,it.sz,true); }
-      else if(kind==='ranged'){ L.translate(it.sz*0.3,0); sprite(i,k,it.sz); }
-      else{ if(kind==='bomb'&&f.cd[k]>0.75){ /* just thrown */ } else sprite(i,k,it.sz*(kind==='bomb'?1:0.8)); } }
+    if(kind==='shield'&&f.sh){ L.translate(p[2]+50,p[3]+22); sprite(i,k,it.sz*1.25/K);
+      L.strokeStyle=PEN[it.el]; L.globalAlpha=.5; L.lineWidth=5; L.beginPath(); L.arc(-20,0,it.sz*0.85/K,-1.1,1.1); L.stroke(); }
+    else{ L.translate(p[12],p[13]);
+      if(kind==='melee'){ L.rotate(p[22]); sprite(i,k,it.sz/K,true); }
+      else if(kind==='ranged'){ L.rotate(p[22]*0.25); L.translate(it.sz*0.3/K,0); sprite(i,k,it.sz/K); }
+      else if(!(kind==='bomb'&&f.cd[k]>0.75)) sprite(i,k,it.sz*(kind==='bomb'?1:0.8)/K); }
     L.restore();
   }
-  // head
-  L.strokeStyle=col; L.lineWidth=4.5; L.fillStyle='#fff'; L.beginPath(); L.arc(head[0]+boil(i*100+30,now)*.5,head[1]+boil(i*100+31,now)*.5,11.5,0,7); L.fill(); L.stroke();
-  L.fillStyle=col; if(f.hurt||f.hp<=0){ L.font='700 12px Karla,sans-serif'; L.textAlign='center'; L.fillText('x',head[0]+d*4,head[1]+3); } else { L.beginPath(); L.arc(head[0]+d*5,head[1]-1,1.8,0,7); L.fill(); }
+  L.restore();
   // status
-  if(f.burn){ L.strokeStyle=PEN.fire; L.lineWidth=2.5; for(let n=0;n<3;n++){ const fx0=x-12+n*12, fy=base-96-((now/6+n*23)%22); line([[fx0,fy+8],[fx0+3,fy+2],[fx0,fy-4]],now,n+70); } }
-  if(f.slow){ L.fillStyle=PEN.water; for(let n=0;n<3;n++){ const fy=base-70+((now/9+n*31)%60); L.beginPath(); L.arc(x-14+n*14,fy,2.5,0,7); L.fill(); } }
-  // name tag
-  L.font='18px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=col;
-  L.fillText(local[i]&&!(local[0]&&local[1])?'you':NAME[i],x,base-102);
+  L.lineCap='round';
+  if(f.burn){ L.strokeStyle=PEN.fire; L.lineWidth=2.5; for(let n=0;n<3;n++){ const fx0=x-12+n*12, fy=base-104-((now/6+n*23)%22); L.beginPath(); L.moveTo(fx0,fy+8); L.lineTo(fx0+3,fy+2); L.lineTo(fx0,fy-4); L.stroke(); } }
+  if(f.slow){ L.fillStyle=PEN.water; for(let n=0;n<3;n++){ const fy=base-74+((now/9+n*31)%62); L.beginPath(); L.arc(x-14+n*14,fy,2.5,0,7); L.fill(); } }
+  if(f.hp>0||v.phase==='draw'){ L.font='18px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=col;
+    L.fillText(local[i]&&!(local[0]&&local[1])?'you':NAME[i],x+p[0]*K*d,base+p[1]*K-20); }
 }
 const shadowY=f=>{ let y=0; for(const p of PLATS) if(f.y>=p.y-1&&f.x>=p.x0-6&&f.x<=p.x1+6) y=Math.max(y,p.y); return y; };
 function render(now){
-  const v=view, age=net?Math.min(0.08,(now-viewAt)/1000):0;
-  L.setTransform(1,0,0,1,0,0); L.clearRect(0,0,960,440); L.fillStyle='#fffdf6'; L.fillRect(0,0,960,440);
-  L.strokeStyle='#dfe8f5'; L.lineWidth=1; for(let y=40;y<GY;y+=32){ L.beginPath(); L.moveTo(0,y); L.lineTo(960,y); L.stroke(); }
-  L.strokeStyle='#f3c1c9'; L.beginPath(); L.moveTo(64,0); L.lineTo(64,440); L.stroke();
-  if(shake>0.3){ L.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake); shake*=0.86; } else shake=0;
-  // ground and platforms
-  L.strokeStyle='#1c2541'; L.lineWidth=4; L.lineCap='round'; L.lineJoin='round';
-  const g=[]; for(let x=-10;x<=970;x+=70) g.push([x,GY+1]); line(g,now,900);
-  L.lineWidth=2; L.globalAlpha=.35; for(let x=20;x<960;x+=46) line([[x,GY+10],[x-12,GY+30]],now,x); L.globalAlpha=1;
-  for(const [n,p] of PLATS.entries()){ L.lineWidth=4; line([[p.x0,GY-p.y],[(p.x0+p.x1)/2,GY-p.y+1],[p.x1,GY-p.y]],now,950+n*7);
-    L.lineWidth=2; L.globalAlpha=.35; line([[p.x0+8,GY-p.y+7],[p.x1-8,GY-p.y+7]],now,960+n*7); L.globalAlpha=1; }
+  const v=view, age=net?Math.min(0.08,(now-viewAt)/1000):0, dt=Math.max(0,Math.min(0.05,(now-(lastRender||now))/1000)); lastRender=now;
+  L.setTransform(1,0,0,1,0,0); L.clearRect(0,0,960,440); L.fillStyle='#fff'; L.fillRect(0,0,960,440);
+  shake*=Math.exp(-dt*22); if(shake>0.1) L.translate(Math.sin(now*0.112)*shake,Math.cos(now*0.091)*shake*0.35); else shake=0;
+  // ground and platforms: plain ink lines, no scenery
+  L.strokeStyle='#111'; L.lineCap='round'; L.lineWidth=4; L.beginPath(); L.moveTo(-10,GY+2); L.lineTo(970,GY+2); L.stroke();
+  L.lineWidth=5; for(const p of PLATS){ L.beginPath(); L.moveTo(p.x0,GY-p.y+2); L.lineTo(p.x1,GY-p.y+2); L.stroke(); }
   // projectiles
   for(const p of v.pr){
     const x=p.x+p.vx*age, y=GY-(p.y+p.vy*age), it=v.items[p.side][p.slot];
-    if(p.k==='shot'){ L.strokeStyle=PEN[p.el]; L.lineWidth=5; const s=Math.sign(p.vx); line([[x-s*20,y],[x,y]],now,p.id); L.fillStyle=PEN[p.el]; L.beginPath(); L.arc(x,y,5,0,7); L.fill(); }
+    if(p.k==='shot'){ L.strokeStyle=PEN[p.el]; L.lineWidth=5; const s=Math.sign(p.vx); L.beginPath(); L.moveTo(x-s*26,y); L.lineTo(x,y); L.stroke(); L.fillStyle=PEN[p.el]; L.beginPath(); L.arc(x,y,5,0,7); L.fill(); }
     else{ L.save(); L.translate(x,y); L.rotate(now/90*Math.sign(p.vx||1)); if(!it||!sprite(p.side,p.slot,it.sz)){ L.fillStyle=PEN[p.el]; L.beginPath(); L.arc(0,0,10,0,7); L.fill(); } L.restore(); }
   }
-  drawFighter(v,0,now,age); drawFighter(v,1,now,age);
+  drawFighter(v,1,now,age,dt); drawFighter(v,0,now,age,dt);
   // effects
   fx=fx.filter(e=>now-e.t0<700);
   for(const e of fx){
     const a=(now-e.t0)/700, y=GY-(e.y||0); L.globalAlpha=1-a;
-    if(e.e==='hit'){ L.strokeStyle=PEN[e.el]; L.lineWidth=3; for(let n=0;n<6;n++){ const t=n*1.05+e.x; L.beginPath(); L.moveTo(e.x+Math.cos(t)*(8+a*20),y+Math.sin(t)*(8+a*20)); L.lineTo(e.x+Math.cos(t)*(16+a*34),y+Math.sin(t)*(16+a*34)); L.stroke(); }
+    if(e.e==='hit'){ L.strokeStyle=e.el==='none'?'#111':PEN[e.el]; L.lineCap='round'; for(let n=0;n<9;n++){ const t=n*Math.PI*2/9+0.23, r0=8+a*33, r1=r0+(1-a)*(n%2?19:31); L.lineWidth=n%2?2:3; L.beginPath(); L.moveTo(e.x+Math.cos(t)*r0,y+Math.sin(t)*r0); L.lineTo(e.x+Math.cos(t)*r1,y+Math.sin(t)*r1); L.stroke(); }
       L.font='26px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=PEN[e.el]; L.fillText('-'+e.n,e.x,y-30-a*30); }
-    else if(e.e==='block'){ L.font='22px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle='#59658a'; L.fillText('block!',e.x,y-30-a*24); }
+    else if(e.e==='block'){ L.font='22px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle='#111'; L.fillText('BLOCK',e.x,y-30-a*24); L.strokeStyle='#111'; L.lineWidth=2; L.beginPath(); L.arc(e.x,y,15+a*35,-1.3,1.3); L.stroke(); }
     else if(e.e==='heal'){ L.font='26px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=PEN.plant; L.fillText('+'+e.n,e.x,y-a*30); }
     else if(e.e==='boom'){ L.strokeStyle=e.el==='none'?'#e2a52d':PEN[e.el]; L.lineWidth=6*(1-a)+1; L.beginPath(); L.arc(e.x,y,e.n*(0.3+0.7*Math.min(1,a*2.2)),0,7); L.stroke();
       L.font='30px "Gochi Hand",cursive'; L.textAlign='center'; L.fillStyle=L.strokeStyle; L.fillText('BOOM',e.x,y-e.n*0.6-a*20); }

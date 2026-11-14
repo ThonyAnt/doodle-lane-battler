@@ -14,6 +14,7 @@ Hackathon MVP. A one-lane battler where every unit is something the player draws
 - `duel.html`: live 2-player stickman fight with hand-drawn weapons and abilities. The block between `/*DUEL-START*/` and `/*DUEL-END*/` is the pure rules (item stats, physics, phases, bot). Keep it free of DOM access.
 - `duel-server.js`: routes under `/duel/` (`read`, `room`, `events`, `act`), loaded by `server.js`. Server-authoritative at about 30 Hz over Server-Sent Events; clients send held buttons plus press counts with a sequence number.
 - Phases: draw (two items, 100 shared ink) -> count -> fight (60 s) -> end; first to 2 rounds. Item kinds: melee, ranged, bomb, shield, dash, heal. Tuning lives in `itemStats`.
+- Animation follows `motion-review.html` (the owner's style reference, Alan Becker-like): fighters are a keyframed skeleton (`POSES`, `RUN` in `duel.html`) blended toward a target pose each frame, with wind-up, a shoulder-pinned cut, follow-through, a painted crescent slash trail and ink-burst impacts. Scenery is plain ink lines on white; nothing wobbles.
 - Bot-vs-bot simulation gives a median round of about 22 s; melee wins most often between bots. Not tested on real tablets.
 
 ## Online play
