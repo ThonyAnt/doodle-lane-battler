@@ -9,7 +9,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   const DETAIL=['low','high','auto'].includes(process.env.OPENAI_DETAIL)?process.env.OPENAI_DETAIL:'high';
   const page=path.join(__dirname,'duel.html'), src=fs.readFileSync(page,'utf8');
   const D=new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+
-    ';return {createDuel,validItem,localGuess,nameFor,inkCost,stockItem,makeBot,botLoadout,INK_MAX,PAD_W,PAD_H};')();
+    ';return {createDuel,validItem,localGuess,nameFor,inkCost,stockItem,makeBot,botLoadout,makeNetBot,botFeatures,netForward,NET_SHAPE,INK_MAX,PAD_W,PAD_H};')();
 
   /* ---------- reading a drawing ---------- */
   async function askOpenAI(png,strokes){

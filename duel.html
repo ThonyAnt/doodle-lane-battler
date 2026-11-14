@@ -962,6 +962,7 @@ function createDuel(opts){
   const ultLock=()=>{ for(const f of S.f) if(casting(f)&&f.hp>0) return f.side; const p=S.pr.find(p=>p.tr==='fleet'); return p?p.side:-1; };
   S.sheet=(opts&&opts.stage==='sheet')?{}:null;        // the spreadsheet stage (see sheetTick)
   S.inkLeft=side=>Math.round(INK_MAX-S.items[side].reduce((n,it)=>n+(it?it.cost:0),0));
+  S.width=()=>W; S.board=()=>BOARD;      // where the walls are: read by the trained opponent (botFeatures)
   S.setItem=(side,k,spec,cost)=>{
     if(S.phase!=='draw'&&S.phase!=='count'&&!S.practice) return null;
     const other=S.items[side][1-k]; cost=Math.min(cost,INK_MAX-(other?other.cost:0)); if(cost<MIN_COST-0.5) return null;
@@ -1715,6 +1716,88 @@ function makeBot(side,skillOf){
     S.setInput(side,i);
   };
   fn.cursor=()=>dr.vis&&dr.task?dr.cur:null;
+  return fn;
+}
+// ---- The trained opponent ----
+// A small neural network that plays through the same buttons as a player, with a person's limits. bot/train.js finds its
+// weights by playing it against the bot above, scripted players and its own earlier selves in these same rules. The
+// weights are handed in; nothing here reads a file.
+// What it is shown: 28 numbers, mirrored so that "towards the foe" is always the positive direction, whichever side it is on.
+//   0 distance to the foe /480, negative when its back is turned   1 how much higher the foe stands /200
+//   2,3 its own speed towards the foe and upwards /600             4,5 the foe's speed away from it and upwards /600
+//   6,7 its health and the foe's /full health                      8,9 it and the foe on the ground
+//   10,11 it and the foe mid-move                                  12 how far through the foe's move is, 0..1
+//   13,14 it and the foe staggered (hurt, stunned, trapped, flung) 15,16 its two cooldowns, 1 just used .. 0 ready
+//   17 which slot it holds                                         18,19 whether each of its slots is a ranged weapon
+//   20 whether the foe holds a ranged weapon                       21,22 its overdrive and the foe's /100
+//   23,24,25 the nearest shot coming its way: there is one, how far towards the foe /480, how far above its feet /200
+//   26 distance to the wall behind it /480                         27 round clock /full time
+const NET_SHAPE=[28,24,16,8], NET_SIZE=NET_SHAPE.reduce((n,k,i,a)=>i?n+a[i-1]*k+k:0,0);     // 1,232 weights
+const net4=v=>v>4?4:v<-4?-4:v;
+// Writes the 28 numbers into o starting at `at` (no allocation: the bot calls this ten times a second per fighter in training).
+function botSee(S,side,o,at){
+  const f=S.f[side], e=S.f[1-side], dx=e.x-f.x, dir=dx>0?1:dx<0?-1:(f.face||1), mine=S.items[side], eit=S.items[1-side][e.held], b=S.board();
+  let wl=18, wr=S.width()-18; if(b&&!S.broken&&f.x>b.x0&&f.x<b.x1){ wl=b.x0+11; wr=b.x1-11; }      // inside the art board its frame is the wall
+  let seen=0, pd=1e9, px=0, py=0;
+  for(let n=0;n<S.pr.length;n++){ const p=S.pr[n]; if(p.side===side||p.hover) continue;
+    const rx=p.x-f.x, d=rx<0?-rx:rx; if(p.vx*rx>0||d>=pd) continue;         // flying away, or further off than one already found
+    seen=1; pd=d; px=rx*dir; py=p.y-f.y; }
+  o[at]=net4((dx<0?-dx:dx)/480)*(f.face===dir?1:-1); o[at+1]=net4((e.y-f.y)/200);
+  o[at+2]=net4(f.vx*dir/600); o[at+3]=net4(f.vy/600); o[at+4]=net4(e.vx*dir/600); o[at+5]=net4(e.vy/600);
+  o[at+6]=net4(f.hp/HP); o[at+7]=net4(e.hp/HP); o[at+8]=f.ground?1:0; o[at+9]=e.ground?1:0;
+  o[at+10]=f.act?1:0; o[at+11]=e.act?1:0; o[at+12]=e.act?Math.max(0,Math.min(1,e.act.t/e.act.dur)):0;
+  o[at+13]=f.hurt>0||f.stun>0||f.trap>0||f.flung>0?1:0; o[at+14]=e.hurt>0||e.stun>0||e.trap>0||e.flung>0?1:0;
+  o[at+15]=f.cdMax[0]>0?Math.min(1,f.cd[0]/f.cdMax[0]):0; o[at+16]=f.cdMax[1]>0?Math.min(1,f.cd[1]/f.cdMax[1]):0;
+  o[at+17]=f.held?1:0; o[at+18]=mine[0]&&mine[0].kind==='ranged'?1:0; o[at+19]=mine[1]&&mine[1].kind==='ranged'?1:0; o[at+20]=eit&&eit.kind==='ranged'?1:0;
+  o[at+21]=net4(f.od/100); o[at+22]=net4(e.od/100);
+  o[at+23]=seen; o[at+24]=seen?net4(px/480):0; o[at+25]=seen?net4(py/200):0;
+  o[at+26]=net4(Math.max(0,dir>0?f.x-wl:wr-f.x)/480); o[at+27]=S.phase==='fight'?net4(S.t/ROUND_TIME):1;
+  return dir;
+}
+function botFeatures(S,side){ const o=new Float32Array(NET_SHAPE[0]); botSee(S,side,o,0); return o; }
+// The network: each layer's weights row by row (one row per output), then that layer's biases; tanh between layers, the last
+// layer plain. ws, if given, is one work array per layer (so nothing is allocated); the last of them is returned.
+function netForward(theta,x,ws){
+  let inp=x, o=0;
+  for(let L=1;L<NET_SHAPE.length;L++){
+    const nIn=NET_SHAPE[L-1], nOut=NET_SHAPE[L], out=ws?ws[L-1]:new Float32Array(nOut), bias=o+nIn*nOut, last=L===NET_SHAPE.length-1;
+    for(let j=0;j<nOut;j++){ let s=theta[bias+j]; const row=o+j*nIn; for(let k=0;k<nIn;k++) s+=theta[row+k]*inp[k]; out[j]=last?s:Math.tanh(s); }
+    inp=out; o=bias+nOut;
+  }
+  return inp;
+}
+// The eight outputs: 0 move (under 0.33 either way it stands; above, towards the foe; below, away), then a press for each
+// one above zero: 1 jump, 2 item A, 3 item B, 4 hold down, 5 ultimate, 6 run a hack, 7 unused.
+// A person's limits: it looks ten times a second, acts on each look a reaction time later (0.12 s at skill 1, 0.32 s at
+// skill 0), and presses any one button at most 8 times a second. Called like makeBot's result: fn(S, dt) every frame.
+function makeNetBot(side,theta,skillOf){
+  const NI=NET_SHAPE[0], Q=8, LOOK=0.1, PRESSES=8;
+  const seen=new Float32Array(Q*NI), due=new Float64Array(Q), dirs=new Int8Array(Q), x=new Float32Array(NI), ws=NET_SHAPE.slice(1).map(n=>new Float32Array(n));
+  const i={l:0,r:0,d:0,j:0,a:0,b:0,m:0,q:0,h:0,u:0}, last={};      // last[button]: when its last 8 presses were, as a ring
+  for(const k of ['j','a','b','q','u']) last[k]={t:new Float64Array(PRESSES).fill(-9),n:0};
+  let now=0, next=-1, head=0, n=0;         // seen[head..head+n) are looks it has not acted on yet, oldest first
+  const tap=k=>{ const r=last[k]; if(now-r.t[r.n]<1-1e-9) return false; r.t[r.n]=now; r.n=(r.n+1)%PRESSES; i[k]++; return true; };    // the 8th press back must be a second old
+  const fn=function(S,dt){
+    now+=dt;
+    if(S.phase!=='fight'){ i.l=i.r=i.d=0; S.setInput(side,i); n=0; next=-1; return; }
+    if(next<0) next=now;
+    if(now>=next-1e-9){
+      const w=(head+n)%Q, d=skillOf?skillOf():0.55; if(n<Q) n++; else head=(head+1)%Q;
+      dirs[w]=botSee(S,side,seen,w*NI); due[w]=now+0.12+0.2*(1-(d>1?1:d>0?d:0));
+      next+=LOOK; if(next<=now) next=now+LOOK;
+    }
+    if(!n||now<due[head]-1e-9) return;
+    while(n>1&&now>=due[(head+1)%Q]-1e-9){ head=(head+1)%Q; n--; }           // behind (a long frame): act on the newest look that is due
+    const at=head*NI, dir=dirs[head]; head=(head+1)%Q; n--;
+    for(let k=0;k<NI;k++) x[k]=seen[at+k];
+    const o=netForward(theta,x,ws), mv=o[0]>=0.33?dir:o[0]<=-0.33?-dir:0;
+    i.r=mv>0?1:0; i.l=mv<0?1:0; i.d=o[4]>0?1:0;
+    if(o[1]>0) tap('j'); if(o[2]>0) tap('a'); if(o[3]>0) tap('b'); if(o[5]>0) tap('u');
+    if(o[6]>0&&S.f[side].od>=100&&!S.hack&&tap('q')){        // which hack: the same sensible choices the bot above makes
+      const f=S.f[side], e=S.f[1-side], opts=[2,3]; if(S.cells.length&&!S.broken) opts.push(0); if(S.items[1-side][e.held]) opts.push(1,1); if(S.items[side][f.held]) opts.push(4,4); i.h=INK.pick(opts); }
+    S.setInput(side,i);
+  };
+  fn.cursor=()=>null;      // it does not draw
   return fn;
 }
 // Ready-made doodles, in pad coordinates: one of everything a player can draw. Used by the bot and offered in the

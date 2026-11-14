@@ -9,7 +9,7 @@
 const fs=require('fs'), path=require('path'), cp=require('child_process');
 const arg=k=>{ const a=process.argv.find(x=>x.startsWith('--'+k+'=')); return a?a.split('=')[1]:undefined; };
 const FILE=arg('file')||path.join(__dirname,'..','duel.html'), N=+(arg('n')||200), SKILL=+(arg('skill')||0.55);
-const load=src=>new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,makeBot,stockItem,STOCK,STYLE,MOVES,ULTS,INK,BOT:typeof BOT!=="undefined"?BOT:{},INK_CURVE:typeof INK_CURVE!=="undefined"?INK_CURVE:{}};')();
+const load=src=>new Function(src.split('/*DUEL-START*/')[1].split('/*DUEL-END*/')[0]+';return {createDuel,makeBot,stockItem,STOCK,STYLE,MOVES,ULTS,INK,BOT:typeof BOT!=="undefined"?BOT:{},INK_CURVE:typeof INK_CURVE!=="undefined"?INK_CURVE:{},makeNetBot:typeof makeNetBot!=="undefined"?makeNetBot:null,botFeatures:typeof botFeatures!=="undefined"?botFeatures:null,netForward:typeof netForward!=="undefined"?netForward:null,NET_SHAPE:typeof NET_SHAPE!=="undefined"?NET_SHAPE:null};')();
 const D=load(fs.readFileSync(FILE,'utf8'));
 const OLD=arg('old')?load(cp.execSync('git show '+arg('old')+':duel.html',{cwd:path.join(__dirname,'..'),maxBuffer:1<<26}).toString()):null;
 const KEY={blade:'sword',spear:'spear',hammer:'hammer',fist:'gloves',dual:'twins',bow:'bow',gun:'gun',akimbo:'pistols',staff:'staff',hurl:'star'}, STYLES=Object.keys(KEY);
