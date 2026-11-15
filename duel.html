@@ -5485,7 +5485,7 @@ function retroBuild(){
     $('xltabs').insertAdjacentHTML('beforeend','<span class="xlnav fordeck" title="Slide View, Outline View, Slide Sorter View, Notes Page View, Slide Show">'+nav('\u25ad \u2261 \u25a6 \u25a4 \u25b7')+'</span><span class="xlscroll fordeck"><u>\u25c0</u><i></i><u>\u25b6</u></span>');
     $('xltabs').insertAdjacentHTML('afterend','<div id="pddraw"><span>D<u>r</u>aw \u25be</span><i></i><span>\u2196</span><span>\u21bb</span><i></i><span>A<u>u</u>toShapes \u25be</span><i></i><span>\u2572</span><span>\u2192</span><span>\u25ad</span><span>\u25ef</span><span>\u25a4</span><span><b>A</b></span><i></i><span>\u25a7</span><span>\u2571</span><span><u>A</u></span><i></i><span>\u2261</span><span>\u2504</span><span>\u21c4</span><span>\u25aa</span><span>\u25eb</span></div>');
     if(STAGE) FXI.setTool('pencil'); }
-  document.querySelector('#hint').textContent='A D move \u00b7 W jump \u00b7 J K attack \u00b7 L mine \u00b7 mouse draws (B R O) \u00b7 Q hack';
+  { const h=document.querySelector('#hint'); h.textContent=''; h.hidden=true; }      // the keys are listed once, in keys.txt (the owner had this second copy removed)
   // His rig sliders drive the spring layer over this game's clips (anim/rig.js). They start gentler than his defaults,
   // and Exaggerate starts at 1.00 (no change). Time scale and CPU skill were already live.
   if(ANIM.rig){
