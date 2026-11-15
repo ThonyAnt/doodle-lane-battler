@@ -272,7 +272,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
   // Messages can arrive out of order, so only the newest one counts.
   function takeInput(room,c,side,body){
     const seq=+body.seq||0;
-    if(c&&seq>c.seq){ c.seq=seq; (room.heldAt=room.heldAt||[0,0])[side]=(body.l||body.r||body.d)?Date.now():0; (room.lastIn=room.lastIn||[null,null])[side]=body; room.sim.setInput(side,{l:!!body.l,r:!!body.r,d:!!body.d,j:+body.j||0,a:+body.a||0,b:+body.b||0,m:+body.m||0,q:+body.q||0,u:+body.u||0,h:Math.max(0,Math.min(4,body.h|0))}); }
+    if(c&&seq>c.seq){ c.seq=seq; (room.heldAt=room.heldAt||[0,0])[side]=(body.l||body.r||body.d)?Date.now():0; (room.lastIn=room.lastIn||[null,null])[side]=body; room.sim.setInput(side,{fa:body.fa===1||body.fa===-1?body.fa:0,l:!!body.l,r:!!body.r,d:!!body.d,j:+body.j||0,a:+body.a||0,b:+body.b||0,m:+body.m||0,q:+body.q||0,u:+body.u||0,h:Math.max(0,Math.min(4,body.h|0))}); }
   }
   // 120 ticks a second (the match steps at 120 Hz); state goes out 60 times a second and screens glide in between. The match only advances while both players are connected.
   setInterval(()=>{
@@ -345,6 +345,10 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
     if(req.method==='GET'&&/^\/sfx\/[A-Za-z0-9]+\.(wav|ogg)$/.test(p)){      // recorded sound effects (sfx/CREDITS.md)
       const file=path.join(__dirname,p.slice(1)); if(!fs.existsSync(file)){ res.writeHead(404); res.end(); return true; }
       res.writeHead(200,{'Content-Type':p.endsWith('.ogg')?'audio/ogg':'audio/wav','Cache-Control':'max-age=3600'}); fs.createReadStream(file).pipe(res); return true;
+    }
+    if(req.method==='GET'&&p==='/wallpaper.png'){      // the retro desktop's wallpaper
+      const file=path.join(__dirname,'wallpaper.png'); if(!fs.existsSync(file)){ res.writeHead(404); res.end(); return true; }
+      res.writeHead(200,{'Content-Type':'image/png','Cache-Control':'max-age=3600'}); fs.createReadStream(file).pipe(res); return true;
     }
     if(req.method==='GET'&&(/^\/anim\/[a-z_]+\.js$/.test(p)||p==='/anim-lab.html'||p==='/inkshop.js'||p==='/inkscript.js'||p==='/wire.js'||p==='/sfx.js'||p==='/inkshop.css')){      // inkscript.js: the language of ability scripts, for matches simulated in the page; wire.js: state frames, for a page on a socket
       const file=path.join(__dirname,p.slice(1));
