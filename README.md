@@ -1,206 +1,426 @@
+<div align="center">
+
 # Doodle Duel
 
-A two-player stickman fight where every weapon is something you draw. A vision model decides what the drawing is; the ink you spend sets how strong it is, and a creative drawing earns special abilities.
+**Your sketch is your weapon. The computer is your rival.**
 
-Hackathon MVP. The repo is still named after the first game, a one-lane battler, which has been removed; the address `/` now goes straight to the duel.
+[![HackPrinceton](https://img.shields.io/badge/HackPrinceton-Fall%202026-e77500.svg)](#provenance)
+[![Status](https://img.shields.io/badge/status-hackathon%20prototype-orange.svg)](#verification-status)
+[![Stack](https://img.shields.io/badge/stack-Node%20%C2%B7%20deepagents%20%C2%B7%20Arduino-black.svg)](#how-it-works)
+[![Agents](https://img.shields.io/badge/agents-LangChain%20deepagents-1c3c3c.svg)](#the-deep-agents)
+[![Docs](https://img.shields.io/badge/docs-full%20reference-lightgrey.svg)](docs/REFERENCE.md)
 
-## The game
+</div>
 
-Open `/duel` on the same server for a live two-player stickman fight. Before each round both players draw two things (a sword, a bow, a bomb, a shield, wings, a snack) and share 100 ink between them; the vision model decides what each drawing does and the ink spent sets how strong it is. Then you fight live: move, double jump, and use your two drawings. First to 2 rounds wins. It has the same three ways to play (bot, one screen, online rooms with a QR code).
+<p align="center">
+  <img src="docs/media/fight-lava.gif" width="760" alt="Two stick figures fight inside a paint program on a 1990s desktop. Blue is holding a cat. The floor is lava because someone typed 'make the floor lava'; a chip in the corner reads UPDATE Lava Floor and another reads RED IS INK-OS.">
+</p>
 
-**Specials (new, untuned).** A drawing can also carry one or two "special" behaviours from a fixed list, switched on under **Special** on its card (or in the move tester at `/moves`): Lifesteal (hits send green healing orbs back to you), Glide (you float down under a canopy), Extra jump, Dash on hit (a hit zips you behind the enemy), Armour (the first hit you take mid-attack bounces off an ink shell), Combo growth (the weapon swells with every hit in a row) and Rage (faster when your health is low). Each costs points out of 10, so a weapon holds one big one, or a big and a small one. Each shows on screen when it happens. The model that scores a drawing now picks them and scripts them as the drawing's abilities (see Abilities below); the move tester still lets you switch them on by hand.
+<p align="center"><sub>A fight a few seconds after someone typed "make the floor lava". Blue is holding a cat.</sub></p>
 
-Every item gets three stats, shown as bars as soon as it is read: **power**, **range** and **speed**. The reader says how the thing you drew leans (a sledgehammer is all power, a dagger all speed) and the game scales those leanings to the same total for every item, so nothing is good at everything; ink sets the overall strength. Each item also has one **trait** (boomerang, hook, flurry, homing and so on): you are offered two that suit the drawing and pick one. You can trade speed for power with the two tuning buttons, and if the reader got it wrong, "Not right?" lets you say what it is in one tap. Anything can be drawn: a drawing the reader cannot place is sorted by its shape.
+<div align="center">
 
-Big screen: choose Online, then "Use this as the big screen" on a laptop or projector. It shows a large join code and then the fight; the first two tablets or phones to scan it are Blue and Red, and they draw and play with the touch buttons.
+| <img src="https://api.iconify.design/lucide/pencil.svg?color=%238b949e&width=22" width="22" alt="Drawing"> | <img src="https://api.iconify.design/lucide/terminal.svg?color=%238b949e&width=22" width="22" alt="Terminal"> | <img src="https://api.iconify.design/lucide/swords.svg?color=%238b949e&width=22" width="22" alt="Opponent"> | <img src="https://api.iconify.design/lucide/package.svg?color=%238b949e&width=22" width="22" alt="Dependencies"> |
+|:---:|:---:|:---:|:---:|
+| **about 2 s** | **about 20 s** | **about 6 s** | **0 dependencies** |
+| drawing to weapon | typed request to live | the machine re-arms | in the game server |
 
-Ways to play. **Player vs Bot** and **Player vs Player** make this device the screen of a room, and each player scans its code to use a phone or tablet as sketchbook and controller (in Player vs Bot the bot runs on the server as Red). **On this device: vs Bot, 2 players, Practice** needs no second device: the sketchbook and the fight are both on the computer, played with its keyboard (or the touch buttons on a tablet). Both are in the header and on the start screen.
+</div>
 
-Big screen: a room's screen is the device that pressed Player vs Bot or Player vs Player. It shows a large join code and then the fight; the first two tablets or phones to scan it are Blue and Red, and they draw and play with the touch buttons.
+## Contents
 
-Keys: A/D move, W jump, S down, J and K use your two drawings. Tap a blade repeatedly for a 3-hit combo; attack while running, in the air, or holding down for other moves. Bows and guns keep firing as you tap, and down + attack is a charged shot. Draw two of the same weapon (twin swords, a pair of pistols) and the fighter holds one in each hand, striking or firing with alternate hands. Second player on one screen: arrows, with , and . to attack. Touch buttons appear under the arena on tablets.
+- [Why it is different](#why-it-is-different)
+- [How it works](#how-it-works)
+- [A drawing becomes a weapon](#a-drawing-becomes-a-weapon)
+- [Talking to the machine](#talking-to-the-machine)
+- [Nemesis](#nemesis)
+- [The deep agents](#the-deep-agents)
+- [The headgear](#the-headgear)
+  - [Link and safety](#link-and-safety)
+- [Limitations](#limitations)
+- [Verification status](#verification-status)
+- [Run it](#run-it)
+- [Repository](#repository)
+- [Provenance](#provenance)
 
-### Arena customizations (blocks an ability can use)
+Doodle Duel is a 1v1 stick-figure fighter where every weapon is something you drew on your
+phone. A vision model says what the drawing is, the ink you spent sets how strong it is, and
+an unexpected idea earns abilities that the model writes as code for that one drawing.
 
-A weapon can carry one block that changes the stage for a few seconds when its holder lands the combo's last hit or a charged shot (bombs and dashes on a hit, shields and heals on use), at most once every 9 seconds: **gust** (wind across the stage), **moon** (light gravity), **night** (dark but for a light round each fighter, the holder's much bigger), **rain** (soaks anyone not under cover, puts out burns), **quake** (jolts that hop whoever is standing; jump them) and **shrink ring** (walls close in, then go back). Only one runs at a time; a new one replaces it. Everything it draws is in its holder's colour, a plate in the corner says whose weapon did it and how long is left, and a star at the hand shows when the block is ready. Try them on the move tester (`/moves`): "Arena block" puts one on the weapon, "Set off now" starts one.
+The fight happens inside a pretend 1990s desktop, and that computer is an AI agent. Type
+"make the floor lava" and it designs the change, play-tests it in real matches and installs
+it into the fight you are in. Play against it, and it studies how you fight, builds weapons
+to counter you, and remembers you the next time.
 
-## InkShop: the merged game
+> Doodle Duel is a hackathon prototype built in about a day. Parts of it have only been tried
+> against scripted players. See [what has been verified](#verification-status).
 
-On a computer, `/duel` is Alex's InkShop prototype (repo `al371160/hackprinceton-brainstorming-alex`) running on this game's engine. His interface, shape recogniser, hack table and effects are in the page as he wrote them; his mechanics run in this game's server-side rules, so they work for tablet rooms too.
+## Why it is different
 
-- **The fight starts inside the paint program.** The arena is the art board of the InkShop window, with his three sketched ledges. His Fighters panel shows health, ink and overdrive; the AI Read Log shows what each drawing was read as.
-- **Weapons before the round, quick shapes during it.** You still draw two weapons in the Sketchbook before each round (read by the vision model). During the fight you draw glyphs that take effect at once, read by his recogniser: a flat line is a platform, a steep line a wall, a box a crate, a circle around yourself a shield, a circle around the foe a trap, an arrow from yourself a dash, an arrow from the foe a fling, a zig-zag a lightning bolt, an X erases or disarms, and a weapon shape (sword, spear, hammer, bow) replaces the weapon in your hand. Drawing costs ink, which refills.
-- **How to draw mid-fight.** With a mouse: pick his Pencil, Rectangle or Ellipse tool (B, R, O) and draw on the art board; the Fight tool (F) makes a click an attack. On a tablet: draw on the strip of the arena above the controller.
-- **Hacks.** Dealing and taking damage fills Overdrive. At 100, Q runs the selected hack (1-5 pick): BREAKOUT, RECYCLE, TRANSFORM, POPUPSTORM, OVERCLOCK. Each shows a warning dialog first; the target cancels it by drawing the counter glyph shown, which stuns the hacker.
-- **Ultimates.** A full Overdrive bar can go on your weapon's ultimate instead of a hack: press U (M or numpad 0 for a second player on the same keyboard, or the U button on a tablet, which shows its name). Each kind of weapon has its own: sword INK FLEET (copies of your drawing fan out overhead and fly in one after another), spear INK RAIN (copies dive from above), thrown weapon STAR RING (a ring of copies let go at once), staff METEOR (an orb drops where the other fighter was standing), hammer EARTHSHAKER (a leaping slam and a shock wave along the ground), fists HUNDRED HANDS (a lunge and a flurry), twin blades CROSS CUT (three blinks through the other fighter), bow SKY PIERCER (one huge arrow), gun BULLET STORM, twin pistols CROSSFIRE (shots to both sides). They all do the same damage if everything lands. Once an ultimate starts it always plays out: the caster can still be hurt, but not stopped.
-- **An ultimate stops the fight.** From the moment it starts until its last piece lands, everything else is held: the other fighter hangs where they are (even in mid-air), shots hang in the air, the stage and the round clock wait, and nothing either player presses or draws counts. The stage goes dark, black bars close in, the ultimate's name crosses the screen with the drawing that powers it, and the held fighter turns grey. The blows then land one beat at a time; the last one flashes the screen, a running total counts up over the fighter being hit, and when time starts again they are sent flying. It cannot be dodged by reacting, only by not being where it lands (in the air above the hammer's wave, out of reach of the fists).
-- **Customizations.** A weapon can carry up to three special blocks out of 59, worth at most 10 points together: things it does for its holder (lifesteal with healing orbs, glide, armour), to the other fighter (shrink, tether, swap places), to its own shots and swings (split, ricochet, echo), things it leaves behind (fire, mines, walls), creatures made of your drawing (a pet, a turret, orbiters), stage effects (wind, night, a closing ring), transformations (two forms, giant), and triggers and costs that say when a power fires and what it spends. Every one shows on screen. Pick them under "Special" on a weapon's card, or try any mix on the move tester.
-- **Special presets.** Twelve ready-made weapons that come with their own powers, for when you would rather not draw: a Vampire Fang that heals you with every hit, an Umbrella you can glide under, a Chainsaw that overheats and leaves fire, a Cat that brings a pet, and eight more. They are listed first under the ready-made items in the sketchbook.
-- **Move tester.** Open `/moves` to try every animation: pick a weapon, press a move or its ultimate, and watch it on a dummy that never dies. Slow it down, loop it, change the ink colour, or move the dummy closer.
-- **Weapon customizations: what a hit does to its target.** A weapon can carry up to two prebuilt blocks that leave something visible on whoever it hits, drawn in the colour of the weapon's owner: Shrink, Float (a balloon, low gravity), Slippery (a puddle, feet slide), Mirror (left and right swapped), Tether (a line that holds and tows them), Mark (the next hit is half again as big) and Swap (the two trade places). Each has a point cost for a later budget. None can be re-applied until a short rest after it ends, an ultimate never carries one, and a blocked hit applies none. Nothing chooses them in a match yet; try them on `/moves` in the "On hit" row.
-- **Triggers (blocks an ability can use).** A weapon can carry a trigger: a condition that, when met, makes its next hit an empowered one (more damage and knock-back, a star burst in the attacker's colour and the trigger's name). Each shows itself building and armed: Third strike (pips over the head, then the weapon glows gold), Charge (stand still about a second: a ring fills round the weapon hand), Airborne (the weapon trails while its holder is off the ground), Last stand (flames round a fighter below a third of health), Counter (a shrinking ring after being hit or blocking), Full ink (a gauge by the hand, then ink drops circling; each empowered hit spends ink), First blood (a drop over the head until anyone lands the round's first hit). Try them on `/moves`: the Trigger row puts one on the weapon under test.
-- **Attack shapes (in progress).** Weapons can carry a customization that changes how their shots or swings travel: shots that split in three, corkscrew, hang in the air at the end of their range, ricochet, or swell as they fly; swings that leave a ghost which strikes again, or finishers that send a wave along the ground. For now they can only be switched on in the move tester (the Shape row); the game does not hand them out yet.
-- **Left behind (not yet in matches).** A weapon can carry a customization that leaves something in the arena after an attack: a fire trail, a slick puddle, mines, spikes, a short wall, a step in the air, or a cloud. Each is drawn in its owner's colour and has a point cost. For now they are switched on only in the move tester (the "Leaves behind" row on `/moves`); nothing in a match picks them yet.
-- **Costs (try them on `/moves`).** A weapon can carry a power with a price. Six prices are built, each with a gauge over the fighter's head and a note on the A/B button: a **magazine** (pips; empty, it reloads for a moment), **heat** (the weapon glows redder, then steams and cannot be used until it cools), **ink** (each attack drinks mid-fight ink; too little and the weapon goes pale), **blood** (each attack costs a little health; red drops fly), a **wind-up** (a ring fills before the swing) and **fragile** (it cracks with each hit you take and breaks; stand still to mend it). For now they come with one stand-in power, "Heavy": a paid attack hits 35% harder and leaves a gold trail. The Cost row on `/moves` puts one on the weapon under test; "Run it out" shows the spent state. Nothing in a normal match gives a weapon a cost yet.
-- **Summons (blocks an ability can use).** A weapon can carry a summon block: copies of its drawing that act on their own, glowing in their owner's colour. Orbiters circle you and sting whoever they touch; a pet trots behind you and pounces; a down attack plants a turret that spits small copies; a decoy is left behind as you blink away from a hit; a swarm flings one copy with each attack; a guardian blocks three incoming shots. The other player can swing at them to break them. Try each on `/moves` (the Summon row).
-- **Impact.** Heavy hits freeze the fight for a few frames and shake the screen. Only the ultimate flashes the stage, when its last blow lands: an impact frame in pure black and white (white stage with black figures, then black with white, twice over 0.4 s) with a jagged star and force lines bursting from the hit, then a camera jolt. Each earlier blow pops a small star. On the retro desktop everything behind the fight blurs while an ultimate plays. If your system is set to reduce motion, the flash is off and the shake is small.
-- **Getting out.** The art board's walls and floor can be mined: L swings the built-in pick, and S + L digs down. Two hits break a piece. Or run BREAKOUT.exe to open the whole board for 15 seconds. Outside, the desktop's window title bars are platforms.
-- **The bot** is his animator.bot on top of this game's fighting bot: it draws glyphs with a ghost cursor, runs hacks, and counters yours. His CPU skill slider sets how good it is; Time scale slows a local match.
-- Tablets and phones keep Benjamin's layout (with the draw strip and two new buttons, mine and hack); add `?plain=1` for the plain layout on a computer.
+| Common approach | Where it falls short |
+|---|---|
+| Drawing games that judge or guess your drawing | The drawing stops mattering the moment it is scored. After that you watch. |
+| Games with AI-generated content | The output is trusted. Nothing tests it, so it either stays cosmetic or it breaks the game. |
+| Bots with a difficulty slider | Harder is not smarter. It plays everyone the same way and forgets you. |
 
-What comes from where is marked in the code: `inkshop.js`, `inkshop.css` and the `INK` block in `duel.html` hold his code between BEGIN/END verbatim markers. Not merged: his fighter movement, his pick-up weapon items, and cursor grabs.
+Doodle Duel's answer:
 
-**Springy movement.** The fighters' animations are authored clips; on top of them every joint is a small weight on a spring chasing the clip's pose (`anim/rig.js`, using the spring maths of his rig). The body lags and settles, a hit throws the joints about, and a dash leaves afterimages. It only changes how fighters are drawn, never who hits whom. On the InkShop desktop the Rig Properties sliders tune it: **Jelly** (how soft; 0 is the plain authored animation), **Stretch** (how far limbs may stretch), **Flab** (how loose the belly is), **Exaggerate** (bigger poses while moving about), **Onion skin** (afterimages all the time, not just during a dash) and **Show rig** (draws the springs). Settings are remembered per browser.
+1. **What you draw is what you hold.** The sword, banana or cat is in your fighter's hand two
+   seconds after you finish it. A messy drawing is as strong as a neat one: the model never
+   judges effort.
+2. **Powers are code, written per drawing.** Abilities are short scripts in a language the
+   game interprets itself. Nothing a model writes is ever run as JavaScript.
+3. **The game can be rewritten while you play it.** A typed request becomes an update that has
+   to pass a play-test before it reaches the match.
+4. **The opponent studies you.** It reads your habits as numbers, builds against them, and
+   practises on a copy of you before the next round.
+5. **It says what it has not tested.** Every claim on this page is marked as measured, seen
+   once, or not yet tried.
 
-## Transforming weapons (a block an ability can use)
+## How it works
 
-A weapon in Doodle Duel can carry one transformation, a change it goes through during the fight that everyone can see: **two forms** (double-tap down to switch, say, a blade into a bow), **splitter** (a finisher that lands splits it into a pair for a few seconds), **giant** (every few seconds it glows and the next move is made at twice the size), **evolving** (it gains a stage every few hits landed, three stages, and starts each round small), **far and near** (a melee weapon throws itself at a far foe and comes back; a ranged one is swung up close) and **overgrown** (it keeps growing and is cut back whenever its holder is hit). The ink still sets how strong the weapon is; a transformation only changes the shape of that strength. Nothing picks them yet: try them on the move tester at `/moves` (the Transform row), or set `customs:[{id:"giant"}]` on an item through `S.tweak`. The numbers and point costs are first guesses.
+```mermaid
+flowchart TB
+  subgraph players ["Players"]
+    direction LR
+    phone["Phone or tablet<br/>sketchbook + controller"]
+    head["Headgear<br/>six vibration motors"]
+  end
 
-## Desktop overlay (experimental, Windows)
+  subgraph server ["Game server: Node, no dependencies"]
+    direction LR
+    reader["Reader<br/>vision model names the drawing"]
+    rules["The rules<br/>one block, 120 ticks a second"]
+    rooms["Rooms<br/>4-letter code, state 60 times a second"]
+  end
 
-The fighters can play on top of your real desktop instead of in a browser tab. This needs two development dependencies (Electron, and koffi for reading window positions): run `npm install` once, then `npm run overlay`. If npm says it skipped install scripts and the overlay will not start, run `npm run overlay:setup` once to fetch the Electron runtime.
+  subgraph screen ["Big screen: a pretend 1990s desktop"]
+    direction LR
+    arena["Arena<br/>the canvas of a paint program"]
+    term["INK-OS terminal"]
+  end
 
-- The fight runs along the top edge of the taskbar, across the whole screen. Clicks pass through to whatever is underneath; only the menu and sketchbook cards take the mouse.
-- **Esc** or **Ctrl+Alt+D** opens the menu (mode, restart, sketchbook, quit) and pauses. **Ctrl+Alt+Q** quits.
-- The fight pauses whenever another app has the keyboard; press Ctrl+Alt+D to come back.
-- **Draw here** (the default): vs bot, two players on one keyboard, or practice, with the sketchbook on the computer and a screen-wide arena.
-- **Draw on tablets**: the overlay becomes the big screen of a new room. It shows the join code, two tablets or phones draw and play, and the fight runs on the desktop on the standard stage. The tablets must be able to reach this computer (same Wi-Fi, firewall allowing Node).
-- **Your windows are the terrain.** The top edge of every visible, un-maximised window is a platform, marked with a thin yellow line. Drag a window and whoever is standing on it rides along; move it out from under them and they fall. A maximised window in front hides everything behind it, so restore a few windows to a smaller size to build a stage. Only window positions are read, never titles or contents.
-- With **Draw on tablets**, the overlay sends that terrain to the room, so it works for tablet players too.
+  subgraph agents ["Agent service: LangChain deepagents"]
+    direction LR
+    inkos["INK-OS<br/>designer, engineer, tester"]
+    nem["Nemesis<br/>scout and armorer, in parallel"]
+    mem["Notes on each player<br/>outlive the match"]
+  end
 
-## Spreadsheet stage
+  sim["Headless simulator<br/>the same rules, about 100 rounds a second"]
 
-Press **Stage** in the header (or open `/duel?stage=sheet`) to fight inside a banker's spreadsheet while he builds a valuation model. The cells he fills in are the platforms. He drags one across, pastes another, deletes a row, then loses his temper and deletes everything, and the `#REF!` errors rain down. Near the end he notices the two of you and comes after you with the cursor: get out of the selection before he presses Delete. It is the same minute every round, so you can learn it. A room made from that page uses the stage for everyone in it.
+  phone -->|"strokes + PNG"| reader
+  phone -->|"buttons"| rules
+  reader -->|"weapon + abilities"| rules
+  rules --> rooms
+  rooms -->|"state"| arena
+  rooms -->|"state"| phone
+  arena -->|"hit events"| head
+  term -->|"make the floor lava"| inkos
+  inkos -->|"tested update"| rules
+  rules -->|"round numbers at the knockout"| nem
+  nem -->|"build + taunt"| rules
+  inkos <-->|"play-test"| sim
+  nem <-->|"spar"| sim
+  nem <--> mem
+```
 
-## Slideshow stage
+1. **Draw.** Before each round both players draw two things and split 100 ink between them.
+   Phones join by scanning a QR code and become sketchbook and controller; nobody installs
+   anything.
+2. **Fight.** First to two rounds, each up to 90 seconds. The server owns the match: it steps
+   the rules 120 times a second and sends the state to every screen 60 times a second. Phones
+   only send buttons.
+3. **The machine.** The big screen is a desktop with a terminal on it. That terminal, and the
+   bot you can fight, are two deep agents running beside the game server.
 
-Press Stage twice (or open `/duel?stage=deck`) to fight inside a founder's pitch deck in "Podium 97". The ledges are whatever is on the slide: placeholder boxes, bullet points, the bars of a revenue chart as they grow, the boxes of an org chart. Each bullet arrives by a different animation effect, named in a yellow tooltip as it happens: one flies in and rams, one drops from the top and stomps, one flashes in and out, one stretches from its middle and pushes outward. On the chart slide an Up Arrow shape throws whoever steps on it into the air, and over the org chart a rainbow WordArt "SYNERGY" becomes a bridge of letters riding a wave. Every time the founder presses Next the whole arena is replaced, and the slide transition itself comes through the stage: a Wipe shoves you along, a Cover Down presses from above, a Checkerboard takes the floor away in patches. Then the chart collapses, clip art is dropped in, the founder notices the fighters and goes after them with the pen, and finally just hammers the space bar. The floating Speaker Notes window says what the founder is thinking, and you can stand on it.
+The rules exist once, as a marked block in `duel.html` that the page and the server both run.
+All of a match's randomness comes from one seed and every command is logged with its tick, so
+a match can be replayed exactly and, more usefully, played with nobody watching. That headless
+simulator is what the agents are built on.
 
-## Making a new scene
+More figures: [one drawing](docs/diagrams/drawing-to-weapon.svg),
+[a typed request](docs/diagrams/ink-os.svg), [Nemesis](docs/diagrams/nemesis.svg),
+[where the waiting hides](docs/diagrams/timeline.svg) and
+[the headgear](docs/diagrams/headgear.svg). They are drawn by
+[`docs/diagrams/make-diagrams.js`](docs/diagrams/make-diagrams.js).
 
-The repo carries a Claude Code skill for this, `scene-creation`, in `.claude/skills/scene-creation`. It is a project skill: it comes with the repo, so anyone who opens this folder in Claude Code has it without installing anything. Ask for a new scene, stage or arena (or just describe the program to fight in) and Claude follows it: pitch, a question about an inside joke, research into the real program, a timed script to agree on, then the build. The slideshow stage was made this way.
+## A drawing becomes a weapon
 
-## Replays
+<img src="docs/diagrams/drawing-to-weapon.svg" width="100%" alt="A drawing goes from the phone to a vision model, which names it in about two seconds. The rules build the weapon. A second request scores how unexpected the idea is and writes abilities, which pass the InkScript check before they are attached. During the fight the match clamps every effect and switches off a script after three faults.">
 
-- **Every knockout is shown again.** When a round ends, the last second before the knockout plays back at a third of the speed under a REPLAY banner, then the next round's drawing begins as usual. The knockout that wins the match is not replayed: the champion screen comes straight up. Add `?ko=0` to the address to switch the replays off (`/duel?ko=0`).
-- **Any room's match can be watched again.** Open `/duel?replay=CODE` with the room's four letters, for example `/duel?replay=ABCD`. The page plays the match back from the room's recording: play and pause, 0.25×, 1× and 4× speed, and a bar to drag to any moment (with the bar selected, the arrow keys step one tick at a time). While a match is on, the link shows it up to the moment you opened it. After a rematch it shows the match that just ended until the new one has started. A recording is kept for 30 minutes after its match is replaced or its room closes, and the server keeps at most 50 of them. A replay made by a different version of the game is refused, since it would play out differently.
-- **The balance bench can be repeated exactly.** `node tools/balance.js quick --seed=7` plays the same rounds every time, so two versions or settings can be compared on identical matches; see the notes at the top of `tools/balance.js`.
+You draw and press Make it. The strokes and a PNG go to the server; the API key never reaches
+a browser. One request to a vision model comes back with a name, a kind (melee, ranged, bomb,
+shield, dash or heal), an element, and how the thing leans between power, range and speed.
+The reader's second and third guesses sit under the drawing as buttons, so a wrong read costs
+one tap.
 
-A match is exactly repeatable because all its randomness comes from one seed and every command it is given is logged with the tick it arrived on; `node tools/test-replay.js` checks that.
+A second request, a few seconds behind, scores the idea from 1 to 10 and writes its abilities.
+The game has 59 ready-made behaviours, each with a visible tell: healing orbs, a fire trail, a
+summoned pet, wind across the stage. The model picks among them and writes a short script
+saying when they fire, or codes something new from lower-level pieces such as pushes, hops,
+shots and stuns.
 
-## Abilities: creative drawings earn more
+The scripts are in **InkScript**, a language we wrote for this ([`inkscript.js`](inkscript.js)).
+The game parses it, checks every name against a table and interprets it itself.
 
-Every drawing in Doodle Duel gets a **creativity score** from 1 to 10, and the score decides how many special abilities the weapon has: none for a plain one (a stick, a basic sword), one from 4, two from 7, three from 9. A boring weapon still works; it just has nothing special.
+| Decided by the model | Decided by the game |
+|---|---|
+| What the drawing is, and its name | How strong it is: only the ink you spent |
+| How it leans between power, range and speed | The total of those three, the same for every item |
+| How unexpected the idea is, 1 to 10 | How many abilities that score buys: 0, 1, 2 or 3 |
+| The ability scripts | What a script may call, how hard each call may hit, and when a script is switched off |
 
-- **Name your drawing.** There is an optional box under the pad. A name ("vampire umbrella") tells the reader what you meant and becomes the weapon's name.
-- **Abilities are built from blocks, tied together by code the model writes.** The game has 59 ready-made behaviours with a visible tell each (healing orbs for lifesteal, a glide, a fire trail, a summoned helper, a change to the arena). The model picks among them and writes a short script that says when they happen: "every third hit, mark the foe", "when I land from high up, a shock ring".
-- **If the drawing needs something that is not there, the model codes it on the fly** from lower-level pieces: pushes, hops, dashes, shots, healing, stuns, and effects such as rings, streaks and floating text.
-- **It is safe.** The scripts are in InkScript, a tiny language of our own (`inkscript.js`) that the game parses, checks and interprets itself, so nothing the model writes is ever run as JavaScript. The match clamps what any script can do, and a script that keeps failing during a fight is switched off ("ability fizzled").
-- **It is quick.** Your weapon is ready as soon as the drawing is read. The score and abilities come from a second request and are added to the weapon when they arrive; the round does not start until they have (15 seconds at most, then it starts with what the weapon has).
-- **Model:** `OPENAI_ABILITY_MODEL` (defaults to `OPENAI_MODEL`). Without a key the game estimates the score from the drawing and gives built-in abilities. `ABILITIES=0` turns the second request off.
-- **Try it without a key:** `node tools/fake-openai.js` starts a stand-in model; start the game with `OPENAI_API_KEY=test OPENAI_BASE_URL=http://127.0.0.1:3192 node server.js`.
+Reading speed was a choice. With the model allowed to think, it read 12 of 14 test drawings
+correctly but took 5 seconds each. Without, 8 of 11 in 2 seconds. We took 2 seconds and the
+one-tap corrections.
 
-Not yet tried with the real model: how well it scores, whether its scripts pass the checks, and how long the second request takes.
+## Talking to the machine
 
-## Trained CPU (optional)
+<img src="docs/diagrams/ink-os.svg" width="100%" alt="A request typed into the INK-OS terminal goes to a planner, which hands work to a designer, an engineer and a tester. They pass files to each other. The tester plays forty bot rounds with the update and the same forty without. The install tool refuses any file that has not passed a clean play-test, the game server checks it again, and the update is installed into the running match.">
 
-Beside the hand-written bot there is a second CPU that learned to fight by playing: a small neural network (28 numbers in, two hidden layers, 8 buttons out, 1,232 weights) improved by an evolution strategy over about 2.3 million rounds of the real rules (after an earlier run of about four million, before the weapons were re-balanced) against a league (the hand-written bot at three skills, three scripted players, and earlier versions of itself).
+The desktop has a terminal. A request typed there goes to **INK-OS**, a deep agent that plans
+the job and runs three sub-agents who hand work to each other as files. What comes out is an
+update, and an update is data:
 
-- **Use it:** when `bot-weights.json` sits next to `server.js`, the menu shows a `CPU: classic / trained` switch for Player vs Bot rooms. The classic bot is always the default. `POST /duel/room?bot=1&brain=net` asks for it directly.
-- **Measured (400 fresh rounds each, same random loadout both sides):** it beats the hand-written bot at skill 0.55 in 65% of rounds, and the scripted masher, jumper and kiter in 92%, 97% and 98%. That is the best of many checkpoints, which flatters: the newest one scored 58% against the hand-written bot.
-- **How it plays:** it walks in and attacks with both items, about 11 presses a second in all (it is held to 6 presses a second per attack button and 3 jumps). It has learned not to jump at all, does not draw, and has only been watched for a few rounds; nobody has played a full match against it.
-- **Train:** `node bot/train.js --hours=0.5 --workers=8 --out=bot/checkpoints` (resumable; about 2,500 rounds a second on this laptop, so half an hour is plenty: the win rate stopped rising after about 1,000 generations).
-- **Judge and save:** `node bot/eval.js bot/checkpoints --n=400 --save=bot-weights.json`. Weights only suit the rules they were trained in; the server warns when `duel.html` has changed since.
+| Part | What it may hold |
+|---|---|
+| Settings | `gravity` 0.25–2.5, `speed` 0.5–1.8, `jump` 0.6–1.8, `damage` 0.4–2.5, `knockback` 0.4–3, `shotSpeed` 0.4–2, `size` 0.4–1.6, `health` 0.25–1, `overdrive` 0.5–4 (multipliers) |
+| World rules | Up to three InkScript scripts that run for both fighters. They may push, hop, dash, burn, soak, stun, heal or hurt |
+| Look | A floor (lava, ice, slime, void, grass), weather (embers, rain, snow, stars, sparks, wind, bubbles) and a tint. Only the page draws these |
 
-## Netcode: a WebSocket link (off by default)
+The tester's tool plays 40 seeded rounds between two bots with the update, beside the same 40
+without it, and flags what it finds:
 
-A room is reached the way it always was unless the page address says otherwise: the match's state comes down a Server-Sent Events stream as JSON, about 60 times a second in a fight, and every change of buttons goes up as a request of its own, one at a time. Add `?net=ws` to the address (`/duel?net=ws`) and the page uses one WebSocket for both.
+| Flag | Meaning |
+|---|---|
+| `CRASH`, `BROKEN`, `FAULTS` | A match threw, a fighter ended up with impossible numbers, or a rule kept failing |
+| `DEAD RULE` | A rule never fired in any round |
+| `TOO DEADLY` | Rounds last under 6 seconds |
+| `TOO SLOW` | More than 45% of rounds run out the clock |
+| `ONE-SIDED` | One side wins more than 70% of decided rounds, or the rules fire mostly for one side |
 
-- **Down:** every event the event stream carries, unchanged, and the state as small binary frames that hold only what changed since the last state the device said it has. In a recorded fight between two bots that is about 5% of the JSON (1,807 bytes a snapshot against 77).
-- **Up:** a button goes the moment it changes, with no request to wait behind. Buttons are still sent again every 150 ms during a round, and the server still lets go of a direction it has not heard about for 0.9 s.
-- **Fallback:** if the socket has not opened within 1.5 s, or closes, or falls silent for four seconds, the page goes over to the event stream and plays on in the same seat. `?net=ws-only` never falls back and keeps trying the socket (for tests). Start the server with `NOWS=1` to leave the socket off and watch the fallback happen.
-- **The big screen passes it on:** a screen opened with `?net=ws` puts it in the join link and the QR code, so the tablets that scan it use the socket too.
-- **Seeing which link is in use:** the desktop layout's status bar shows `ws` or `sse`, the round trip, the jitter and the kB/s arriving. On a tablet with `?net=` in its address the "You are Blue" badge says it.
-- **No library:** `ws.js` is the WebSocket, written from RFC 6455 (frames, handshake, ping and pong, close); `wire.js` is the packing and the deltas, loaded by the server and the page.
-- **Tests:** `node tools/test-net.js` (starts a server on port 3195): the frame codec, sockets, packing and deltas, rooms over a socket beside the event stream, the page's link code against the real server (including a network that swallows the upgrade), Node's own WebSocket as an independent client, and the page's whole script in a pretend browser, joining a room and pressing keys on each link.
-- **Bench:** `node tools/net-bench.js --delay=30 --jitter=20` plays a room against the bot on each link through a relay that holds every packet back by 30 ms plus up to 20 ms, presses a direction 200 times and prints, for each link, the median and 95th-percentile time from the press to the first state that shows the fighter moving, and the bytes a second received. It sends its buttons as the page does, repeat included (`--repeat=0` leaves the repeat out).
+- **Three checks stand between a model and a match.** The engineer's tool validates the file.
+  The install tool refuses any file that has not passed a clean play-test unchanged; it
+  compares a hash. The game server then runs its own 10-round play-test before the update
+  reaches a room.
+- **It is live at once.** An update lands in whatever phase the match is in, with a banner and
+  a chip that stays on screen. Type `reset` to remove it.
+- **About 20 seconds, 10 model calls.** The first version took 30 to 50 seconds and about 17.
 
-Measured on one laptop, server and devices on the same machine, 200 presses a link:
+## Nemesis
 
-| Relay | Link | Median press to movement | 95th percentile | Bytes a second received |
-|---|---|---|---|---|
-| 30 ms + up to 20 ms each way | event stream | 105.8 ms | 175.1 ms | 72,947 |
-| 30 ms + up to 20 ms each way | socket | 92.4 ms | 110.1 ms | 3,789 (5.2%) |
-| none | event stream | 11.2 ms | 21.0 ms | 89,893 |
-| none | socket | 10.7 ms | 19.6 ms | 4,252 (4.7%) |
+<p align="center">
+  <img src="docs/media/nemesis-banner.jpg" width="640" alt="A round about to start. A banner across the arena reads: INK-OS studied you and built Stillpoint Snare. Underneath, in quotes: Ben, 76% still, at least your aim stays perfectly predictable.">
+</p>
 
-The socket's gain in time is the wait it removes: on the event stream a press made while the last request is still in the air has to wait for it to come back, which on a slow network is most of the time because of the 150 ms repeat. That shows in the 95th percentile more than in the median. With the repeat left out (`--repeat=0`, 100 presses, same relay) the two links are level: 92.3 against 90.4 ms, 95th percentile 110.2 against 105.2. With no delay they are the same within the noise. Presses during which the bot hit the fighter were thrown away (60 and 73 of them with the delay, 6 and 4 without), and the relay delays whole chunks, not single packets: read the numbers as a comparison of the two links, not as what a venue's Wi-Fi will do.
+Against the bot, Red is played by the machine. It is a second deep agent, and it starts work
+the moment a round is won.
 
-Not yet tried: a real browser. This was written and tested without one. The nearest it has come is Node's own `WebSocket` (written by others to the standard browsers follow), which the tests use against this server, with the page's script running in a pretend browser; `EventSource` there is a stand-in. Also untried: real tablets, a real network, a tablet that sleeps and wakes, and Render's proxy (if it does not pass the upgrade, the page should fall back within 1.5 s). States are drawn as they arrive, as before; there is no smoothing buffer.
+<img src="docs/diagrams/nemesis.svg" width="100%" alt="At the knockout a planner starts a scout and an armorer at the same time. The scout writes the player's file and a note that outlives the match. The armorer forges a build, and its tool spars the build for forty rounds against a copy of the player. A build that loses is forged once more. The first build that wins is given to Red, the round opens with a taunt, and when the match is over the notes open as a text file.">
 
-## INK-OS: the machine rewrites the game (LangChain deepagents)
+The rules keep numbers on each fighter every round. These are what it studies:
 
-The fight happens inside an old computer, and that computer is a deep agent. Type a request into the `INK-OS` terminal on the desktop ("make the floor lava", "low gravity", "a storm that zaps everyone") and the machine ships it as an update, live at once, in about 20 seconds.
+| Measured each round | Used for |
+|---|---|
+| Share of the round spent far, mid and close | The copy of you keeps your distance |
+| Time in the air, jumps a minute | The copy jumps as often as you do |
+| Time backing away, standing still, near a wall, behind a shield | The scout's write-up and the taunt |
+| Uses and damage of each weapon; damage taken | How skilled the copy is, and what to counter |
 
-- **Who does the work:** one deep agent, `ink-os`, plans the job with a to-do list and runs three sub-agents. The **designer** turns the request into `/design.md`. The **engineer** writes `/update.json` and fixes it until `check_update` passes. The **tester** plays it in headless matches of the real game with `playtest` and writes `/qa-report.md` with a PASS or FAIL. A FAIL goes back to the engineer. Only a play-tested update can be installed.
-- **What an update is:** data, never JavaScript. Match settings (`gravity`, `speed`, `jump`, `damage`, `knockback`, `shotSpeed`, `size`, `health`, `overdrive`, each in a fixed range) and up to three world rules written in the game's own small rule language, which the game interprets itself. `MODS` in `duel.html` and `osforge.js` hold the tables; the manual the agents read is generated from them.
-- **Nothing the agent writes is trusted:** its tools check the update, and the game server checks and play-tests it again before it reaches a room. A request the game cannot do literally (a new weapon, something for one side only) gets the closest fair change, and the patch notes say so.
-- **Watching it work:** the terminal shows the plan ticking off, each hand-over, each file written, the check, and the play-test numbers beside the normal game's. Every run keeps its files in `os-agent/work/<run>/`.
-- **Run it:** `cd os-agent && npm install && node server.mjs` (port 3130, needs `OPENAI_API_KEY`; `OS_AGENT_MODEL` picks the model, default `gpt-6-luna`). The game server finds it at `OS_AGENT_URL` (default `http://127.0.0.1:3130`). Type `reset` in the terminal to remove the installed update.
-- **Not tested:** nobody outside the team has typed into it, and it has only been run with `gpt-6-luna`.
+- **Fair play.** The machine gets what a player gets: two of the fourteen ready-made weapons,
+  80 ink between them, and one ability it writes in InkScript (two when it is behind). The
+  same code checks its build and a player's.
+- **It practises before it commits.** The forge tool tests the ability in staged fights, then
+  spars the build for 40 rounds against a copy of you. A build that loses is forged once more.
+  If its old weapons are clearly better, it keeps them and says so.
+- **It remembers.** The scout adds one line to `os-agent/memory/<name>.md` after every round
+  and reads it before round one of your next match. Type `name ben` into the terminal to tell
+  it who you are.
+- **About 6 seconds.** It starts at the knockout, so it has usually decided by the time
+  drawing opens. A refused ability or a losing first build makes it about 13.
 
-## Nemesis: the machine is the opponent (LangChain deepagents)
+<img src="docs/diagrams/timeline.svg" width="100%" alt="A match as a timeline: drawing, a countdown, a fight of up to ninety seconds, a knockout, then drawing again. Drawings are read in about two seconds. An update typed as the fight starts is live about twenty seconds later. Nemesis starts at the knockout and has decided as drawing opens.">
 
-Against the bot, Red is played by INK-OS itself. Between rounds it studies how you played and comes back with weapons built to counter you, and it remembers you by name the next time you play.
+## The deep agents
 
-- **What you see:** during the drawing break the `INK-OS` terminal shows the machine at work (your habits in numbers, the build it forged, its win rate in practice). The round opens with the build's name and a taunt that quotes your own numbers. When the match is over, its notes on you open as a text file.
-- **Who does the work:** one deep agent plans the job and runs two sub-agents at the same time. The **scout** reads the round's numbers (`S.scout` in the rules: distance kept, time in the air, jumps, which weapon did the damage) and writes your file, `/dossier.md`. The **armorer** forges `/build.json`: two weapons and an ability it writes in the game's ability language. Its forge tool checks the build and at once spars it in about 40 practice rounds of the real game against a copy of you (the game's bot with your weapons, your skill and your habits); a build that loses is forged once more.
-- **How long it takes:** the machine starts at the knockout and usually has its build about 6 seconds later, so it is ready by the time drawing starts. It runs on small models (`NEM_MODEL`, default `gpt-5.4-nano`, for the planning; `NEM_BUILD_MODEL`, default `gpt-5.4-mini`, for the two sub-agents).
-- **Memory:** the scout adds a line to `os-agent/memory/<name>.md` after every round, and reads it before the first round of your next match. Tell it who you are by typing `name ben` into the terminal.
-- **Fair play:** the machine gets what a player gets. Two of the ready-made items, 80 ink between them, one ability (two when it is behind), all checked by the same code that checks a player's (`nemesis.js`), by the agent's tools and again by the game server.
-- **Where it runs:** in a Player vs Bot room the server runs it and tells every device; in "On this device: vs Bot" the page asks for itself. Without the agent service the bot simply keeps its ready-made weapons. A room made with `?nemesis=0` turns it off.
-- **Not tested:** real people playing it. The copy of the player is a bot tuned to a handful of numbers, so its practice win rate is only a rough guide to how it does against you.
+Both agents are built on LangChain's [`deepagents`](https://github.com/langchain-ai/deepagentsjs)
+and live in [`os-agent/`](os-agent). Each part of the library does something a player can see.
 
-## Run
+| deepagents feature | Where it is used |
+|---|---|
+| Planning (`write_todos`) | Both agents open with a plan. It is the first thing a player sees: a checklist in the in-game terminal that ticks off as the work moves |
+| Sub-agents (`task`) | Five across the two agents, each with its own prompt, tools and model: designer, engineer and tester for INK-OS; scout and armorer for Nemesis, started in the same turn so they run in parallel |
+| File system (`FilesystemBackend`) | Every run gets its own workspace. Work is handed over as files: `/design.md`, `/update.json`, `/qa-report.md`, `/dossier.md`, `/build.json`, `/spar-report.md`. The folders stay on disk in `os-agent/work/` |
+| Long-term memory (`CompositeBackend`) | `/memories/` is routed to a folder that outlives the match. That is how the machine knows you the second time |
+| Custom tools | Seven, wrapping the game's own checker and simulator: `save_update`, `check_update`, `playtest`, `install_update`, `forge_build`, `remember`, `deploy` |
+| Streaming with sub-graphs | Every plan step, hand-over, file write and test result becomes a line in the terminal while it happens |
+| Models per role (`@langchain/openai`) | A small model plans and routes; a larger one writes |
 
-Needs Node 18 or newer. No dependencies.
+Why an agent and not a chain of prompts: it loops on evidence. When the armorer wrote an
+ability with too narrow a condition, the forge tool refused it with *"the ability never fired
+in the test fight: five hits landed, one of them on a soaked foe, and the code never did
+anything"*, and the next attempt fixed it. The simulator, not the prompt, decides what ships.
 
-1. Copy `.env.example` to `.env` and put your OpenAI API key after `OPENAI_API_KEY=`.
-2. `node server.js`
-3. Open http://localhost:3000 (it goes to `/duel`)
+## The headgear
 
-Without a key the game still runs; drawings are read by a rough local guess from ink colour and shape.
+<p align="center">
+  <img src="docs/media/headgear-concept.webp" width="640" alt="Concept render of the headgear: a cap worn under a clear shell that wraps around the head.">
+</p>
 
-## Players on their own devices
+<p align="center"><sub>Concept render.</sub></p>
 
-The page you open is the big screen. Choose **Player vs Bot** or **Player vs Player**; you get a room code, a join link and a QR code. Each player scans it with a phone or tablet, which becomes their controller and sketchbook.
+One player can wear the fight. Six vibration motors sit around the head, and each hit arrives
+from the side it came from.
 
-The server runs the match; each device only draws and displays.
+<img src="docs/diagrams/headgear.svg" width="100%" alt="Six motors around the head, seen from above: front, back, left, right and one at each temple. A hit that knocks the wearer left buzzes the right side and right temple. The page turns each game event into a pattern, a function of time, and streams six motor levels over USB serial about thirty times a second to an Arduino, which copies them to its pins. Eight example patterns are plotted.">
 
-**Same Wi-Fi (simplest for a demo):** run `node server.js` on a laptop. When you open the game at `localhost`, the QR code points at the laptop's network address so other devices can reach it. Allow Node through the firewall if your system asks. Some event and campus networks block devices from talking to each other; a phone hotspot avoids that.
+| Part | Spec |
+|---|---|
+| Controller | Arduino Uno or Nano, on USB |
+| Actuators | 6 vibration motors: front, back, left, right, left temple, right temple, on PWM pins 3, 5, 6, 9, 10, 11 |
+| Driver | [`haptics.js`](haptics.js) in the game page, over Web Serial at 115200 baud (Chrome or Edge on a computer) |
+| Patterns | 13, each a function of time. They overlap by taking the strongest level, so nothing queues |
+| Firmware | [`hardware/headband/headband.ino`](hardware/headband/headband.ino) |
 
-**Public link:** deploy this folder to any host that runs a long-lived Node process (start command `node server.js`, set `OPENAI_API_KEY` in the host's environment settings, and the host supplies `PORT`). The QR code then uses the public address. Rooms live in memory, so run a single instance.
+What the wearer feels:
 
-## Settings (`.env`)
+- A hit that knocks you left buzzes your right side and right temple; a heavy one is a short
+  pulse and a long one.
+- Fire flickers at random across all six motors, water is a cold shiver, plant swells and fades.
+- Your own ultimate circles the head. The other player's ultimate is a heartbeat.
+- A lost round fades out. A won one goes temples, sides, then everything.
+
+Nothing in the rules or the server knows the headgear exists. The page listens to the same
+events that draw the fight, so the game runs unchanged without it, and tuning a pattern takes
+a browser refresh, not a reflash. Connect it from Game setup with **Headband: off**, and pick
+who is wearing it with **Worn by**.
+
+### Link and safety
+
+- **Protocol:** one text line of six levels, `M <front> <back> <left> <right> <left temple> <right temple>`,
+  each 0 to 255, about 30 times a second while a pattern is playing. The board only copies
+  them to its pins, so the delay from a hit to the buzz is one serial line.
+- **Watchdog:** if the lines stop for 400 ms (cable pulled, tab closed) every motor switches off.
+- **Starting a motor:** a motor starting from rest gets 25 ms at full power, and levels are
+  rescaled onto the range where a motor actually turns.
+- **By hand:** the firmware also takes typed commands such as `hit,left,0.8` and `test` from a
+  serial monitor, for checking the wiring without the game.
+- **Known limit:** the board reports nothing back, so the game cannot tell whether a motor is
+  turning.
+
+## Limitations
+
+- **The copy of you is rough.** It is the game's bot with your weapons and a handful of your
+  numbers laid over it. A build that wins 90% of its practice rounds has beaten that model,
+  not you.
+- **Agents are slow next to a fight.** Twenty seconds is fine for an update and six is fine
+  between rounds, but neither could sit inside a single exchange of blows. That is why a
+  drawing's abilities are read and checked but not test-fought before they land.
+- **The machine needs a laptop.** The agent service runs beside the game server. The public
+  deployment runs only the game server, so there the terminal stays quiet and the bot keeps
+  its ready-made weapons.
+- **Balance came from bots.** The numbers were tuned by simulated matches, not by people.
+- **Rooms live in memory,** so a deployment has to be a single instance, and restarting the
+  server closes every room.
+
+With more time we would:
+
+1. **Put real players in front of Nemesis** and find out whether its builds beat people or
+   only its model of them.
+2. **Put the agent behind every drawing.** A weapon is already playable before its abilities
+   arrive, so an agent could write, test-fight and repair them in that gap.
+3. **Let the machine act unasked,** patching the game between rounds from what it saw.
+4. **Host the agent service** next to the public game server.
+
+## Verification status
+
+What has run, and what has not:
+
+- **Passes:** `node tools/test-abilities.js`, 24 of 24 checks on the ability language, its
+  checker and the prompts. Headless bot matches, sparring and update play-tests run on the
+  current rules.
+- **Seen working in a desktop browser:** a full match against the bot on the desktop; the lava
+  update designed, play-tested and installed; Nemesis rebuilding between rounds, and from its
+  notes at the start of a second match; a server room with a scripted player; jumping while
+  attacking, 8 of 8 with real key presses.
+- **Known failing:** `node tools/test-replay.js` fails 10 of its 60 checks on the current main
+  and has not been investigated. `tools/test-world.js` does not run. The trained CPU's weights
+  were made under older rules; the server says so at start.
+- **Not yet tested:** real people against Nemesis; phones on a venue's network with the agent
+  service; the newest movement and touch controls beyond throwaway scripts; the game driving
+  the real headgear board.
+
+## Run it
+
+Requirements: Node 18 or newer. The game server has no dependencies. The agent service has
+six, installed with npm.
+
+```sh
+cp .env.example .env                              # put your OpenAI key after OPENAI_API_KEY=
+node server.js                                    # the game: http://localhost:3000
+cd os-agent && npm install && node server.mjs     # the machine: INK-OS and Nemesis, port 3130
+```
+
+Without a key the game still runs: drawings are read by a rough local guess from ink colour
+and shape. Without the agent service the game still runs: the terminal says the machine is not
+answering, and the bot keeps its ready-made weapons.
+
+Choose **Player vs Bot** or **Player vs Player** and scan the code with a phone, or choose
+**vs Bot** under "On this device" to draw and play with the keyboard (A/D move, W jump,
+J and K use your two drawings).
 
 | Variable | Default | What it does |
 |---|---|---|
-| `OPENAI_API_KEY` | none | Key used by the server to read drawings |
-| `OPENAI_MODEL` | `gpt-6-luna` | Vision model that classifies the drawing |
-| `PORT` | `3000` | Port the server listens on |
-| `OPENAI_ABILITY_MODEL` | `OPENAI_MODEL` | Model that scores a drawing's creativity and writes its abilities |
-| `ABILITIES` | on | `0` switches that second request off |
-| `NOWS` | off | `1` leaves the WebSocket off (pages with `?net=ws` then fall back to the event stream) |
+| `OPENAI_API_KEY` | none | Key the server and the agent service use. It never reaches a browser |
+| `OPENAI_MODEL` | `gpt-6-luna` | Vision model that reads a drawing |
+| `OPENAI_ABILITY_MODEL` | `OPENAI_MODEL` | Model that scores a drawing and writes its abilities |
+| `PORT` | `3000` | Port the game server listens on |
+| `OS_AGENT_URL` | `http://127.0.0.1:3130` | Where the game server finds the agent service |
+| `OS_AGENT_MODEL` | `gpt-6-luna` | Model for INK-OS |
+| `NEM_MODEL`, `NEM_BUILD_MODEL` | `gpt-5.4-nano`, `gpt-5.4-mini` | Models for Nemesis: planning, and the two sub-agents |
 
-## Files
+```sh
+node tools/test-abilities.js          # the ability language and its checks
+node tools/balance.js quick --seed=7  # the same bot rounds every time
+node docs/diagrams/make-diagrams.js   # redraw the figures on this page
+```
 
-- `server.js`: starts everything: loads `.env`, sends `/` to `/duel`, and hands the rest to `duel-server.js`.
-- `duel.html` and `duel-server.js`: the game. The rules sit in a marked block in `duel.html` and the server runs that same block for online rooms, so there is one copy of the rules. The server reads drawings with OpenAI; the key never reaches the browser.
-- `inkscript.js`, `abilities.js`: abilities. The first is the script language (parser, checker, interpreter), used by the server and the page; the second writes the prompt and checks what the model answers. `tools/fake-openai.js` stands in for the model.
-- `ws.js`, `wire.js`: the WebSocket link for Doodle Duel rooms (`?net=ws`). The first is the WebSocket itself, the second packs the state into binary frames and deltas; `tools/test-net.js` tests both and `tools/net-bench.js` measures the two links.
-- `anim/`: Doodle Duel animation clips (running, and a move set each for blade, spear, hammer, fists, twin blades, bow, gun, twin pistols, magic staff and thrown weapons) and the engine that plays them; see `anim/README.md`. `anim-lab.html` previews clips and `tools/strip.js` renders them to frame strips.
-- `qrcode.js`: QR Code Generator by Kazuhiko Arase (MIT), used for the join code.
+Headgear: flash [`hardware/headband/headband.ino`](hardware/headband/headband.ino), set its six
+pins to match your wiring, open the game in Chrome or Edge, and press **Headband: off** in
+Game setup.
 
-## Status
+## Repository
 
-Online play is tested with two browsers on one machine and a stand-in for the OpenAI endpoint. Not yet tested: the real OpenAI API, real tablets, and play over a slow network. Doodle Duel is tested by simulation, a scripted two-client online match and a desktop browser; drawings were read by the real OpenAI API (`gpt-4.1-mini`, about 1 second each). Balance numbers are first guesses. Abilities (the creativity score and the scripts a model writes) have been tried against a stand-in for the model only.
+| Path | Contents |
+|---|---|
+| [`duel.html`](duel.html) | The game page. The rules sit in a marked block that the server runs too, so there is one copy |
+| [`duel-server.js`](duel-server.js), [`server.js`](server.js) | The game server: rooms, the reader, and the gates in front of the agents |
+| [`inkscript.js`](inkscript.js), [`abilities.js`](abilities.js) | InkScript (parser, checker, interpreter), and the code that prompts for abilities and checks what comes back |
+| [`osforge.js`](osforge.js) | What an update is: its manual, its validator and its play-test |
+| [`nemesis.js`](nemesis.js) | What a build is: its manual, its validator, the copy of a player and the sparring |
+| [`os-agent/`](os-agent) | The two deep agents: `server.mjs` (INK-OS) and `nemesis.mjs` |
+| [`haptics.js`](haptics.js), [`hardware/headband/`](hardware/headband) | The headgear's patterns and serial link, and its firmware |
+| [`inkshop.js`](inkshop.js), `inkshop.css` | The 1990s desktop and paint program the fight happens in |
+| [`anim/`](anim) | Animation clips and the springy rig that plays them |
+| [`ws.js`](ws.js), [`wire.js`](wire.js) | An optional WebSocket link with binary state deltas |
+| [`bot/`](bot), [`tools/`](tools) | A trained CPU and its trainer; tests, a balance bench and a stand-in model |
+| [`docs/`](docs) | [The full reference](docs/REFERENCE.md), the figures and the script that draws them |
+
+## Provenance
+
+Doodle Duel was built at HackPrinceton in about a day: 200 commits on 27 branches. The first
+version was a one-lane battler where you drew units and watched them march. It was removed,
+and the repository still carries its name.
+
+The desktop the fight happens on began as Alex's InkShop prototype. His interface, shape
+recogniser, hack table and effects are in the page as he wrote them, between BEGIN and END
+markers in `inkshop.js`, `inkshop.css` and the `INK` block of `duel.html`. `qrcode.js` is
+Kazuhiko Arase's QR Code Generator (MIT).
+
+Much of the code was written with Claude Code working alongside us, and those commits carry
+its co-author line.
+
+[The full reference](docs/REFERENCE.md) is the longer write-up of every mechanic: specials,
+ultimates, hacks, the spreadsheet and slideshow stages, replays, the trained CPU and the
+WebSocket link.
