@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Doodle Duel</title>
+<!-- Nothing is shown until the page has put itself together (the desktop, or a phone's join window): the bare page
+     underneath used to flash by first. The main script lifts this at its very end; the timer is there in case it never does. -->
+<script>document.documentElement.classList.add("boot");setTimeout(function(){document.documentElement.classList.remove("boot");},4000);</script>
+<style>html.boot{background:#8fb4bd!important}html.boot body{visibility:hidden}</style>
 <link rel="stylesheet" href="/inkshop.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Gochi+Hand&family=Karla:wght@400;600;700&display=swap" rel="stylesheet">
@@ -5615,8 +5619,8 @@ function retroSync(menu){
   }
 }
 // The join window of a phone or tablet that is not (yet) a controller. It covers the whole page.
-function phoneGate(){
-  if(!PHONE) return;
+function phoneGate(){ if(!PHONE||phoneSaid===null) return; try{ phoneGate1(); }catch(e){ phoneSaid=null; } }      // (a page without a real document, as in the tests, goes without)
+function phoneGate1(){
   if(!phoneEl){ phoneEl=document.createElement('div'); phoneEl.id='phoneJoin';
     phoneEl.innerHTML='<div class="pjwin"><div class="pjbar">Doodle Duel</div><div class="pjbody"><p><b>This device is a controller.</b></p><p>Open the game on a computer, start a match there, then scan its code with this device. Or type the room\u2019s four letters:</p>'
       +'<form class="pjrow"><input id="pjCode" maxlength="4" placeholder="CODE" aria-label="Room code" autocomplete="off" autocapitalize="characters" spellcheck="false"><button>Join</button></form><p class="pjmsg" role="status"></p></div></div>';
@@ -7462,6 +7466,7 @@ function labBuild(){
 if(REPLAY) setReplay(REPLAY);      // duel?replay=CODE: watch that room's match again
 else setMode(LAB?'practice':'online');      // the move tester is practice; otherwise every match starts from the room menu
 if(LAB) labBuild();
+phoneGate(); try{ document.documentElement.classList.remove("boot"); }catch(e){}      // the page is put together: show it (see the note in the head)
 requestAnimationFrame(frame);
 </script>
 </body>
