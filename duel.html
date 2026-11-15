@@ -201,11 +201,11 @@ body.handheld:not(.playing){overflow:hidden}
 body.handheld:not(.playing) main{height:100vh;height:100dvh;overflow:hidden;gap:8px;padding:8px 12px}
 body.handheld .hud{padding:5px 10px}
 body.handheld .desks{flex:1;min-height:0;display:block}
-body.handheld .desk{height:100%;overflow:auto;display:grid;gap:8px 12px;grid-template-columns:minmax(0,1fr) minmax(300px,36%);grid-template-rows:auto auto auto auto auto minmax(0,1fr);
-  grid-template-areas:"pad slots" "pad ink" "pad actions" "pad read" "pad card" "pad stock"}
+body.handheld .desk{height:100%;overflow:auto;display:grid;gap:8px 12px;grid-template-columns:minmax(0,1fr) minmax(300px,36%);grid-template-rows:auto auto auto auto auto auto minmax(0,1fr);
+  grid-template-areas:"pad slots" "pad ink" "pad actions" "pad read" "pad card" "pad stock" "pad stock2"}
 body.handheld .desk h2{display:none}
 body.handheld .slots{grid-area:slots} body.handheld .card{grid-area:card;border-top:0;padding-top:0} body.handheld .padrow{grid-area:pad;min-height:0} body.handheld .inkrow{grid-area:ink}
-body.handheld .actions{grid-area:actions} body.handheld .read{grid-area:read} body.handheld .stock{grid-area:stock;align-content:start}
+body.handheld .actions{grid-area:actions} body.handheld .read{grid-area:read} body.handheld .stock{grid-area:stock;align-content:start} body.handheld .stock.plain{grid-area:stock2}
 body.handheld .padbox{max-width:none;container-type:size;display:flex;align-items:center;justify-content:center}
 body.handheld .pad{width:min(100cqw,160cqh);height:min(100cqh,62.5cqw);aspect-ratio:auto}
 body.handheld .desk button{min-height:40px}
@@ -219,7 +219,7 @@ body.handheld .stock button{font-size:14px;padding:3px 10px;min-height:34px}
 body.handheld .stock span{font-size:12px}
 body.handheld .pen{width:40px;height:40px}
 @media (max-aspect-ratio:1/1){
-  body.handheld .desk{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto auto auto auto auto;grid-template-areas:"slots" "pad" "ink" "actions" "read" "card" "stock"}
+  body.handheld .desk{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto auto auto auto auto auto;grid-template-areas:"slots" "pad" "ink" "actions" "read" "card" "stock" "stock2"}
   body.handheld .slots{grid-template-columns:1fr 1fr}
   body.handheld .padrow{flex-direction:column}
   body.handheld .pens{flex-direction:row;justify-content:center;gap:14px}
@@ -397,8 +397,8 @@ body.handheld .hud{border-bottom:0;font-weight:700}
 body.handheld .hud .bar{border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080;background:#fff}
 body.handheld #clock{font:700 20px Tahoma,Verdana,sans-serif}
 body.handheld .overlay h2{font:700 15px Tahoma,Verdana,sans-serif} body.handheld .overlay p{color:#222}
-body.handheld .desk{padding:3px 8px 8px;grid-template-rows:auto auto auto auto auto auto minmax(0,1fr);
-  grid-template-areas:"title title" "pad slots" "pad ink" "pad actions" "pad read" "pad card" "pad stock"}
+body.handheld .desk{padding:3px 8px 8px;grid-template-rows:auto auto auto auto auto auto auto minmax(0,1fr);
+  grid-template-areas:"title title" "pad slots" "pad ink" "pad actions" "pad read" "pad card" "pad stock" "pad stock2"}
 body.handheld .desk h2{display:flex;grid-area:title;margin:0 -5px 2px;height:24px;padding:0 6px;font:700 13px Tahoma,Verdana,sans-serif;color:#fff;background:linear-gradient(90deg,#0a246a,#3a6ea5 60%,#a6caf0)}
 body.handheld .desk h2 .dot{border-color:#fff}
 body.handheld button{font:12px/1.2 Tahoma,Verdana,sans-serif;color:#000;border-radius:0;border:2px solid;border-color:#fff #404040 #404040 #fff;background:#c3c3c3;box-shadow:inset -1px -1px #808080,inset 1px 1px #dfdfdf}
@@ -432,7 +432,7 @@ body.handheld.playing #stripbar button{text-shadow:none}
 body.handheld.playing #hackMenu:not([hidden]){background:#c3c3c3;border:2px solid;border-color:#fff #404040 #404040 #fff;border-radius:0;box-shadow:inset -1px -1px #808080,inset 1px 1px #dfdfdf,3px 3px 0 rgba(0,0,0,.28);font:13px Tahoma,Verdana,sans-serif}
 body.handheld.playing #hackMenu button[aria-pressed="true"]{background:#0a246a;color:#fff}
 @media (max-aspect-ratio:1/1){
-  body.handheld .desk{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr) auto auto auto auto auto;grid-template-areas:"title" "slots" "pad" "ink" "actions" "read" "card" "stock"}
+  body.handheld .desk{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr) auto auto auto auto auto auto;grid-template-areas:"title" "slots" "pad" "ink" "actions" "read" "card" "stock" "stock2"}
 }
 [hidden]{display:none!important}
 .tc button.costout small{color:#c0121f;font-weight:700}      /* cost: the weapon on this button cannot pay right now */
@@ -4831,7 +4831,7 @@ function buildDesks(){
       <div class="read"></div>
       <div class="card" hidden></div>
       <div class="stock"><span>Specials (each has its own powers):</span>${Object.keys(STOCK).filter(k=>STOCK[k].fancy).map(k=>`<button data-stock="${k}" title="${esc('Creativity '+STOCK[k].cr+'/10: '+(STOCK[k].ab||[]).map(a=>a.name).join(', '))}">${STOCK[k].label}</button>`).join('')}</div>
-      <div class="stock"><span>Plain ready-made:</span>${Object.keys(STOCK).filter(k=>!STOCK[k].fancy).map(k=>`<button data-stock="${k}">${STOCK[k].label}</button>`).join('')}</div>`;
+      <div class="stock plain"><span>Plain ready-made:</span>${Object.keys(STOCK).filter(k=>!STOCK[k].fancy).map(k=>`<button data-stock="${k}">${STOCK[k].label}</button>`).join('')}</div>`;
     box.appendChild(el);
     const d=desk[side]={el,side,k:0,pen:'none',strokes:[],busy:false,cur:null,pad:el.querySelector('.pad')}; d.g=d.pad.getContext('2d');
     el.querySelectorAll('.slot').forEach(b=>b.onclick=()=>{ d.k=+b.dataset.k; updateDesk(d); });
@@ -5304,6 +5304,7 @@ function sfxHear(p,v){
     w.onclick=()=>{ H.side=1-H.side; show(); H.play('thud',1); };
   } }
 function accept(v){
+  if(window.HAP&&HAP.see&&!repQuiet&&!koView) HAP.see(view,v);      // headband: names each hit's kind, shots coming in, the foe's steps
   for(const e of v.ev){
     if(window.HAP&&!repQuiet&&!koView) HAP.hear(e);      // the headband feels what happens (haptics.js)
     worldEvent(e);

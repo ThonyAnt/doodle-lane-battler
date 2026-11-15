@@ -350,7 +350,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       const file=path.join(__dirname,'wallpaper.png'); if(!fs.existsSync(file)){ res.writeHead(404); res.end(); return true; }
       res.writeHead(200,{'Content-Type':'image/png','Cache-Control':'max-age=3600'}); fs.createReadStream(file).pipe(res); return true;
     }
-    if(req.method==='GET'&&(/^\/anim\/[a-z_]+\.js$/.test(p)||p==='/anim-lab.html'||p==='/inkshop.js'||p==='/inkscript.js'||p==='/wire.js'||p==='/sfx.js'||p==='/inkshop.css')){      // inkscript.js: the language of ability scripts, for matches simulated in the page; wire.js: state frames, for a page on a socket
+    if(req.method==='GET'&&(/^\/anim\/[a-z_]+\.js$/.test(p)||p==='/anim-lab.html'||p==='/inkshop.js'||p==='/inkscript.js'||p==='/wire.js'||p==='/sfx.js'||p==='/haptics.js'||p==='/inkshop.css')){      // inkscript.js: the language of ability scripts, for matches simulated in the page; wire.js: state frames, for a page on a socket
       const file=path.join(__dirname,p.slice(1));
       if(!fs.existsSync(file)){ res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-cache'}); res.end('/* '+p+' is not written yet */'); return true; }
       res.writeHead(200,{'Content-Type':(p.endsWith('.html')?'text/html':p.endsWith('.css')?'text/css':'text/javascript')+'; charset=utf-8','Cache-Control':'no-cache'}); fs.createReadStream(file).pipe(res); return true;
