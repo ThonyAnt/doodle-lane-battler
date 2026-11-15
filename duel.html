@@ -1171,6 +1171,49 @@ function inkCost(strokes){ return Math.max(MIN_COST,strokeLen(strokes)*INK_PER_P
 // Turn the reader's answer into an item. It never gives up: an answer that does not name a kind is sorted by its style,
 // then by any telling word in what it said, then by the shape of the drawing, and failing all that it is something to swing.
 const AMMO=['bullet','paint','ball','blob','beam','dart'], AMMO_HINTS=[['paint',/paint|colou?r|spray|ink/],['beam',/laser|ray|beam|phaser|light|zap/],['blob',/water|squirt|hose|slime|goo|soak|acid|bubble/],['dart',/dart|nerf|needle|nail|staple|blow/],['ball',/ball|pellet|bb\b|marble|pea|cannon|potato|snow/]];
+// ---- Easter eggs (hidden on purpose: nothing in the game lists them) ----
+// Some drawings are recognised and become a hand-made weapon instead of the reader's guess: "2+2=" is a gun that fires
+// 4s. Two ways in: the reader model itself names the egg it sees in the picture (its reply's `special`, with
+// `special_arg` for a sum; only ids in this table count, so it cannot invent one), and failing that the game looks for the
+// egg in the player's name for the drawing, the text the reader copied off it, what it saw, and its name for it. An egg's weapon fires its glyphs (ammo
+// 'glyph': each shot is one of them, in turn), skips the abilities call and scores 9.
+// spec.egg = {id, src} is kept on the item, so a spec that comes back from the server is made into the same egg again.
+const GLYPH_OK=/^[A-Za-z0-9+\-=?!$%.,'∞π²]{1,8}$/;
+const cleanGlyphs=a=>Array.isArray(a)?a.map(String).filter(g=>GLYPH_OK.test(g)).slice(0,26):[];
+const EGGS={
+  math:{find:t=>{ const m=/(-?\d{1,4})\s*([+\-x×*÷\/])\s*(-?\d{1,4})\s*=/.exec(t); return m?m[1]+m[2]+m[3]:null; },
+    make:src=>{ const m=/^(-?\d{1,4})([+\-x×*÷\/])(-?\d{1,4})$/.exec(String(src||'')); if(!m) return null;
+      const a=+m[1], b=+m[3], op=m[2], r=op==='+'?a+b:op==='-'?a-b:'x×*'.includes(op)?a*b:b===0?NaN:a/b, out=Number.isFinite(r)?String(Math.round(r*100)/100):'ERR';
+      return {name:(a+op+b+'='+out).slice(0,22),kind:'ranged',style:'gun',glyph:[out],why:out==='ERR'?'Easter egg: you divided by zero.':'Easter egg: it does the maths.'}; }},
+  emc:{find:t=>/e\s*=\s*mc\s*(2|²|\^\s*2)/.test(t)?'1':null, make:()=>({name:'E=mc²',kind:'bomb',style:'',power:9,range:8,speed:2,why:'Easter egg: a little mass, a lot of energy.'})},
+  hello:{find:t=>/hello,?\s*world/.test(t)?'1':null, make:()=>({name:'Hello World',kind:'ranged',style:'gun',glyph:['hello','world'],why:'Easter egg: your first program.'})},
+  abc:{find:t=>/\babc\b|\balphabet\b/.test(t)?'1':null, make:()=>({name:'Alphabet Blaster',kind:'ranged',style:'gun',glyph:'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''),why:'Easter egg: from A to Z.'})},
+  laugh:{find:t=>/\b(lol|lmao|haha+|hehe+)\b/.test(t)?'1':null, make:()=>({name:'Laugh Track',kind:'ranged',style:'gun',glyph:['HA','HA','LOL'],why:'Easter egg: it cannot stop laughing.'})},
+  money:{find:t=>/\$|\bmoney\b|\bcash\b/.test(t)?'1':null, make:()=>({name:'Make It Rain',kind:'ranged',style:'gun',glyph:['$'],why:'Easter egg: make it rain.'})},
+  sleep:{find:t=>/\bzzz+\b/.test(t)?'1':null, make:()=>({name:'Lullaby',kind:'ranged',style:'staff',glyph:['Z','z','Z'],why:'Easter egg: one for the sleepy.'})},
+  error:{find:t=>/\b404\b|\bnot found\b/.test(t)?'1':null, make:()=>({name:'Error 404',kind:'ranged',style:'gun',glyph:['404'],why:'Easter egg: weapon not found.'})},
+  pi:{find:t=>/π|\bpi\b/.test(t)?'1':null, make:()=>({name:'Pi Launcher',kind:'ranged',style:'staff',glyph:['3.14'],why:'Easter egg: irrational, and dangerous.'})},
+  huh:{find:t=>/^\s*\?+\s*$|\?\?\?/.test(t)?'1':null, make:()=>({name:'???',kind:'ranged',style:'gun',glyph:['?','!','?'],why:'Easter egg: nobody knows what it is.'})}
+};
+function applyEgg(spec,o,label){
+  if(!spec||typeof spec!=='object') return spec;
+  let id=null, src=null; const given=o&&o.egg&&typeof o.egg==='object'?o.egg:null;
+  const said=o&&typeof o.special==='string'?o.special.toLowerCase().trim():'';
+  if(given&&Object.prototype.hasOwnProperty.call(EGGS,given.id)){ id=given.id; src=given.src; }
+  else if(said&&Object.prototype.hasOwnProperty.call(EGGS,said)){      // the reader saw it in the picture
+    src=said==='math'?EGGS.math.find(String(o.special_arg||'').toLowerCase().replace(/=+\s*$/,'')+'=')||EGGS.math.find(String((o&&o.text)||'').toLowerCase()):'1';
+    if(src!==null) id=said; }
+  if(!id){ const texts=[label,o&&o.text,o&&o.sees,o&&o.name].map(x=>String(x||'').toLowerCase().slice(0,80)).filter(Boolean);
+    for(const k of Object.keys(EGGS)){ for(const t of texts){ const s=EGGS[k].find(t); if(s!==null){ id=k; src=s; break; } } if(id) break; } }
+  if(!id) return spec;
+  const e=EGGS[id].make(src); if(!e) return spec;
+  Object.assign(spec,{name:e.name,kind:e.kind,style:e.style||'',egg:{id,src:String(src).slice(0,20)},creativity:9,why:e.why,pending:false});
+  if(e.glyph){ spec.ammo='glyph'; spec.glyph=e.glyph; } else{ delete spec.ammo; delete spec.glyph; }
+  for(const k of ['power','range','speed']) if(e[k]) spec[k]=e[k];
+  spec.traits=traitChoices(spec.kind,[],spec.name); spec.trait=spec.traits[0];
+  spec.abilities=builtinAbilities(spec.kind,spec.name,abilityAllowance(9).n);
+  return spec;
+}
 function validItem(o,strokes,label){      // label: what the player typed in the name box, if anything
   if(!o||typeof o!=='object') return strokes?localGuess(strokes,label):null;
   const txt=k=>String(o[k]||'').toLowerCase().trim(), el=txt('element')||'none', said=txt('kind')+' '+txt('style')+' '+txt('name');
@@ -1185,7 +1228,7 @@ function validItem(o,strokes,label){      // label: what the player typed in the
   spec.traits=traitChoices(kind,Array.isArray(o.traits)?o.traits:[o.trait],name||said); spec.trait=spec.traits[0];
   // What flies out of something that shoots: the reader says, and if it does not, the name is a hint. It only changes the look.
   if(kind==='ranged'){ const am=txt('ammo'); spec.ammo=AMMO.includes(am)?am:(AMMO_HINTS.find(h=>h[1].test(said))||['bullet'])[0]; }
-  return abilitySpec(spec,o,strokes,label);      // creativity, why and abilities (see ABILITY_API)
+  return applyEgg(abilitySpec(spec,o,strokes,label),o,label);      // creativity, why and abilities (see ABILITY_API); then any easter egg
 }
 function nameFor(spec){
   const el={none:'Scribble',fire:'Fire',water:'Water',plant:'Leafy'}[spec.element];
@@ -1222,7 +1265,7 @@ function localGuess(strokes,label){
   const total=len.none+len.fire+len.water+len.plant;
   spec.power=clampStat(2+total/(w+h)*2.2); spec.range=clampStat(1.5+size/45); spec.speed=clampStat(10.5-size/42);
   spec.traits=traitChoices(kind,[],spec.name+Math.round(total)); spec.trait=spec.traits[0];
-  return abilitySpec(spec,null,strokes,label);
+  return applyEgg(abilitySpec(spec,null,strokes,label),null,label);
 }
 // Ink spent sets strength; the kind only decides what the item does.
 // Power, range and speed (each 1 to 9, about 5 on average) lean the item one way or another by up to about a fifth:
@@ -2397,13 +2440,13 @@ function createDuel(opts){
     // set by hand (the move tester, tests); own keeps the hand-set ones apart, for S.tweak.
     const al=abilityAllowance(spec.creativity), abilities=abilitiesFit(spec.abilities,al.score,spec.kind,style,S.practice), ab=abilities.filter(a=>a.block).map(a=>a.block);
     const customs=fitAll(ab.concat(Array.isArray(spec.customs)?spec.customs:[]),spec.kind,style,S.practice,Math.max(CUSTOM_ALL_BUDGET,al.budget)), own=customs.filter(c=>!ab.some(b=>b.id===c.id));
-    return abBuild(tfBuild({name:spec.name||nameFor(spec),kind:spec.kind,style,el:spec.element,cost,raw,tune,stats,trait,traits,ammo:AMMO.includes(spec.ammo)?spec.ammo:undefined,st:itemStats(spec.kind,spec.element,cost,stats),ver:++S.ver,customs,own,
+    return abBuild(tfBuild({name:spec.name||nameFor(spec),kind:spec.kind,style,el:spec.element,cost,raw,tune,stats,trait,traits,ammo:AMMO.includes(spec.ammo)||spec.ammo==='glyph'?spec.ammo:undefined,glyph:spec.ammo==='glyph'?cleanGlyphs(spec.glyph):undefined,egg:spec.egg&&Object.prototype.hasOwnProperty.call(EGGS,spec.egg.id)?{id:spec.egg.id,src:String(spec.egg.src||'').slice(0,20)}:undefined,st:itemStats(spec.kind,spec.element,cost,stats),ver:++S.ver,customs,own,
       creativity:al.score,tier:al.tier,why:abText(spec.why,ABILITY_LIMITS.why),abilities,pending:!!spec.pending,born:spec.born>0?spec.born:S.ver},spec));      // pending, born: see S.setEarned
   }
   // Change an item that is already made, while still drawing: what it is, which of its two traits it uses, or its tuning.
   S.tweak=(side,k,ch)=>{
     const it=S.items[side][k]; if(!it||!ch||(!S.practice&&(S.phase!=='draw'||S.ready[side]))) return null;
-    const spec={name:it.name,kind:it.kind,style:it.style,element:it.el,power:it.raw.power,range:it.raw.range,speed:it.raw.speed,traits:it.traits,trait:it.trait,tune:it.tune,customs:ch.customs!==undefined?ch.customs:it.own,creativity:it.creativity,why:it.why,abilities:ch.abilities!==undefined&&S.practice?ch.abilities:it.abilities,pending:it.pending,born:it.born};      // abilities go with the item; only the move tester may hand it new ones
+    const spec={name:it.name,kind:it.kind,style:it.style,element:it.el,power:it.raw.power,range:it.raw.range,speed:it.raw.speed,traits:it.traits,trait:it.trait,tune:it.tune,customs:ch.customs!==undefined?ch.customs:it.own,creativity:it.creativity,why:it.why,abilities:ch.abilities!==undefined&&S.practice?ch.abilities:it.abilities,pending:it.pending,born:it.born,ammo:it.ammo,glyph:it.glyph,egg:it.egg};      // abilities go with the item; only the move tester may hand it new ones
     tfSpec(it,spec,ch);      // transform: the spec is of what the item was made as, not of the form it is in now
     if(ch.kind!==undefined){ if(!KINDS.includes(ch.kind)) return null; spec.kind=ch.kind; spec.style=String(ch.style||''); }
     if(typeof ch.name==='string'){ const nm=ch.name.replace(/[<>&"']/g,'').trim().slice(0,22); if(nm) spec.name=nm; }
@@ -4050,7 +4093,7 @@ function createDuel(opts){
     hack:S.hack&&{by:S.hack.by,target:S.hack.target,name:S.hack.def.name,desc:S.hack.def.desc,t:+S.hack.t.toFixed(2),max:S.hack.max,counter:S.hack.counter},
     fxs:S.effects.map(e=>({by:e.by,target:e.target,counter:e.counter,name:e.name})),
     items:S.items.map(a=>a.map(it=>it&&{name:it.name,kind:it.kind,style:it.style,el:it.el,cost:Math.round(it.cost),ver:it.ver,sz:Math.round(it.st.size),
-      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune,am:it.ammo,cu:it.customs&&it.customs.length?it.customs:undefined,tf:tfView(it),cr:it.creativity,ab:it.abilities.length?it.abilities.map(a=>[a.name,a.block?0:1]):undefined,pd:it.pending&&(S.phase==='draw'||S.phase==='count')?1:undefined})),
+      pw:it.stats.power,rg:it.stats.range,sp:it.stats.speed,tr:it.trait,trs:it.traits,tn:it.tune,am:it.ammo,gl:it.glyph&&it.glyph.length?it.glyph:undefined,cu:it.customs&&it.customs.length?it.customs:undefined,tf:tfView(it),cr:it.creativity,ab:it.abilities.length?it.abilities.map(a=>[a.name,a.block?0:1]):undefined,pd:it.pending&&(S.phase==='draw'||S.phase==='count')?1:undefined})),
     f:S.f.map(f=>({x:r1(f.x),y:r1(f.y),vx:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vx),vy:S.ult>=0&&S.ult!==f.side?0:Math.round(f.vy),face:f.face,hp:Math.max(0,r1(f.hp)),g:f.ground?1:0,
       act:f.act?{k:f.act.k,m:f.act.m+(f.act.v?'_b':''),t:+f.act.t.toFixed(3),r:+f.act.rate.toFixed(2)}:null,
       sh:f.shield>0?1:0,hurt:f.hurt>0?1:0,burn:f.burn>0?1:0,slow:f.slow>0?1:0,dash:f.dash>0?1:0,held:f.held,
@@ -5175,7 +5218,7 @@ async function makeItem(d){
     }else{
       spec=null;
       // The server reads the drawing and writes its abilities in one go (it has the key and the test fights); what comes back is cleaned again here.
-      if(canRead) try{ const r=await fetch('/duel/read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({png,strokes,name})}); if(r.ok){ const o=await r.json(); spec=validItem(o,strokes,name); alts=Array.isArray(o.alts)?o.alts:[]; source=o.source||'OpenAI'; spec.pending=scoreOf(o.creativity)?false:true; } }catch(e){}      // a quick read has no score: that comes later (earnLater)
+      if(canRead) try{ const r=await fetch('/duel/read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({png,strokes,name})}); if(r.ok){ const o=await r.json(); spec=validItem(o,strokes,name); alts=Array.isArray(o.alts)?o.alts:[]; source=o.source||'OpenAI'; spec.pending=spec.egg||scoreOf(o.creativity)?false:true; } }catch(e){}      // a quick read has no score: that comes later (earnLater)
       if(!spec){ spec=localGuess(strokes,name); source='local guess'; }
       const it=sim.setItem(d.side,k,spec,inkCost(strokes)); if(!it) throw new Error('Too late: the round has started.');
       if(it.pending) earnLater(sim,d.side,k,it,{png,strokes,name,item:{name:it.name,kind:it.kind,style:it.style,element:it.el}});
@@ -7447,7 +7490,10 @@ function render(now){
       else if(p.st==='hurl'){ L.rotate(now/40); if(!it||!sprite(ps,p.slot,it.sz*0.85)){ L.beginPath(); for(let n=0;n<8;n++){ const q=n%2?4:11, a2=n*Math.PI/4; n?L.lineTo(Math.cos(a2)*q,Math.sin(a2)*q):L.moveTo(Math.cos(a2)*q,Math.sin(a2)*q); } L.closePath(); L.fill(); } }
       else{ const am=it&&it.am, big=1+0.35*(p.big||0);
         // What a gun fires looks like what the reader said it fires: paintballs, pellets, blobs, a beam, darts, or plain bullets.
-        if(am==='paint'){ const pc=['#e2552d','#2f7fd6','#35a35a','#e2a52d','#b04fc9','#e84f9a'][p.id%6]; L.fillStyle=pc; L.globalAlpha=.4; for(let n=1;n<=3;n++){ L.beginPath(); L.arc(-n*11,Math.sin(p.id+n*2.1)*3,(4.5-n)*big,0,7); L.fill(); } L.globalAlpha=1; L.beginPath(); L.arc(0,0,7*big,0,7); L.fill(); L.fillStyle='#fff'; L.beginPath(); L.arc(2,-2.5,2.2*big,0,7); L.fill(); }
+        if(am==='glyph'&&it.gl){ const g=String(it.gl[p.id%it.gl.length]), up=Math.cos(Math.atan2(-p.vy,p.vx))<0?Math.PI:0;      // an easter egg's shot: the glyph itself, upright, with two speed lines behind
+          L.rotate(-Math.atan2(-p.vy,p.vx)); L.font='bold '+Math.round(38*big)+'px "Gochi Hand",cursive'; L.textAlign='center'; L.textBaseline='middle'; L.lineJoin='round';
+          const back=Math.sign(p.vx)||1, w=L.measureText(g).width/2; L.globalAlpha=.35; L.lineCap='round'; L.lineWidth=3; L.strokeStyle=col; L.beginPath(); L.moveTo(-back*(w+6),-6); L.lineTo(-back*(w+26),-6); L.moveTo(-back*(w+6),6); L.lineTo(-back*(w+20),6); L.stroke(); L.globalAlpha=1; L.lineWidth=6; L.strokeStyle='#fff'; L.strokeText(g,0,0); L.fillStyle=col; L.fillText(g,0,0); }
+        else if(am==='paint'){ const pc=['#e2552d','#2f7fd6','#35a35a','#e2a52d','#b04fc9','#e84f9a'][p.id%6]; L.fillStyle=pc; L.globalAlpha=.4; for(let n=1;n<=3;n++){ L.beginPath(); L.arc(-n*11,Math.sin(p.id+n*2.1)*3,(4.5-n)*big,0,7); L.fill(); } L.globalAlpha=1; L.beginPath(); L.arc(0,0,7*big,0,7); L.fill(); L.fillStyle='#fff'; L.beginPath(); L.arc(2,-2.5,2.2*big,0,7); L.fill(); }
         else if(am==='ball'){ L.globalAlpha=.3; L.lineWidth=3; L.beginPath(); L.moveTo(-26,0); L.lineTo(-8,0); L.stroke(); L.globalAlpha=1; L.beginPath(); L.arc(0,0,6*big,0,7); L.fill(); L.fillStyle='#fff'; L.beginPath(); L.arc(1.8,-2,1.9*big,0,7); L.fill(); }
         else if(am==='blob'){ const w=1+0.18*Math.sin(now/45+p.id), bc=p.el==='none'?PEN.water:col; L.fillStyle=bc; L.globalAlpha=.35; L.beginPath(); L.arc(-16,2,3,0,7); L.arc(-27,-2,2,0,7); L.fill(); L.globalAlpha=1; L.beginPath(); L.moveTo(-15*big,0); L.quadraticCurveTo(-2,-8*w*big,8*big,0); L.quadraticCurveTo(-2,8*w*big,-15*big,0); L.fill(); L.fillStyle='#fff'; L.beginPath(); L.arc(2,-2,1.8,0,7); L.fill(); }
         else if(am==='beam'){ const bc=p.el==='none'?'#e2552d':col; L.strokeStyle=bc; L.globalAlpha=.3; L.lineWidth=9*big; L.beginPath(); L.moveTo(-70,0); L.lineTo(0,0); L.stroke(); L.globalAlpha=1; L.lineWidth=3.5*big; L.beginPath(); L.moveTo(-70,0); L.lineTo(0,0); L.stroke(); L.strokeStyle='#fff'; L.lineWidth=1.2; L.beginPath(); L.moveTo(-64,0); L.lineTo(-4,0); L.stroke(); }
