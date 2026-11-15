@@ -311,7 +311,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
       const pts=[];
       for(const p of s.pts){
         if(!Array.isArray(p)||!Number.isFinite(p[0])||!Number.isFinite(p[1])||++n>6000) return null;
-        pts.push([Math.max(0,Math.min(D.PAD_W,Math.round(p[0]))),Math.max(0,Math.min(D.PAD_H,Math.round(p[1])))]);
+        pts.push([Math.max(0,Math.min(D.PAD_W,Math.round(p[0]))),Math.max(0,Math.min(D.PAD_W*3,Math.round(p[1])))]);      // a controller's pad may be taller than PAD_H (it stretches to the screen, keeping PAD_W across)
       }
       out.push({el:s.el,pts});
     }
