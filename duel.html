@@ -3997,7 +3997,9 @@ function createDuel(opts){
     }
     if(S.phase==='fight'&&S.stop>0){ S.stop-=dt; if(S.ult>=0) S.ultT+=dt; return; }   // hit-stop: everything waits, the round clock included
     S.t-=dt;
-    if(S.phase==='draw'){ if(S.osWait&&S.t<6) S.t=6; if((S.ready[0]&&S.ready[1])||S.t<=0){
+    // Drawing has no time limit (the owner's rule): the round waits until both players say they are ready. S.t still runs
+    // down (below zero) but nothing reads it while drawing.
+    if(S.phase==='draw'){ if(S.ready[0]&&S.ready[1]){
         // The fight does not begin until every drawing's abilities have arrived (it.pending, cleared by S.setEarned). The
         // wait has a ceiling, so a lost answer cannot hold a match for ever: after it the items keep what they have.
         if(S.items.some(row=>row.some(it=>it&&it.pending))&&(S.waitT=(S.waitT||0)+dt)<ABILITY_LIMITS.wait) return;
@@ -5896,7 +5898,7 @@ function retroSync(menu){
     Q('#'+p+'st').textContent=[f.oc?'OVERCLOCK':'',f.sc<0.7?'SHRUNK':'',f.bub?'SHIELD':'',f.stun?'STUN':'',f.trap?'TRAP':'',f.hp<=0?'K.O.':''].filter(Boolean).join(' '); });
   const who=s=>NAME[s]+(local[s]&&!(local[0]&&local[1])?' \u00b7 You':(net?net.bot:mode==='bot')&&s===1?' \u00b7 animator.bot':'');
   const names=document.querySelectorAll('#inkos .pcard .nm span:first-child'); if(names[0].textContent!==who(0)) names[0].textContent=who(0); if(names[1].textContent!==who(1)) names[1].textContent=who(1);
-  Q('#score').textContent=NAME[0]+' '+v.wins[0]+' : '+v.wins[1]+' '+NAME[1]+(v.phase==='fight'&&!v.practice?'  \u00b7  '+Math.ceil(v.t)+'s':v.phase==='draw'?'  \u00b7  draw '+Math.max(0,Math.ceil(v.t)):'');
+  Q('#score').textContent=NAME[0]+' '+v.wins[0]+' : '+v.wins[1]+' '+NAME[1]+(v.phase==='fight'&&!v.practice?'  \u00b7  '+Math.ceil(v.t)+'s':v.phase==='draw'?'  \u00b7  drawing':'');
   Q('#playhead').style.left=(Math.floor(FXI.S.time*12)%200*9)+'px';
   document.querySelectorAll('#hacks > div').forEach((d,i)=>d.classList.toggle('sel',i===FXI.hackSel));
   const mtxt='Mode: '+({bot:'Player vs CPU',practice:'Practice','2p':'2 players',online:bigScreen?'Big screen':'Online'}[mode])+' \u00b7 NetLink: '+(net?'room '+net.code+(net.line?' \u00b7 '+linkText(net.line.stats()):''):'local sim');      // the link: which one, round trip, jitter, kB/s arriving
@@ -5955,11 +5957,11 @@ function syncUI(){
     $('pip'+s).textContent='●'.repeat(v.wins[s])+'○'.repeat(Math.max(0,WINS-v.wins[s]));
   }
   if(padView){      // a controller: the phase as a word over the clock, the round and this player's ink on a line under the bars
-    const word=v.practice?'PRACTICE':v.phase==='fight'?'FIGHT':v.phase==='draw'?'DRAW':v.phase==='over'?'MATCH OVER':v.phase==='end'?'ROUND OVER':'ROUND '+v.round, n=v.phase==='over'||v.practice?'':Math.max(0,Math.ceil(v.t)), h='<small>'+word+'</small><b>'+n+'</b>';
+    const word=v.practice?'PRACTICE':v.phase==='fight'?'FIGHT':v.phase==='draw'?'DRAW':v.phase==='over'?'MATCH OVER':v.phase==='end'?'ROUND OVER':'ROUND '+v.round, n=v.phase==='over'||v.phase==='draw'||v.practice?'':Math.max(0,Math.ceil(v.t)), h='<small>'+word+'</small><b>'+n+'</b>';
     if($('clock').innerHTML!==h) $('clock').innerHTML=h;
     const rt='Round '+v.round+' of '+(2*WINS-1), me=net&&net.side>=0?v.f[net.side]:null, it=me&&v.phase!=='draw'?'Ink '+(me.ink2===undefined?100:me.ink2)+(innerWidth>=560?'  \u00b7  Overdrive '+(me.od||0)+'%':''):'';      // a narrow screen keeps just the ink: the U key fills with overdrive
     if($('hhRound').textContent!==rt) $('hhRound').textContent=rt; if($('hhInk').textContent!==it) $('hhInk').textContent=it;
-  }else $('clock').textContent=v.practice?'Practice':v.phase==='fight'?Math.ceil(v.t):v.phase==='draw'?'Draw '+Math.max(0,Math.ceil(v.t)):v.phase==='over'?'':'Round '+v.round;
+  }else $('clock').textContent=v.practice?'Practice':v.phase==='fight'?Math.ceil(v.t):v.phase==='draw'?'Draw':v.phase==='over'?'':'Round '+v.round;
   if(v.phase!==lastPhase){
     lastPhase=v.phase; const drawing=v.phase==='draw';
     playing=!drawing&&v.phase!=='over'; document.body.classList.toggle('playing',playing); requestAnimationFrame(hhLayout);
