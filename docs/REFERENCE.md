@@ -48,7 +48,7 @@ On a computer, `/duel` is Alex's InkShop prototype (repo `al371160/hackprinceton
 - **Impact.** Heavy hits freeze the fight for a few frames and shake the screen. Only the ultimate flashes the stage, when its last blow lands: an impact frame in pure black and white (white stage with black figures, then black with white, twice over 0.4 s) with a jagged star and force lines bursting from the hit, then a camera jolt. Each earlier blow pops a small star. On the retro desktop everything behind the fight blurs while an ultimate plays. If your system is set to reduce motion, the flash is off and the shake is small.
 - **Getting out.** The art board's walls and floor can be mined: L swings the built-in pick, and S + L digs down. Two hits break a piece. Or run BREAKOUT.exe to open the whole board for 15 seconds. Outside, the desktop's window title bars are platforms.
 - **The bot** is his animator.bot on top of this game's fighting bot: it draws glyphs with a ghost cursor, runs hacks, and counters yours. His CPU skill slider sets how good it is; Time scale slows a local match.
-- Tablets and phones keep Benjamin's layout (with the draw strip and two new buttons, mine and hack); add `?plain=1` for the plain layout on a computer.
+- Tablets and phones keep Benjamin's layout (with the draw strip and two new buttons, mine and hack). A computer always gets the desktop: the `?plain=1` switch and the View menu entry were removed.
 
 What comes from where is marked in the code: `inkshop.js`, `inkshop.css` and the `INK` block in `duel.html` hold his code between BEGIN/END verbatim markers. Not merged: his fighter movement, his pick-up weapon items, and cursor grabs.
 

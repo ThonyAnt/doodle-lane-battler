@@ -120,7 +120,7 @@ function fakePage(search,respond){
     requestAnimationFrame:f=>{ frames.push(f); return frames.length; }, cancelAnimationFrame(){},
     fetch:url=>Promise.resolve().then(()=>respond(String(url))).then(body=>body===undefined?Promise.reject(new Error('no answer')):{ok:!(body&&body.error),status:body&&body.error?404:200,json:()=>Promise.resolve(body)}),
     EventSource:function(){ return el(); }, ResizeObserver:function(){ return {observe(){},disconnect(){}}; }, MutationObserver:function(){ return {observe(){},disconnect(){}}; },
-    matchMedia:()=>({matches:false,addEventListener(){},addListener(){}}), innerWidth:1200, innerHeight:800, devicePixelRatio:1,
+    matchMedia:()=>({matches:false,addEventListener(){},addListener(){}}), innerWidth:800, innerHeight:800      /* narrower than 900: the page then uses the plain layout, which these tests were written for (?plain=1 is gone) */, devicePixelRatio:1,
     sessionStorage:keep(), localStorage:keep(), addEventListener(){}, removeEventListener(){}, alert(){}, getComputedStyle:()=>el(), Image:function(){ return el(); }, Audio:function(){ return el(); }};
   if(FS) ctx.InkScript=FS;      // the page loads inkscript.js with a script tag; here it is handed over
   ctx.window=ctx; ctx.self=ctx; ctx.globalThis=ctx; vm.createContext(ctx);
@@ -278,11 +278,11 @@ async function botMatchInPage(search){
     return phase!=='over'||now-t0<5000; });
   return {kos,phase:page.get('view.phase'),overlay:page.byId('overlay').hidden,wins:page.get('view.wins.join()')};
 }
-await atest('in the page, a round-ending knockout is shown again for three seconds, then the game is live again',async()=>{ const m=await botMatchInPage('?plain=1'), k=m.kos[0];
+await atest('in the page, a round-ending knockout is shown again for three seconds, then the game is live again',async()=>{ const m=await botMatchInPage(''), k=m.kos[0];
   return [m.kos.length===2&&!k.ended&&k.past>=170&&k.past<=185&&k.early===0&&k.late===0&&k.lastPast>3300&&k.from.slice(0,150).every(p=>p==='fight')&&k.soundsPast===0,m.kos.map(x=>({ended:x.ended,past:x.past,live:x.live,early:x.early,late:x.late,lastPast:Math.round(x.lastPast),sounds:x.soundsPast}))]; });
-await atest('the knockout that wins the match goes straight to the champion screen',async()=>{ const m=await botMatchInPage('?plain=1'), k=m.kos[m.kos.length-1];
+await atest('the knockout that wins the match goes straight to the champion screen',async()=>{ const m=await botMatchInPage(''), k=m.kos[m.kos.length-1];
   return [m.phase==='over'&&k.ended&&k.past===0&&m.overlay===false,{past:k.past,overlay:m.overlay,wins:m.wins}]; });
-await atest('?ko=0 switches the knockout replay off',async()=>{ const m=await botMatchInPage('?plain=1&ko=0'); return [m.kos.length===2&&m.kos.every(k=>k.past===0),m.kos.map(k=>k.past)]; });
+await atest('?ko=0 switches the knockout replay off',async()=>{ const m=await botMatchInPage('?ko=0'); return [m.kos.length===2&&m.kos.every(k=>k.past===0),m.kos.map(k=>k.past)]; });
 await atest('it works the same on the retro desktop layout',async()=>{ const m=await botMatchInPage(''), k=m.kos[0]; return [m.kos.length===2&&k.past>=170&&k.past<=185&&m.kos[1].past===0&&m.phase==='over',m.kos.map(x=>x.past)]; });
 
 /* ---------- 6. the seeded bench ---------- */

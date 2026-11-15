@@ -4584,7 +4584,8 @@ const DESK=new URLSearchParams(location.search).has('desk'), DESK_SCALE=1.15, ho
 // Retro desktop: on a computer the game is staged on a pretend old desktop (after Alex's InkShop prototype). The menus,
 // sketchbook, health bars and notes are draggable windows, the fighters run along the taskbar, and the windows' title
 // bars are the platforms. It shares the overlay's machinery; only the backdrop and where the window edges come from differ.
-// Tablets and phones keep the plain layout, and ?plain=1 turns it off.
+// Tablets and phones keep the plain layout. There is no switch to it on a computer any more (the owner had ?plain=1 and
+// the View menu entry removed): a wide screen with a mouse always gets the desktop.
 // ?stage=sheet plays on the spreadsheet stage. On the retro desktop the sheet is the document open in the app window.
 const STAGE=(st=>st==='sheet'||st==='deck'?st:'')(new URLSearchParams(location.search).get('stage'));      // 'sheet' spreadsheet, 'deck' slideshow, '' the desktop
 // /moves is the move tester: this page in practice mode with a panel of buttons, one for every move and ultimate.
@@ -4592,7 +4593,7 @@ const LAB=location.pathname==='/moves';
 // duel?replay=CODE watches a room's match again (see setReplay). It always uses the plain layout, whatever the stage was.
 const REPLAY=DESK||LAB?'':String(new URLSearchParams(location.search).get('replay')||'').toUpperCase();
 const RULES_HERE=rulesOf(document.currentScript?document.currentScript.textContent:'');      // the stamp of the rules this page is running
-const RETRO=!DESK&&!LAB&&!REPLAY&&!new URLSearchParams(location.search).has('plain')&&innerWidth>=900&&!matchMedia('(pointer:coarse)').matches, TASK_H=32;
+const RETRO=!DESK&&!LAB&&!REPLAY&&innerWidth>=900&&!matchMedia('(pointer:coarse)').matches, TASK_H=32;
 const deskLike=()=>DESK||RETRO, floorGap=()=>RETRO?TASK_H:0;
 let ARENA_W=960, ARENA_PLATS=PLATS, deskStage=true, deskEdges=null, deskSent='', deskMenu=false, deskPaused=false, deskLive=null, OY=0;
 if(deskLike()){ document.documentElement.classList.add('deskmode'); document.body.classList.add('deskmode'); }
@@ -5432,7 +5433,7 @@ function retroBuild(){
     file:()=>[['New match','',()=>$('restart').click()],'-',['Player vs Bot','',()=>startMatch(true),0,!!(net&&net.bot)],['Player vs Player','',()=>startMatch(false),0,!!(net&&!net.bot)],'-',
       ['On this device: vs Bot','',()=>setMode('bot'),0,mode==='bot'],['On this device: 2 players','',()=>setMode('2p'),0,mode==='2p'],['On this device: Practice','',()=>setMode('practice'),0,mode==='practice']],
     edit:()=>[['Undo','Ctrl+Z',null,1]],
-    view:()=>[['Game setup window','',()=>{ deskMenu=true; }],['Plain layout','',()=>{ location.search='?plain=1'; }]],
+    view:()=>[['Game setup window','',()=>{ deskMenu=true; }]],
     insert:()=>['sword','spear','hammer','axe','mace','bow','-','platform','crate','wall','shield','arrow'].map(n=>n==='-'?'-':['Stamp: '+n,'',()=>stampGlyph(n)]),
     hack:()=>INK.HACKS.map((h,i)=>[h.name,'Q \u00b7 '+(i+1),()=>{ FXI.hackSel=i; const sd=mySide1(); if(sd>=0){ press(sd,'q',true); } },!(view&&mySide1()>=0&&view.f[mySide1()].od>=100)]),
     net:()=>[['New room: Player vs Bot','',()=>startMatch(true)],['New room: Player vs Player','',()=>startMatch(false)]].concat(cpuBrains.includes('net')?['-',['Bot rooms use the trained CPU','',()=>setBrain(cpuBrain==='net'?'classic':'net'),0,cpuBrain==='net']]:[]),
