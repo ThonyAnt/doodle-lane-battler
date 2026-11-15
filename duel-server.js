@@ -448,7 +448,7 @@ module.exports=function({readBody,KEY,MODEL,BASE}){
         const slot=body.slot===1?1:0, made=D.stockItem(String(body.key||''),String(body.el||'none'));
         if(!made){ send(400,{error:'Unknown item.'}); return true; }
         if(S.phase!=='draw'){ send(409,{error:'Too late: the round has started.'}); return true; }
-        const other=S.items[side][1-slot], it=S.setItem(side,slot,made.spec,Math.min(90,D.INK_MAX-(other?other.cost:0)));
+        const other=S.items[side][1-slot], it=S.setItem(side,slot,made.spec,Math.min(135,D.INK_MAX-(other?other.cost:0)));
         if(!it){ send(409,{error:'Not enough ink left for that.'}); return true; }
         room.art[side][slot]=Object.assign({strokes:made.strokes,ver:it.ver,kind:it.kind,style:it.style},earned(it)); noteArt(room,side,slot); room.dirty=true;
         broadcast(room,'item',Object.assign({side,slot},room.art[side][slot]));

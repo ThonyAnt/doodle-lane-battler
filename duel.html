@@ -788,7 +788,7 @@ Q     hack</div>
   <section class="desks" id="desks"></section>
 
   <ul class="rules">
-    <li><b>Draw two things</b> before each round: a sword, a bow, a bomb, a shield, wings, a snack. You share 200 ink between them, and more ink means a stronger item.</li>
+    <li><b>Draw two things</b> before each round: a sword, a bow, a bomb, a shield, wings, a snack. You share 300 ink between them, and more ink means a stronger item.</li>
     <li><b>Fight live:</b> move, double jump, and use your two drawings. An empty slot is a punch. First to 2 rounds wins.</li>
     <li><b>How to trigger each move</b> (A and B on your controller are your two drawings; on a keyboard they are <b>J</b> and <b>K</b>, and a second player on the same keyboard uses <b>,</b> and <b>.</b>):
       <br>· <b>Combo:</b> stand still and tap the button again and again. Swords, spears and hammers chain 3 moves, fists chain 4.
@@ -831,7 +831,7 @@ Q     hack</div>
 // which is about when overdrive first fills, so a fighter could die before ever using a hack or an ultimate. With 160 health
 // the same bots take about 41 s (a tenth under 22 s). Damage and overdrive gain are untouched; healing scales with health.
 // (Raised again from 160 after play: a round was ending before a scene's minute had played out.)
-const AW=960, HP=208, INK_MAX=200, MIN_COST=10, INK_PER_PX=1/24, ROUND_TIME=90, WINS=2, PAD_W=480, PAD_H=300;
+const AW=960, HP=208, INK_MAX=300, MIN_COST=15, INK_PER_PX=1/24, ROUND_TIME=90, WINS=2, PAD_W=480, PAD_H=300;
 const PLATS=[{x0:130,x1:330,y:118},{x0:630,x1:830,y:118},{x0:380,x1:580,y:226}];
 const KINDS=['melee','ranged','bomb','shield','dash','heal'], ELS=['none','fire','water','plant'];
 // Every item has power, range and speed. The reader (or the shape of the drawing) says how the item leans, and those
@@ -1231,9 +1231,9 @@ function localGuess(strokes,label){
 //   speed: how fast the move plays and how soon it is ready again
 // How ink turns into strength: (ink/full)^exp, up to 3. With a square root, doubling the ink is worth about 40% more, so
 // putting everything into one drawing no longer beats splitting it between two (it used to win about two rounds in three).
-// A 50-ink item is as strong as it was before. The drawing budget was later doubled to 200 ink (the owner wanted more room
+// A 50-ink item is as strong as it was before. The drawing budget was later tripled to 300 ink (the owner wanted more room
 // to draw), and full with it, so an item is as strong as before for the same share of the budget.
-const INK_CURVE={exp:0.5,full:320};
+const INK_CURVE={exp:0.5,full:480};
 const inkPower=cost=>Math.max(0.2,Math.min(3,3*Math.pow(Math.max(0,cost)/INK_CURVE.full,INK_CURVE.exp)));
 function itemStats(kind,el,cost,stats){
   const p=inkPower(cost), raw=el==='none'?1.15:1, s=stats||{power:5,range:5,speed:5};
@@ -2738,7 +2738,7 @@ function createDuel(opts){
   S.startUlt=side=>{
     const f=S.f[side], e=S.f[1-side]; if(S.phase!=='fight'||S.ult>=0||f.od<100||f.hp<=0||f.stun>0||f.hurt>0||f.trap>0||f.dash>0||(f.act&&MOVES[f.act.m].ult)) return false;
     const k=S.items[side][f.held]?f.held:S.items[side][1-f.held]?1-f.held:-1; if(k<0) return false;
-    const it=S.items[side][k], U=ultOf(it), copies=Math.max(3,Math.min(7,3+Math.floor(it.cost/24))), n={fan:copies,rain:copies,ring:copies+1,rush:8,cross:3,storm:12,fire:6}[U.kind]||1;
+    const it=S.items[side][k], U=ultOf(it), copies=Math.max(3,Math.min(7,3+Math.floor(it.cost/36))), n={fan:copies,rain:copies,ring:copies+1,rush:8,cross:3,storm:12,fire:6}[U.kind]||1;
     f.od=0; f.held=k; f.shield=0; f.buf[0]=f.buf[1]=0; if(e.x!==f.x) f.face=Math.sign(e.x-f.x);
     f.act={k,m:U.move,u:U.kind,v:0,t:0,dur:MOVES[U.move].dur,rate:ULT_INTRO_RATE,intro:ULT_INTRO,done:0,lunged:false,n};
     // While it is announced (ULT_INTRO) the casting move only creeps forward, so the caster eases into it; see the lock in tick.
@@ -3457,7 +3457,7 @@ function createDuel(opts){
   function forge(f,R,g){
     if(casting(f)) return fizzle(g,'mid-ultimate');
     const style={sword:'blade',club:'blade',axe:'blade',spear:'spear',hammer:'hammer',mace:'hammer',bow:'bow'}[R.type]||'blade', kind=style==='bow'?'ranged':'melee';
-    const inkLen=g.strokes.reduce((n,p)=>n+pathLen(p),0), mass=clamp(inkLen/130,0.6,2.6), cost=clamp(mass*40,24,104), el=elOfColor(g.color), k=f.held;
+    const inkLen=g.strokes.reduce((n,p)=>n+pathLen(p),0), mass=clamp(inkLen/130,0.6,2.6), cost=clamp(mass*60,36,156), el=elOfColor(g.color), k=f.held;
     const name=(el==='none'?'':{fire:'Fire ',water:'Water ',plant:'Leafy '}[el])+R.type[0].toUpperCase()+R.type.slice(1);
     const it=S.items[f.side][k]=buildItem({name,kind,style,element:el,power:clampStat(2+mass*2.6),range:style==='spear'||style==='bow'?7:5,speed:clampStat(9-mass*2.6),traits:traitChoices(kind,[],name)},cost);
     f.act=null; f.cd[k]=0;
@@ -4438,7 +4438,7 @@ function stockItem(key,element){
 function botLoadout(seed){
   const R=mulberry32(seedFrom(seed)), pick=a=>a[Math.floor(R()*a.length)];
   const main=pick(['sword','spear','hammer','gloves','twins','bow','gun','pistols','staff','star','bomb']), side=pick(['shield','wings','snack','bomb','sword','spear','gun','star','staff'].filter(k=>k!==main));
-  return [[main,92],[side,68]].map(([key,cost])=>Object.assign(stockItem(key,pick(ELS)),{cost}));
+  return [[main,138],[side,102]].map(([key,cost])=>Object.assign(stockItem(key,pick(ELS)),{cost}));
 }
 /*DUEL-END*/
 
@@ -5199,7 +5199,7 @@ function earnLater(S,side,k,it,body){
 // Put a ready-made item in the selected slot. No drawing and no vision model, so it is instant.
 async function takeStock(d,key){
   if(d.busy||!view||(view.phase!=='draw'&&!view.practice)||view.ready[d.side]) return;
-  const k=d.k, read=d.el.querySelector('.read'), made=stockItem(key,d.pen), cost=Math.min(90,budget(d));
+  const k=d.k, read=d.el.querySelector('.read'), made=stockItem(key,d.pen), cost=Math.min(135,budget(d));
   try{
     let spec;
     if(net){
@@ -7626,7 +7626,7 @@ const LAB_STOCK={blade:'sword',spear:'spear',hammer:'hammer',fist:'gloves',dual:
 const LAB_NAME={blade:'Sword',spear:'Spear',hammer:'Hammer',fist:'Fists',dual:'Twin blades',bow:'Bow',gun:'Gun',akimbo:'Twin pistols',staff:'Staff',hurl:'Thrown'};
 const lab={style:'blade',el:'none',speed:1,loop:false,gap:220,last:null,idle:0,customs:[],low:false,todo:[],special:null,tcu:[],cu:'',trig:'',wound:false,leaves:[]};
 const LAB_TF={twoform:{id:'twoform'},twin:{id:'twin',secs:4},giant:{id:'giant',every:3},evolve:{id:'evolve',hits:2},thrown:{id:'thrown'},overgrown:{id:'overgrown',secs:12}};      // transform: quick settings for trying each one
-function labEquip(){ const st=stockItem(lab.special||LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,lab.special?(lab.ability?Object.assign({},st.spec,{abilities:st.spec.abilities.concat(lab.ability)}):st.spec):Object.assign({},st.spec,{creativity:10,abilities:lab.ability?[lab.ability]:[],customs:(lab.customs||[]).concat(lab.tf?[Object.assign({},LAB_TF[lab.tf],lab.tf==='twoform'&&lab.alt?{alt:lab.alt}:null)]:[])}),100); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0;
+function labEquip(){ const st=stockItem(lab.special||LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,lab.special?(lab.ability?Object.assign({},st.spec,{abilities:st.spec.abilities.concat(lab.ability)}):st.spec):Object.assign({},st.spec,{creativity:10,abilities:lab.ability?[lab.ability]:[],customs:(lab.customs||[]).concat(lab.tf?[Object.assign({},LAB_TF[lab.tf],lab.tf==='twoform'&&lab.alt?{alt:lab.alt}:null)]:[])}),150); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0;
   if(!lab.special) for(const row of [labLeaves,labCost,labTarget,labTrig,labShape,labSummon,labArenaApply]) row();      // a special preset comes with its own blocks: the rows are not applied over it (they can still add to it)
   else{ const box=$('labSpecialV'); if(box) box.textContent='Creativity '+it.creativity+'/10: '+it.abilities.map(a=>a.name+(a.block?'':' (script)')).join(' + '); }
   labAbilityNote(); if(desk[0]) updateDesk(desk[0]); labCustoms(); }
@@ -7669,7 +7669,7 @@ const LAB_SUMMON_TIP={'':'',orbiter:'They circle the fighter. Move the dummy clo
   swarm:'They trail behind. Every move pressed flings one at the dummy.',guardian:'Press "Dummy shoots": it blocks three shots, breaks, and grows back after 8 s.'};
 function labSummon(){
   const cu=lab.cu?[{id:lab.cu}]:[]; sim.summonSet(0,0,cu);
-  if(lab.both){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(1,0,st.spec,100); setArt(1,0,st.strokes,it.ver,it.kind,it.style); sim.summonSet(1,0,cu); }
+  if(lab.both){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(1,0,st.spec,150); setArt(1,0,st.strokes,it.ver,it.kind,it.style); sim.summonSet(1,0,cu); }
   else if(sim.items[1][0]){ sim.items[1][0]=null; setArt(1,0,null); }
   const tip=$('labSummonTip'); if(tip) tip.textContent=LAB_SUMMON_TIP[lab.cu||'']+(lab.cu?' Cost: '+summonCost(sim.items[0][0].customs.find(c=>c.id===lab.cu)||{id:lab.cu})+' points.':'');
   document.querySelectorAll('#labSummons button[data-cu]').forEach(b=>b.classList.toggle('on',b.dataset.cu===(lab.cu||'')));
@@ -7701,7 +7701,7 @@ function labLeavesClear(){ sim.lv.length=0; for(const o of sim.objs) if(o.leaf!=
 // show what the rules kept. The dummy gets gloves carrying the same blocks, so "Take a hit" puts them on the blue fighter.
 function labTarget(){
   const got=sim.targetSet(0,0,lab.tcu.map(id=>({id})))||[]; lab.tcu=got.map(c=>c.id);
-  if(lab.tcu.length){ const st=stockItem('gloves','none'), it=sim.setItem(1,0,st.spec,100); if(it){ setArt(1,0,st.strokes,it.ver,it.kind,it.style); sim.targetSet(1,0,got); } }
+  if(lab.tcu.length){ const st=stockItem('gloves','none'), it=sim.setItem(1,0,st.spec,150); if(it){ setArt(1,0,st.strokes,it.ver,it.kind,it.style); sim.targetSet(1,0,got); } }
   else sim.items[1][0]=null;
   sim.f[1].held=0;
   document.querySelectorAll('#labTarget button').forEach(b=>b.classList.toggle('on',lab.tcu.includes(b.dataset.c)));
