@@ -2,7 +2,7 @@
 
 # Doodle Duel
 
-**Your sketch is your weapon. The computer is your rival.**
+**Your sketch is your weapon.**
 
 [![HackPrinceton](https://img.shields.io/badge/HackPrinceton-Fall%202026-e77500.svg)](#provenance)
 [![Status](https://img.shields.io/badge/status-hackathon%20prototype-orange.svg)](#verification-status)
