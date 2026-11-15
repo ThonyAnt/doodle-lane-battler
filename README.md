@@ -4,7 +4,7 @@
 
 **Your sketch is your weapon.**
 
-[![HackPrinceton](https://img.shields.io/badge/HackPrinceton-Fall%202026-e77500.svg)](#provenance)
+[![HackPrinceton](https://img.shields.io/badge/HackPrinceton-Fall%202026-e77500.svg)](#how-it-works)
 [![Status](https://img.shields.io/badge/status-hackathon%20prototype-orange.svg)](#verification-status)
 [![Stack](https://img.shields.io/badge/stack-Node%20%C2%B7%20deepagents%20%C2%B7%20Arduino-black.svg)](#how-it-works)
 [![Agents](https://img.shields.io/badge/agents-LangChain%20deepagents-1c3c3c.svg)](#the-deep-agents)
@@ -41,7 +41,6 @@
 - [Verification status](#verification-status)
 - [Run it](#run-it)
 - [Repository](#repository)
-- [Provenance](#provenance)
 
 Doodle Duel is a 1v1 stick-figure fighter where every weapon is something you drew on your
 phone. A vision model says what the drawing is, the ink you spent sets how strong it is, and
@@ -427,21 +426,3 @@ Game setup.
 | [`ws.js`](ws.js), [`wire.js`](wire.js) | An optional WebSocket link with binary state deltas |
 | [`bot/`](bot), [`tools/`](tools) | A trained CPU and its trainer; tests, a balance bench and a stand-in model |
 | [`docs/`](docs) | [The full reference](docs/REFERENCE.md), the figures and the script that draws them |
-
-## Provenance
-
-Doodle Duel was built at HackPrinceton in about a day: 200 commits on 27 branches. The first
-version was a one-lane battler where you drew units and watched them march. It was removed,
-and the repository still carries its name.
-
-The desktop the fight happens on began as Alex's InkShop prototype. His interface, shape
-recogniser, hack table and effects are in the page as he wrote them, between BEGIN and END
-markers in `inkshop.js`, `inkshop.css` and the `INK` block of `duel.html`. `qrcode.js` is
-Kazuhiko Arase's QR Code Generator (MIT).
-
-Much of the code was written with Claude Code working alongside us, and those commits carry
-its co-author line.
-
-[The full reference](docs/REFERENCE.md) is the longer write-up of every mechanic: specials,
-ultimates, hacks, the spreadsheet and slideshow stages, replays, the trained CPU and the
-WebSocket link.
