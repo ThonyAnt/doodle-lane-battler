@@ -13,10 +13,10 @@
 </div>
 
 <p align="center">
-  <img src="docs/media/fight-lava.gif" width="760" alt="Two stick figures fight inside a paint program on a 1990s desktop. Blue is holding a cat. The floor is lava because someone typed 'make the floor lava'; a chip in the corner reads UPDATE Lava Floor and another reads RED IS INK-OS.">
+  <img src="docs/media/fight-lava.gif" width="760" alt="Two stick figures fight inside a paint program on a 1990s desktop. Blue is holding a cat. The floor is lava because someone typed 'make the floor lava'; a grey label in one corner reads Update: Lava Floor and another reads Red is INK-OS. Partway through, a System Alert dialog says Red is running a hack and shows the shape Blue must draw to cancel it.">
 </p>
 
-<p align="center"><sub>A fight a few seconds after someone typed "make the floor lava". Blue is holding a cat.</sub></p>
+<p align="center"><sub>A fight with a "make the floor lava" update installed. Blue is holding a cat. Partway through, Red runs a hack and Blue has to draw an X to cancel it.</sub></p>
 
 <div align="center">
 
@@ -97,7 +97,7 @@ flowchart TB
   subgraph screen ["Big screen: a pretend 1990s desktop"]
     direction LR
     arena["Arena<br/>the canvas of a paint program"]
-    term["INK-OS terminal"]
+    term["INK-OS prompt<br/>an MS-DOS window"]
   end
 
   subgraph agents ["Agent service: LangChain deepagents"]
@@ -127,12 +127,12 @@ flowchart TB
 
 1. **Draw.** Before each round both players draw two things and split 100 ink between them.
    Phones join by scanning a QR code and become sketchbook and controller; nobody installs
-   anything.
+   anything. On the big screen a Loadouts window shows what each player has made so far.
 2. **Fight.** First to two rounds, each up to 90 seconds. The server owns the match: it steps
    the rules 120 times a second and sends the state to every screen 60 times a second. Phones
    only send buttons.
-3. **The machine.** The big screen is a desktop with a terminal on it. That terminal, and the
-   bot you can fight, are two deep agents running beside the game server.
+3. **The machine.** One window on that desktop is an MS-DOS Prompt titled INK-OS. That prompt,
+   and the bot you can fight, are two deep agents running beside the game server.
 
 The rules exist once, as a marked block in `duel.html` that the page and the server both run.
 All of a match's randomness comes from one seed and every command is logged with its tick, so
@@ -161,6 +161,12 @@ summoned pet, wind across the stage. The model picks among them and writes a sho
 saying when they fire, or codes something new from lower-level pieces such as pushes, hops,
 shots and stuns.
 
+<p align="center">
+  <img src="docs/media/sketchbook.jpg" width="640" alt="The Sketchbook window between rounds. A drawing of a cat sits on the pad. Under it a card shows Creativity 8 out of 10 and two abilities: Kitten, a copy that trots behind you and pounces, and Pounce, with the line of code that runs when you jump.">
+</p>
+
+<p align="center"><sub>The Sketchbook. The card under a drawing shows its score and each ability, with the code behind it. This cat is one of the ready-made weapons; a drawn one gets the same card.</sub></p>
+
 The scripts are in **InkScript**, a language we wrote for this ([`inkscript.js`](inkscript.js)).
 The game parses it, checks every name against a table and interprets it itself.
 
@@ -177,11 +183,19 @@ one-tap corrections.
 
 ## Talking to the machine
 
-<img src="docs/diagrams/ink-os.svg" width="100%" alt="A request typed into the INK-OS terminal goes to a planner, which hands work to a designer, an engineer and a tester. They pass files to each other. The tester plays forty bot rounds with the update and the same forty without. The install tool refuses any file that has not passed a clean play-test, the game server checks it again, and the update is installed into the running match.">
+<img src="docs/diagrams/ink-os.svg" width="100%" alt="A request typed into the INK-OS prompt goes to a planner, which hands work to a designer, an engineer and a tester. They pass files to each other. The tester plays forty bot rounds with the update and the same forty without. The install tool refuses any file that has not passed a clean play-test, the game server checks it again, and the update is installed into the running match.">
 
-The desktop has a terminal. A request typed there goes to **INK-OS**, a deep agent that plans
-the job and runs three sub-agents who hand work to each other as files. What comes out is an
-update, and an update is data:
+One window on the desktop is an MS-DOS Prompt titled INK-OS. A request typed there goes to
+**INK-OS**, a deep agent that plans the job and runs three sub-agents who hand work to each
+other as files. Everything they do scrolls past in the prompt while it happens:
+
+<p align="center">
+  <img src="docs/media/terminal.jpg" width="374" alt="The INK-OS prompt after someone typed make the floor lava. A four-step checklist is ticked off. Then: designer is handed the design and writes design.md; engineer reads it and writes update.json, and the check says OK; tester is handed the play-test, which reports 40 rounds, no problems, rounds last 32 seconds where they normally last 40.4. The last line in view reads UPDATE INSTALLED: Lava Floor.">
+</p>
+
+<p align="center"><sub>A real run, 22 seconds from Enter to installed.</sub></p>
+
+What comes out is an update, and an update is data:
 
 | Part | What it may hold |
 |---|---|
@@ -204,14 +218,21 @@ without it, and flags what it finds:
   The install tool refuses any file that has not passed a clean play-test unchanged; it
   compares a hash. The game server then runs its own 10-round play-test before the update
   reaches a room.
-- **It is live at once.** An update lands in whatever phase the match is in, with a banner and
-  a chip that stays on screen. Type `reset` to remove it.
+- **It is live at once.** An update lands in whatever phase the match is in. It arrives as a
+  message box, and a label stays on the stage for as long as it is installed. Type `reset` to
+  remove it.
 - **About 20 seconds, 10 model calls.** The first version took 30 to 50 seconds and about 17.
+
+<p align="center">
+  <img src="docs/media/update-installed.jpg" width="640" alt="Mid-fight, a message box titled INK-OS, update installed, reads Lava Floor: the ground burns grounded fighters. The floor of the arena has turned to lava and embers drift up. A label in the corner reads Update: Lava Floor.">
+</p>
+
+<p align="center"><sub>The update landing mid-fight.</sub></p>
 
 ## Nemesis
 
 <p align="center">
-  <img src="docs/media/nemesis-banner.jpg" width="640" alt="A round about to start. A banner across the arena reads: INK-OS studied you and built Stillpoint Snare. Underneath, in quotes: Ben, 76% still, at least your aim stays perfectly predictable.">
+  <img src="docs/media/nemesis-message.jpg" width="640" alt="A round about to start. A message box titled INK-OS, studied you and built, reads Stillpoint Snare, and under it in quotes: Ben, 76% still, at least your aim stays perfectly predictable. A label in the corner reads Red is INK-OS: Stillpoint Snare.">
 </p>
 
 Against the bot, Red is played by the machine. It is a second deep agent, and it starts work
@@ -235,7 +256,7 @@ The rules keep numbers on each fighter every round. These are what it studies:
   spars the build for 40 rounds against a copy of you. A build that loses is forged once more.
   If its old weapons are clearly better, it keeps them and says so.
 - **It remembers.** The scout adds one line to `os-agent/memory/<name>.md` after every round
-  and reads it before round one of your next match. Type `name ben` into the terminal to tell
+  and reads it before round one of your next match. Type `name ben` into the prompt to tell
   it who you are.
 - **About 6 seconds.** It starts at the knockout, so it has usually decided by the time
   drawing opens. A refused ability or a losing first build makes it about 13.
@@ -249,12 +270,12 @@ and live in [`os-agent/`](os-agent). Each part of the library does something a p
 
 | deepagents feature | Where it is used |
 |---|---|
-| Planning (`write_todos`) | Both agents open with a plan. It is the first thing a player sees: a checklist in the in-game terminal that ticks off as the work moves |
+| Planning (`write_todos`) | Both agents open with a plan. It is the first thing a player sees: a checklist in the INK-OS prompt that ticks off as the work moves |
 | Sub-agents (`task`) | Five across the two agents, each with its own prompt, tools and model: designer, engineer and tester for INK-OS; scout and armorer for Nemesis, started in the same turn so they run in parallel |
 | File system (`FilesystemBackend`) | Every run gets its own workspace. Work is handed over as files: `/design.md`, `/update.json`, `/qa-report.md`, `/dossier.md`, `/build.json`, `/spar-report.md`. The folders stay on disk in `os-agent/work/` |
 | Long-term memory (`CompositeBackend`) | `/memories/` is routed to a folder that outlives the match. That is how the machine knows you the second time |
 | Custom tools | Seven, wrapping the game's own checker and simulator: `save_update`, `check_update`, `playtest`, `install_update`, `forge_build`, `remember`, `deploy` |
-| Streaming with sub-graphs | Every plan step, hand-over, file write and test result becomes a line in the terminal while it happens |
+| Streaming with sub-graphs | Every plan step, hand-over, file write and test result becomes a line in the prompt while it happens |
 | Models per role (`@langchain/openai`) | A small model plans and routes; a larger one writes |
 
 Why an agent and not a chain of prompts: it loops on evidence. When the armorer wrote an
@@ -318,7 +339,7 @@ who is wearing it with **Worn by**.
   between rounds, but neither could sit inside a single exchange of blows. That is why a
   drawing's abilities are read and checked but not test-fought before they land.
 - **The machine needs a laptop.** The agent service runs beside the game server. The public
-  deployment runs only the game server, so there the terminal stays quiet and the bot keeps
+  deployment runs only the game server, so there the prompt stays quiet and the bot keeps
   its ready-made weapons.
 - **Balance came from bots.** The numbers were tuned by simulated matches, not by people.
 - **Rooms live in memory,** so a deployment has to be a single instance, and restarting the
@@ -363,7 +384,7 @@ cd os-agent && npm install && node server.mjs     # the machine: INK-OS and Neme
 ```
 
 Without a key the game still runs: drawings are read by a rough local guess from ink colour
-and shape. Without the agent service the game still runs: the terminal says the machine is not
+and shape. Without the agent service the game still runs: the prompt says the machine is not
 answering, and the bot keeps its ready-made weapons.
 
 Choose **Player vs Bot** or **Player vs Player** and scan the code with a phone, or choose

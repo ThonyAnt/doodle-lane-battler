@@ -330,7 +330,7 @@ body.retro.playing .oswin{display:block}
 .oswin.compact .oslog{height:17px;overflow:hidden}
 .oswin.compact .osl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .oslog{height:150px;overflow-y:auto;white-space:pre-wrap;overflow-wrap:anywhere}
-.osl.cmd{color:#fff}.osl.dim{color:#2a9a2a}.osl.bad{color:#f66}.osl.ok{color:#9f9}.osl.big{font-weight:700;color:#ff6}.osl.who{color:#6cf}.osl.say{color:#fff}
+.osl.cmd{color:#fff}.osl.dim{color:#2a9a2a}.osl.bad{color:#f66}.osl.ok{color:#9f9}.osl.big{font-weight:700;color:#ff6}.osl.osd{color:#6cf}.osl.say{color:#fff}
 .osl.plan .completed{color:#2a9a2a}.osl.plan .in_progress{color:#ff6}
 .osrow{display:flex;gap:6px;align-items:center;margin-top:5px}
 .osrow input{flex:1;min-width:0;background:#000;color:#3f3;border:1px solid #2a9a2a;font:inherit;padding:3px 6px;outline:none}
@@ -499,7 +499,7 @@ body.retro .loitem .stat b{font-weight:400;text-align:right}
 body.retro .oswin{background:#c3c3c3;color:#000;padding:2px;font:11px Tahoma,Verdana,"Segoe UI",sans-serif}
 body.retro .oslog{background:#000;color:#c0c0c0;border:2px solid;border-color:#808080 #fff #fff #808080;box-shadow:inset 1px 1px #404040;padding:3px 5px;font:12px/1.35 "Courier New",monospace;box-sizing:content-box}
 body.retro .osl.cmd,body.retro .osl.say{color:#fff} body.retro .osl.dim{color:#808080} body.retro .osl.bad{color:#ff5555} body.retro .osl.ok{color:#55ff55}
-body.retro .osl.big{color:#ffff55} body.retro .osl.who{color:#55ffff}
+body.retro .osl.big{color:#ffff55} body.retro .osl.osd{color:#55ffff}
 body.retro .osl.plan .completed{color:#808080} body.retro .osl.plan .in_progress{color:#ffff55}
 body.retro .osrow{margin-top:4px;gap:5px}
 body.retro .osrow span{font:12px "Courier New",monospace;color:#000}
@@ -4332,7 +4332,7 @@ let osPatch=null, osBusy=false, osToast=null, osPlanEl=null, osPhase='', osLive=
 function osLine(html,cls){ osActive=performance.now()+12000; const log=$('osLog'), d=document.createElement('div'); d.className='osl '+(cls||''); d.innerHTML=html; log.appendChild(d); while(log.children.length>140) log.firstChild.remove(); log.scrollTop=log.scrollHeight; return d; }
 function osShow(e){
   if(e.type==='plan'){ if(!osPlanEl) osPlanEl=osLine('','plan'); osPlanEl.innerHTML=e.todos.map(t=>'<span class="'+esc(t.status)+'">'+(t.status==='completed'?'[x] ':t.status==='in_progress'?'[&gt;] ':'[ ] ')+esc(t.text)+'</span>').join('\n'); $('osLog').scrollTop=1e6; }
-  else if(e.type==='delegate') osLine('<b>'+esc(e.to)+'</b> &lt;- '+esc(e.task),'who');
+  else if(e.type==='delegate') osLine('<b>'+esc(e.to)+'</b> &lt;- '+esc(e.task),'osd');      // (not 'who': that is the 'You are Blue' badge, and its pill outline would come along)
   else if(e.type==='file') osLine('  '+esc(e.agent)+' '+esc(e.did)+' '+esc(e.path),'dim');
   else if(e.type==='check') osLine('  check: '+(e.ok?'OK':esc(e.errors.slice(0,2).join('; '))),e.ok?'ok':'bad');
   else if(e.type==='playtest'){ const w=e.withUpdate, b=e.without; osLine('  play-test: '+w.rounds+' rounds, '+(e.ok?'no problems':esc(e.problems[0]))+'. Rounds last '+w.roundSeconds+' s (normally '+b.roundSeconds+'), in the air '+w.airbornePct+'% (normally '+b.airbornePct+'%)',e.ok?'ok':'bad'); }

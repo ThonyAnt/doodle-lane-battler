@@ -66,7 +66,7 @@ function doc(name,w,h,title,desc,body,legend){
   let b='';
   const r1=116, H=78, r3=352;
   b+=lane(416,96,668,190);
-  b+=box(24,r1,176,H,'INK-OS terminal',['C:\\> make the floor lava'],{stroke:C.player,mono:true,lineFill:C.agent});
+  b+=box(24,r1,176,H,'INK-OS prompt',['C:\\> make the floor lava'],{stroke:C.player,mono:true,lineFill:C.ink});
   b+=box(232,r1,160,H,'Planner',['plans with write_todos','hands out the work'],{stroke:C.agent});
   b+=box(432,r1,188,H,'designer',['what it should feel like','the numbers to try'],{stroke:C.agent});
   b+=box(648,r1,200,H,'engineer',['settings, rules and a look','save_update checks the file'],{stroke:C.agent});
@@ -86,9 +86,9 @@ function doc(name,w,h,title,desc,body,legend){
   b+=box(924,r3,152,H,'Every screen',['phones and the','big screen are told'],{stroke:C.player});
   b+=arrow([[454,r3+39],[484,r3+39]])+arrow([[692,r3+39],[722,r3+39]])+arrow([[892,r3+39],[922,r3+39]]);
   b+=`<rect x="24" y="458" width="1052" height="60" rx="9" fill="${C.well}" stroke="${C.dim}" stroke-width="1.2"/>`;
-  b+=T(40,481,'Shipped for “make the floor lava”',{size:11.5,weight:700,fill:C.ink})+T(1060,481,'play-test: rounds 32 s → 22 s',{anchor:'end'});
-  b+=T(40,502,"jump ×1.4 · rule: if (!me.air) { hurt(me, 5); burst(me.x, 4, 6); say('HOT!'); } · look: lava, embers",{mono:true,size:10.5,fill:C.agent})+T(1060,502,'rule fired 27× a round, evenly for both sides',{anchor:'end'});
-  doc('ink-os.svg',1100,554,'“Make the floor lava”: from the terminal to the arena, in about 20 seconds','A typed request goes to a planner that hands work to a designer, an engineer and a tester. They pass files to each other. The update is play-tested, refused by the install tool unless the test was clean, checked again by the game server, and then installed into the running match.',b,[[C.player,'player side'],[C.agent,'deep agent'],[C.game,"the game's own checks"],[C.red,'refusal']]);
+  b+=T(40,481,'Shipped for “make the floor lava”',{size:11.5,weight:700,fill:C.ink})+T(1060,481,'play-test: rounds 40 s → 32 s',{anchor:'end'});
+  b+=T(40,502,"jump ×1.5 · rule: if (!me.air) { hurt(me, 5); burst(me.x, 4, 6); say('HOT!'); } · look: lava, embers",{mono:true,size:10.5,fill:C.agent})+T(1060,502,'rule fired 28× a round, evenly for both sides',{anchor:'end'});
+  doc('ink-os.svg',1100,554,'“Make the floor lava”: from the prompt to the arena, in about 20 seconds','A typed request goes to a planner that hands work to a designer, an engineer and a tester. They pass files to each other. The update is play-tested, refused by the install tool unless the test was clean, checked again by the game server, and then installed into the running match.',b,[[C.player,'player side'],[C.agent,'deep agent'],[C.game,"the game's own checks"],[C.red,'refusal']]);
 }
 
 /* ---------- 3. Nemesis: from a knockout to the next round ---------- */
