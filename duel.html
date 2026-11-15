@@ -620,7 +620,7 @@ body.handheld .tc.hhc .knob{position:absolute;left:50%;top:50%;width:42%;height:
 body.handheld .tc.hhc .hhx,body.handheld .tc.hhc .hhtool,body.handheld .tc.hhc .hhatk{pointer-events:auto}
 body.handheld .tc.hhc button{margin:0;min-width:0;min-height:0;padding:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font:700 18px Tahoma,Verdana,sans-serif;line-height:1.05;touch-action:none;box-sizing:border-box}
 body.handheld .tc.hhc button small{display:block;font:400 10px Tahoma,Verdana,sans-serif;max-width:calc(100% - 8px);margin:2px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-body.handheld .tc.hhc .big{font-size:calc(var(--a,100px)*.3)} body.handheld .tc.hhc .big small{font-size:12px}
+body.handheld .tc.hhc .big{font-size:calc(var(--a,100px)*.26)} body.handheld .tc.hhc .big small{font-size:12px}
 body.handheld .tc.hhc [data-k="j"]{font-size:15px}
 body.handheld .tc.hhc .hhtool button{color:#000}
 body.handheld .tc.hhc .hhtool button[aria-pressed="true"]{background:#0a246a;color:#fff;border-color:#404040 #fff #fff #404040}
@@ -788,7 +788,7 @@ Q     hack</div>
   <section class="desks" id="desks"></section>
 
   <ul class="rules">
-    <li><b>Draw two things</b> before each round: a sword, a bow, a bomb, a shield, wings, a snack. You share 100 ink between them, and more ink means a stronger item.</li>
+    <li><b>Draw two things</b> before each round: a sword, a bow, a bomb, a shield, wings, a snack. You share 200 ink between them, and more ink means a stronger item.</li>
     <li><b>Fight live:</b> move, double jump, and use your two drawings. An empty slot is a punch. First to 2 rounds wins.</li>
     <li><b>How to trigger each move</b> (A and B on your controller are your two drawings; on a keyboard they are <b>J</b> and <b>K</b>, and a second player on the same keyboard uses <b>,</b> and <b>.</b>):
       <br>· <b>Combo:</b> stand still and tap the button again and again. Swords, spears and hammers chain 3 moves, fists chain 4.
@@ -831,7 +831,7 @@ Q     hack</div>
 // which is about when overdrive first fills, so a fighter could die before ever using a hack or an ultimate. With 160 health
 // the same bots take about 41 s (a tenth under 22 s). Damage and overdrive gain are untouched; healing scales with health.
 // (Raised again from 160 after play: a round was ending before a scene's minute had played out.)
-const AW=960, HP=208, INK_MAX=100, MIN_COST=5, INK_PER_PX=1/24, ROUND_TIME=90, WINS=2, PAD_W=480, PAD_H=300;
+const AW=960, HP=208, INK_MAX=200, MIN_COST=10, INK_PER_PX=1/24, ROUND_TIME=90, WINS=2, PAD_W=480, PAD_H=300;
 const PLATS=[{x0:130,x1:330,y:118},{x0:630,x1:830,y:118},{x0:380,x1:580,y:226}];
 const KINDS=['melee','ranged','bomb','shield','dash','heal'], ELS=['none','fire','water','plant'];
 // Every item has power, range and speed. The reader (or the shape of the drawing) says how the item leans, and those
@@ -1231,8 +1231,9 @@ function localGuess(strokes,label){
 //   speed: how fast the move plays and how soon it is ready again
 // How ink turns into strength: (ink/full)^exp, up to 3. With a square root, doubling the ink is worth about 40% more, so
 // putting everything into one drawing no longer beats splitting it between two (it used to win about two rounds in three).
-// A 50-ink item is as strong as it was before.
-const INK_CURVE={exp:0.5,full:160};
+// A 50-ink item is as strong as it was before. The drawing budget was later doubled to 200 ink (the owner wanted more room
+// to draw), and full with it, so an item is as strong as before for the same share of the budget.
+const INK_CURVE={exp:0.5,full:320};
 const inkPower=cost=>Math.max(0.2,Math.min(3,3*Math.pow(Math.max(0,cost)/INK_CURVE.full,INK_CURVE.exp)));
 function itemStats(kind,el,cost,stats){
   const p=inkPower(cost), raw=el==='none'?1.15:1, s=stats||{power:5,range:5,speed:5};
@@ -2737,7 +2738,7 @@ function createDuel(opts){
   S.startUlt=side=>{
     const f=S.f[side], e=S.f[1-side]; if(S.phase!=='fight'||S.ult>=0||f.od<100||f.hp<=0||f.stun>0||f.hurt>0||f.trap>0||f.dash>0||(f.act&&MOVES[f.act.m].ult)) return false;
     const k=S.items[side][f.held]?f.held:S.items[side][1-f.held]?1-f.held:-1; if(k<0) return false;
-    const it=S.items[side][k], U=ultOf(it), copies=Math.max(3,Math.min(7,3+Math.floor(it.cost/12))), n={fan:copies,rain:copies,ring:copies+1,rush:8,cross:3,storm:12,fire:6}[U.kind]||1;
+    const it=S.items[side][k], U=ultOf(it), copies=Math.max(3,Math.min(7,3+Math.floor(it.cost/24))), n={fan:copies,rain:copies,ring:copies+1,rush:8,cross:3,storm:12,fire:6}[U.kind]||1;
     f.od=0; f.held=k; f.shield=0; f.buf[0]=f.buf[1]=0; if(e.x!==f.x) f.face=Math.sign(e.x-f.x);
     f.act={k,m:U.move,u:U.kind,v:0,t:0,dur:MOVES[U.move].dur,rate:ULT_INTRO_RATE,intro:ULT_INTRO,done:0,lunged:false,n};
     // While it is announced (ULT_INTRO) the casting move only creeps forward, so the caster eases into it; see the lock in tick.
@@ -3456,7 +3457,7 @@ function createDuel(opts){
   function forge(f,R,g){
     if(casting(f)) return fizzle(g,'mid-ultimate');
     const style={sword:'blade',club:'blade',axe:'blade',spear:'spear',hammer:'hammer',mace:'hammer',bow:'bow'}[R.type]||'blade', kind=style==='bow'?'ranged':'melee';
-    const inkLen=g.strokes.reduce((n,p)=>n+pathLen(p),0), mass=clamp(inkLen/130,0.6,2.6), cost=clamp(mass*20,12,52), el=elOfColor(g.color), k=f.held;
+    const inkLen=g.strokes.reduce((n,p)=>n+pathLen(p),0), mass=clamp(inkLen/130,0.6,2.6), cost=clamp(mass*40,24,104), el=elOfColor(g.color), k=f.held;
     const name=(el==='none'?'':{fire:'Fire ',water:'Water ',plant:'Leafy '}[el])+R.type[0].toUpperCase()+R.type.slice(1);
     const it=S.items[f.side][k]=buildItem({name,kind,style,element:el,power:clampStat(2+mass*2.6),range:style==='spear'||style==='bow'?7:5,speed:clampStat(9-mass*2.6),traits:traitChoices(kind,[],name)},cost);
     f.act=null; f.cd[k]=0;
@@ -4437,7 +4438,7 @@ function stockItem(key,element){
 function botLoadout(seed){
   const R=mulberry32(seedFrom(seed)), pick=a=>a[Math.floor(R()*a.length)];
   const main=pick(['sword','spear','hammer','gloves','twins','bow','gun','pistols','staff','star','bomb']), side=pick(['shield','wings','snack','bomb','sword','spear','gun','star','staff'].filter(k=>k!==main));
-  return [[main,46],[side,34]].map(([key,cost])=>Object.assign(stockItem(key,pick(ELS)),{cost}));
+  return [[main,92],[side,68]].map(([key,cost])=>Object.assign(stockItem(key,pick(ELS)),{cost}));
 }
 /*DUEL-END*/
 
@@ -5115,7 +5116,7 @@ function updateDesk(d){
   d.el.querySelectorAll('.slot').forEach(b=>{ const k=+b.dataset.k, it=items[k];
     b.setAttribute('aria-pressed',k===d.k);
     b.innerHTML=PHONE?`<i>${'AB'[k]}</i><b>${it?esc(it.name):'empty'}</b>`:`${'AB'[k]}: `+(it?`<b>${esc(it.name)}</b><small>${it.kind}${it.el!=='none'?' · '+it.el:''} · ${it.cost} ink · creativity ${it.cr||2}</small>`:'<b>empty</b><small>a punch</small>'); });
-  d.el.querySelector('.have').style.width=have+'%'; d.el.querySelector('.cost').style.width=Math.min(have,cost)+'%';
+  d.el.querySelector('.have').style.width=have*100/INK_MAX+'%'; d.el.querySelector('.cost').style.width=Math.min(have,cost)*100/INK_MAX+'%';
   d.el.querySelector('.inkn').textContent=Math.round(Math.min(have,cost))+' / '+have;
   d.el.querySelector('.make').disabled=!d.strokes.length||d.busy||ready;
   d.el.querySelector('.make').textContent=items[d.k]?'Redraw '+'AB'[d.k]:'Make it!';
@@ -5198,7 +5199,7 @@ function earnLater(S,side,k,it,body){
 // Put a ready-made item in the selected slot. No drawing and no vision model, so it is instant.
 async function takeStock(d,key){
   if(d.busy||!view||(view.phase!=='draw'&&!view.practice)||view.ready[d.side]) return;
-  const k=d.k, read=d.el.querySelector('.read'), made=stockItem(key,d.pen), cost=Math.min(45,budget(d));
+  const k=d.k, read=d.el.querySelector('.read'), made=stockItem(key,d.pen), cost=Math.min(90,budget(d));
   try{
     let spec;
     if(net){
@@ -5264,24 +5265,24 @@ function releaseAll(){ for(const f of releasers) f(); for(const s of [0,1]) for(
 // ---- The controller on a phone or tablet (PHONE), during a round. Every piece is placed by hhLayout so none overlaps:
 // the arena strip in the middle; a joystick zone on the left (its bounds shown as a square where the stick rests); the
 // drawing tools in a column right of the strip (scribble, line for platforms and walls, box for crates, arrow, circle for a
-// shield; any but the scribble goes back to the scribble once used); and the attack keys bottom right: the big A, the
-// secondary B on its upper right, jump under it. Sliding the thumb up off A also jumps. The ultimate and the hack sit
-// with the joystick.
+// shield; any but the scribble goes back to the scribble once used); and the attack keys bottom right: A (the first
+// weapon) and B (the second) side by side, jump beside them, the ability and the ultimate under them. Sliding the thumb up off A
+// or B also jumps.
 const HH_TOOLS=[['scribble','Scribble','<path d="M3 15c3-8 5-8 6 0s4 6 6-2 4-6 6 2"/>'],['line','Platform or wall','<path d="M3 20L21 4"/>'],
   ['rect','Crate','<path d="M5 5h14v14H5z"/>'],['arrow','Arrow','<path d="M3 12h16M13 6l6 6-6 6"/>'],['ellipse','Shield','<path d="M12 3l8 3v6c0 5-4 8-8 9-4-1-8-4-8-9V6z"/>']];
-let hhTool='scribble', hhAim=[0,0], hhAimAt=[0,0], hhSlot=[0,0];      // hhSlot: which weapon A uses (the swap key flips it)
-// A shows the weapon in use (its name and cooldown), the swap key the other one.
-function hhKeys(el,v){ const s=+el.dataset.side, f=v.f[s], k=hhSlot[s], A=el.querySelector('[data-k="a"]'), sw=el.querySelector('.swap'); if(!A||!sw) return;
+let hhTool='scribble', hhAim=[0,0], hhAimAt=[0,0];      // hhAim: the direction the joystick last pushed (-1, 1), and when it let go
+// A and B each show their own weapon: its name, its cooldown, and what using it costs.
+function hhKeys(el,v){ const s=+el.dataset.side, f=v.f[s];
   const name=j=>{ const it=v.items[s][j]; return it?it.name+(it.kind==='heal'?' \u00d7'+f.uses[j]:''):'Punch'; };
-  A.style.setProperty('--cd',f.cd[k]||0); const a=A.querySelector('small'), la=name(k)+costLabel(f,k); if(a.textContent!==la) a.textContent=la; A.classList.toggle('costout',costOut(f,k));
-  sw.style.setProperty('--cd',0); const b=sw.querySelector('small'), lb='to '+name(1-k); if(b.textContent!==lb) b.textContent=lb; }      // hhAim: the direction the joystick last pushed (-1, 1), and when it let go
+  for(const k of [0,1]){ const B=el.querySelector('[data-k="'+'ab'[k]+'"]'); if(!B) continue;
+    B.style.setProperty('--cd',f.cd[k]||0); const sm=B.querySelector('small'), lb=name(k)+costLabel(f,k); if(sm.textContent!==lb) sm.textContent=lb; B.classList.toggle('costout',costOut(f,k)); } }
 const hhToolSvg=d=>'<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="square" stroke-linejoin="miter">'+d+'</svg>';
 function hhSetTool(t){ hhTool=t; document.querySelectorAll('.hhtool button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.tool===t)); document.querySelectorAll('.hhtoolname').forEach(n=>n.textContent=(HH_TOOLS.find(x=>x[0]===t)||['',''])[1]); }      // the chosen tool is named over the row
 function hhControls(side){
   const el=document.createElement('div'); el.className='tc hhc'; el.dataset.side=side;
   el.innerHTML=`<div class="joy" aria-label="Joystick: slide to run, flick up to jump, hold down to drop"><div class="joybound"></div><div class="stick"><div class="knob"></div></div></div>
     <div class="hhtoolname" aria-live="polite"></div><div class="hhtool">${HH_TOOLS.map(([t,l,d])=>`<button data-tool="${t}" aria-label="${l}" title="${l}" aria-pressed="${t===hhTool}">${hhToolSvg(d)}</button>`).join('')}</div>
-    <div class="hhatk"><button class="swap" aria-label="Switch weapon" title="Switch weapon"><span class="cdfill"></span>${hhToolSvg('<path d="M4 8h15M15 4l4 4-4 4M20 16H5M9 12l-4 4 4 4"/>')}<small></small></button><button data-k="a" class="big" aria-label="Attack"><span class="cdfill"></span>A<small></small></button><button data-k="j" aria-label="Jump" title="Jump">${hhToolSvg('<path d="M12 20V5M5 11l7-7 7 7"/>')}</button><button data-k="q" aria-label="Ability (hack)"><span class="cdfill"></span>Q<small></small></button><button class="hpick" aria-label="Pick a hack">▾</button><button data-k="u" aria-label="Ultimate"><span class="cdfill"></span>U<small></small></button></div>`;
+    <div class="hhatk"><button data-k="a" class="big" aria-label="First weapon"><span class="cdfill"></span>A<small></small></button><button data-k="b" class="big" aria-label="Second weapon"><span class="cdfill"></span>B<small></small></button><button data-k="j" aria-label="Jump" title="Jump">${hhToolSvg('<path d="M12 20V5M5 11l7-7 7 7"/>')}</button><button data-k="q" aria-label="Ability (hack)"><span class="cdfill"></span>Q<small></small></button><button class="hpick" aria-label="Pick a hack">▾</button><button data-k="u" aria-label="Ultimate"><span class="cdfill"></span>U<small></small></button></div>`;
   // the joystick: it centres where the thumb lands in its zone and rests on the square marked there
   const zone=el.querySelector('.joy'), stick=zone.querySelector('.stick'), knob=zone.querySelector('.knob'); let sp=null, o=null, flick=false; const held={l:0,r:0,d:0};
   const set=(k,v)=>{ if(held[k]===v) return; held[k]=v; press(side,k,!!v); if((k==='l'||k==='r')&&v){ hhAim[side]=k==='l'?-1:1; hhAimAt[side]=0; } if((k==='l'||k==='r')&&!v&&!held.l&&!held.r) hhAimAt[side]=performance.now(); };
@@ -5302,9 +5303,9 @@ function hhControls(side){
   el.querySelectorAll('[data-k]').forEach(b=>{
     const k=b.dataset.k; let id=null, y0=0, slid=false;
     const off=e=>{ if(e&&e.pointerId!==id) return; id=null; b.classList.remove('on'); press(side,sent,false); };
-    let sent=k;      // A attacks with the weapon chosen with the swap key (hhSlot): it sends 'a' or 'b'
-    b.addEventListener('pointerdown',e=>{ e.preventDefault(); if(id!==null) return; id=e.pointerId; y0=e.clientY; slid=false; try{ b.setPointerCapture(id); }catch(_){} b.classList.add('on'); sent=k==='a'&&hhSlot[side]?'b':k; press(side,sent,true,sent==='a'||sent==='b'?aim():0); });
-    if(k==='a') b.addEventListener('pointermove',e=>{ if(e.pointerId!==id) return; const up=y0-e.clientY, th=b.offsetHeight*0.35;      // hold A and slide up: jump
+    const sent=k;
+    b.addEventListener('pointerdown',e=>{ e.preventDefault(); if(id!==null) return; id=e.pointerId; y0=e.clientY; slid=false; try{ b.setPointerCapture(id); }catch(_){} b.classList.add('on'); press(side,sent,true,sent==='a'||sent==='b'?aim():0); });
+    if(k==='a'||k==='b') b.addEventListener('pointermove',e=>{ if(e.pointerId!==id) return; const up=y0-e.clientY, th=b.offsetHeight*0.35;      // hold A or B and slide up: jump
       if(!slid&&up>th){ slid=true; press(side,'j',true); } else if(slid&&up<th*0.4) slid=false; });
     for(const t of ['pointerup','pointercancel']) b.addEventListener(t,off); b.addEventListener('contextmenu',e=>e.preventDefault());
   });
@@ -5313,7 +5314,6 @@ function hhControls(side){
   const tap=(n,fn)=>n.addEventListener('pointerdown',e=>{ e.preventDefault(); fn(); });
   tap(el.querySelector('.hpick'),()=>$('hackPick').click());
   el.querySelectorAll('.hhtool button').forEach(b=>tap(b,()=>hhSetTool(b.dataset.tool)));
-  { const sw=el.querySelector('.swap'); tap(sw,()=>{ hhSlot[side]^=1; sw.classList.add('on'); setTimeout(()=>sw.classList.remove('on'),120); if(view) hhKeys(el,view); }); sw.addEventListener('contextmenu',e=>e.preventDefault()); }
   return el;
 }
 // Where everything goes, in screen pixels. Wide screens with height to spare (tablets) put the strip across the top, with
@@ -5322,8 +5322,8 @@ function hhControls(side){
 const HH_AR=960/470;      // the stage's shape: the arena with room above the platforms
 let hhFit={t:0,b:0};      // the part of the strip the stage is fitted into, in pixels from its top (drawStrip)
 // Where everything goes, in screen pixels. The arena covers the whole screen behind everything else. The joystick zone is
-// the bottom-left corner. Bottom right, from the top: the drawing tools in a row; then B (top right) over Jump, with the
-// big A to their left; then the ability (hack, with its picker) and the ultimate side by side. The stage sits above the
+// the bottom-left corner. Bottom right, from the top: the drawing tools in a row; then A and B, the two weapons, side by
+// side and the same size, with jump in a column on their right; then the ability (hack, with its picker) and the ultimate. The stage sits above the
 // keys when the screen is tall enough for that (portrait), and runs behind them when it is not.
 function hhLayout(){
   if(!PHONE||!padView) return; const W=innerWidth, H=innerHeight, m=10, g=8, el=document.querySelector('.tc.hhc'), hud=document.querySelector('.arenawrap');
@@ -5331,7 +5331,7 @@ function hhLayout(){
   const hudH=hud.offsetHeight||48; document.body.style.setProperty('--hudh',hudH+'px');      // the top bar is fixed at the top; what is below starts under it
   if(!playing||!el){ strip.style.cssText=''; return; }
   const s=Math.min(W,H), A=Math.round(Math.max(84,Math.min(150,s*0.2))), b=Math.round((A-g)/2), xh=Math.round(Math.max(40,Math.min(56,A*0.36)));
-  const cw=A+g+b, ch=A+g+xh, u=Math.round(Math.max(40,Math.min(56,(cw+2*g)/5))), tg=Math.round(Math.max(4,(cw-5*u)/4));
+  const wb=Math.round(A*0.78), cw=2*wb+2*g+xh, ch=A+g+xh, u=Math.round(Math.max(40,Math.min(56,(cw+2*g)/5))), tg=Math.round(Math.max(4,(cw-5*u)/4));
   const tw=5*u+4*tg, bandH=ch+g+u, cx=W-m-Math.max(cw,tw), cy=H-m-ch, J=Math.round(Math.max(120,Math.min(260,s*0.32)));
   put(strip,0,0,W,H);
   const top=8+(hud.getBoundingClientRect().bottom||hudH+8)+8, low=H-m-bandH-g;
@@ -5344,9 +5344,9 @@ function hhLayout(){
   { const nm=el.querySelector('.hhtoolname'), nh=18; put(nm,W-m-tw,cy-g-u-4-nh,tw,nh); if(!nm.textContent) nm.textContent=(HH_TOOLS.find(x=>x[0]===hhTool)||['',''])[1]; }
   const atk=el.querySelector('.hhatk'); put(atk,W-m-cw,cy,cw,ch);
   const sq=(n,x,y,w,h)=>Object.assign(n.style,{position:'absolute',left:x+'px',top:y+'px',width:w+'px',height:h+'px'}), K=k=>el.querySelector(`[data-k="${k}"]`);
-  sq(K('a'),0,0,A,A); sq(K('j'),A+g,0,b,b); sq(el.querySelector('.swap'),A+g,b+g,b,A-b-g);      // jump above, the second weapon (B) under it, right of A
+  sq(K('a'),0,0,wb,A); sq(K('b'),wb+g,0,wb,A); sq(K('j'),2*(wb+g),0,xh,A);      // the two weapons side by side, jump a column on their right
   const pk=Math.round(Math.max(28,xh*0.6)), half=Math.floor((cw-g)/2); sq(K('q'),0,A+g,half-pk-4,xh); sq(el.querySelector('.hpick'),half-pk,A+g,pk,xh); sq(K('u'),half+g,A+g,cw-half-g,xh);
-  el.querySelector('.swap').classList.toggle('nolabel',b<74||A-b-g<56); K('q').classList.toggle('nolabel',half-pk-4<96); K('u').classList.toggle('nolabel',cw-half-g<96);      // a label that would not fit is left off (the letter stays)
+  K('q').classList.toggle('nolabel',half-pk-4<96); K('u').classList.toggle('nolabel',cw-half-g<96);      // a label that would not fit is left off (the letter stays)
   el.style.setProperty('--u',u+'px'); el.style.setProperty('--a',A+'px');
 }
 addEventListener('resize',()=>{ hhLayout(); if(padView&&playing&&view) drawStrip(view); });
@@ -7626,7 +7626,7 @@ const LAB_STOCK={blade:'sword',spear:'spear',hammer:'hammer',fist:'gloves',dual:
 const LAB_NAME={blade:'Sword',spear:'Spear',hammer:'Hammer',fist:'Fists',dual:'Twin blades',bow:'Bow',gun:'Gun',akimbo:'Twin pistols',staff:'Staff',hurl:'Thrown'};
 const lab={style:'blade',el:'none',speed:1,loop:false,gap:220,last:null,idle:0,customs:[],low:false,todo:[],special:null,tcu:[],cu:'',trig:'',wound:false,leaves:[]};
 const LAB_TF={twoform:{id:'twoform'},twin:{id:'twin',secs:4},giant:{id:'giant',every:3},evolve:{id:'evolve',hits:2},thrown:{id:'thrown'},overgrown:{id:'overgrown',secs:12}};      // transform: quick settings for trying each one
-function labEquip(){ const st=stockItem(lab.special||LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,lab.special?(lab.ability?Object.assign({},st.spec,{abilities:st.spec.abilities.concat(lab.ability)}):st.spec):Object.assign({},st.spec,{creativity:10,abilities:lab.ability?[lab.ability]:[],customs:(lab.customs||[]).concat(lab.tf?[Object.assign({},LAB_TF[lab.tf],lab.tf==='twoform'&&lab.alt?{alt:lab.alt}:null)]:[])}),50); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0;
+function labEquip(){ const st=stockItem(lab.special||LAB_STOCK[lab.style],lab.el), it=sim.setItem(0,0,lab.special?(lab.ability?Object.assign({},st.spec,{abilities:st.spec.abilities.concat(lab.ability)}):st.spec):Object.assign({},st.spec,{creativity:10,abilities:lab.ability?[lab.ability]:[],customs:(lab.customs||[]).concat(lab.tf?[Object.assign({},LAB_TF[lab.tf],lab.tf==='twoform'&&lab.alt?{alt:lab.alt}:null)]:[])}),100); setArt(0,0,st.strokes,it.ver,it.kind,it.style); sim.f[0].held=0;
   if(!lab.special) for(const row of [labLeaves,labCost,labTarget,labTrig,labShape,labSummon,labArenaApply]) row();      // a special preset comes with its own blocks: the rows are not applied over it (they can still add to it)
   else{ const box=$('labSpecialV'); if(box) box.textContent='Creativity '+it.creativity+'/10: '+it.abilities.map(a=>a.name+(a.block?'':' (script)')).join(' + '); }
   labAbilityNote(); if(desk[0]) updateDesk(desk[0]); labCustoms(); }
@@ -7669,7 +7669,7 @@ const LAB_SUMMON_TIP={'':'',orbiter:'They circle the fighter. Move the dummy clo
   swarm:'They trail behind. Every move pressed flings one at the dummy.',guardian:'Press "Dummy shoots": it blocks three shots, breaks, and grows back after 8 s.'};
 function labSummon(){
   const cu=lab.cu?[{id:lab.cu}]:[]; sim.summonSet(0,0,cu);
-  if(lab.both){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(1,0,st.spec,50); setArt(1,0,st.strokes,it.ver,it.kind,it.style); sim.summonSet(1,0,cu); }
+  if(lab.both){ const st=stockItem(LAB_STOCK[lab.style],lab.el), it=sim.setItem(1,0,st.spec,100); setArt(1,0,st.strokes,it.ver,it.kind,it.style); sim.summonSet(1,0,cu); }
   else if(sim.items[1][0]){ sim.items[1][0]=null; setArt(1,0,null); }
   const tip=$('labSummonTip'); if(tip) tip.textContent=LAB_SUMMON_TIP[lab.cu||'']+(lab.cu?' Cost: '+summonCost(sim.items[0][0].customs.find(c=>c.id===lab.cu)||{id:lab.cu})+' points.':'');
   document.querySelectorAll('#labSummons button[data-cu]').forEach(b=>b.classList.toggle('on',b.dataset.cu===(lab.cu||'')));
@@ -7701,7 +7701,7 @@ function labLeavesClear(){ sim.lv.length=0; for(const o of sim.objs) if(o.leaf!=
 // show what the rules kept. The dummy gets gloves carrying the same blocks, so "Take a hit" puts them on the blue fighter.
 function labTarget(){
   const got=sim.targetSet(0,0,lab.tcu.map(id=>({id})))||[]; lab.tcu=got.map(c=>c.id);
-  if(lab.tcu.length){ const st=stockItem('gloves','none'), it=sim.setItem(1,0,st.spec,50); if(it){ setArt(1,0,st.strokes,it.ver,it.kind,it.style); sim.targetSet(1,0,got); } }
+  if(lab.tcu.length){ const st=stockItem('gloves','none'), it=sim.setItem(1,0,st.spec,100); if(it){ setArt(1,0,st.strokes,it.ver,it.kind,it.style); sim.targetSet(1,0,got); } }
   else sim.items[1][0]=null;
   sim.f[1].held=0;
   document.querySelectorAll('#labTarget button').forEach(b=>b.classList.toggle('on',lab.tcu.includes(b.dataset.c)));

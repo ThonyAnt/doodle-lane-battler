@@ -124,7 +124,7 @@ flowchart TB
   nem <--> mem
 ```
 
-1. **Draw.** Before each round both players draw two things and split 100 ink between them.
+1. **Draw.** Before each round both players draw two things and split 200 ink between them.
    Phones join by scanning a QR code and become sketchbook and controller; nobody installs
    anything. On the big screen a Loadouts window shows what each player has made so far.
 2. **Fight.** First to two rounds, each up to 90 seconds. The server owns the match: it steps
