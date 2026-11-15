@@ -475,6 +475,37 @@ body.retro .abcode,body.handheld .abcode{border-radius:0;background:#000;color:#
 /* Desktop wallpaper (the HackPrinceton image, /wallpaper.png), over his teal gradient and on the tablets' desktop look */
 body.retro #inkos #desktop{background:#8fb4bd url(/wallpaper.png) center/cover no-repeat}
 body.handheld{background:#8fb4bd url(/wallpaper.png) center/cover no-repeat fixed!important}
+/* Loadouts (what each player has made, on the big screen) in the old-desktop look: each player is an etched group box
+   with their name on its edge, each weapon a sunken white well, all in the system font. */
+body.retro .loadouts{gap:10px;font:11px Tahoma,Verdana,"Segoe UI",sans-serif;color:#000;padding:2px 2px 4px}
+body.retro .lo{position:relative;background:transparent;border:1px solid #808080!important;border-radius:0;box-shadow:1px 1px 0 #fff,inset 1px 1px 0 #fff;margin-top:8px;padding:13px 8px 8px;gap:6px 8px}
+body.retro .lo h3{position:absolute;left:8px;top:-8px;margin:0;padding:0 4px;background:#c3c3c3;font:700 11px Tahoma,Verdana,"Segoe UI",sans-serif;color:#000;display:flex;align-items:center;gap:5px}
+body.retro .lo h3::before{content:"";width:9px;height:9px;background:var(--pc,#000);border:1px solid #000}
+/* grey like every other window, and flat: the group box is the only frame, weapons are parted by an etched line, and
+   only the bars and the picture are sunken */
+body.retro #rw-load .rbody{background:#c3c3c3;border:0;padding:6px 8px 8px}
+body.retro .loitem{background:transparent;border:0;padding:0;gap:5px}
+body.retro .loitem+.loitem{border-top:1px solid #808080;box-shadow:inset 0 1px 0 #fff;padding-top:8px;margin-top:2px}
+body.retro .loitem.empty{color:#404040;min-height:40px;justify-content:center}
+body.retro .lo{grid-template-columns:1fr}      /* one weapon to a row, so the bars have room to be bars */
+body.retro .loitem .stat{grid-template-columns:64px 1fr 28px}
+body.retro .loitem .top{min-height:40px}
+body.retro .loitem .loab{flex-direction:column;align-items:stretch;gap:3px;margin:0} body.retro .loitem .loab .cbar{flex:none;max-width:none;order:2}
+body.retro .loitem img{width:36px;height:36px;border:2px solid;border-color:#808080 #fff #fff #808080;background:#fff}
+body.retro .loitem .nm{font:700 11px Tahoma,Verdana,"Segoe UI",sans-serif;color:#000} body.retro .loitem .nm small{font:11px Tahoma,Verdana,"Segoe UI",sans-serif;color:#000}
+body.retro .loitem .stat b{font-weight:400;text-align:right}
+/* INK-OS in the old-desktop look: an MS-DOS Prompt. The text is in a sunken black well in that program's own sixteen
+   colours (light grey text, not green), and the line you type on is an ordinary text box with an ordinary button. */
+body.retro .oswin{background:#c3c3c3;color:#000;padding:2px;font:11px Tahoma,Verdana,"Segoe UI",sans-serif}
+body.retro .oslog{background:#000;color:#c0c0c0;border:2px solid;border-color:#808080 #fff #fff #808080;box-shadow:inset 1px 1px #404040;padding:3px 5px;font:12px/1.35 "Courier New",monospace;box-sizing:content-box}
+body.retro .osl.cmd,body.retro .osl.say{color:#fff} body.retro .osl.dim{color:#808080} body.retro .osl.bad{color:#ff5555} body.retro .osl.ok{color:#55ff55}
+body.retro .osl.big{color:#ffff55} body.retro .osl.who{color:#55ffff}
+body.retro .osl.plan .completed{color:#808080} body.retro .osl.plan .in_progress{color:#ffff55}
+body.retro .osrow{margin-top:4px;gap:5px}
+body.retro .osrow span{font:12px "Courier New",monospace;color:#000}
+body.retro .osrow input{background:#fff;color:#000;border:2px solid;border-color:#808080 #fff #fff #808080;box-shadow:inset 1px 1px #404040;font:11px Tahoma,Verdana,"Segoe UI",sans-serif;padding:2px 4px}
+body.retro .osrow input::placeholder{color:#808080}
+body.retro .osrow button{font:11px Tahoma,Verdana,"Segoe UI",sans-serif;font-weight:400;padding:2px 12px}
 </style>
 </head>
 <body>
@@ -5586,7 +5617,7 @@ function syncUI(){
   // The big screen shows what each player has made, with its stats, while they draw.
   const lo=$('loadouts'), showLo=bigScreen&&(v.phase==='draw'||v.phase==='count')&&v.items.some(a=>a.some(Boolean))&&!!(net&&net.present.every(Boolean)), ls=showLo?JSON.stringify(v.items):'';
   if(ls!==loSig){ loSig=ls; lo.hidden=!showLo;
-    if(showLo) lo.innerHTML=[0,1].map(s=>`<div class="lo" style="border-color:${PCOL[s]}"><h3>${NAME[s]}</h3>${v.items[s].map((it,k)=>{
+    if(showLo) lo.innerHTML=[0,1].map(s=>`<div class="lo" style="border-color:${PCOL[s]};--pc:${PCOL[s]}"><h3>${NAME[s]}</h3>${v.items[s].map((it,k)=>{
       if(!it) return `<div class="loitem empty">${'AB'[k]}: nothing yet</div>`; const a=art[s][k];
       return `<div class="loitem"><div class="top">${a&&a.ver===it.ver?`<img alt="" src="${a.sprite.cv.toDataURL()}">`:''}<div class="nm">${esc(it.name)}<small>${TRAITS[it.tr]?TRAITS[it.tr].label:''} · ${it.cost} ink</small></div></div><div class="loab"><span class="cbar"><i style="width:${(it.cr||2)*10}%"></i></span>${esc(abilityLine(it))}</div>${statBars(it)}</div>`; }).join('')}</div>`).join(''); }
   document.querySelectorAll('.tc').forEach(el=>{ const s=+el.dataset.side;
@@ -6899,10 +6930,27 @@ function osLook(v,now){
     if(k.floor==='ice'){ L.globalAlpha=0.8; L.strokeStyle='#fff'; L.lineWidth=2; for(let i=0;i<9;i++){ const x=x0+rnd(i,5)*w; L.beginPath(); L.moveTo(x,fy+4); L.lineTo(x+16,fy+11); L.stroke(); } } }
   L.restore(); L.globalAlpha=1;
 }
+// In the old-desktop look INK-OS's notices are drawn the way that desktop would draw them: the standing one as a raised
+// grey label with a coloured lamp, the arriving one as a message box (title bar, icon, text, an OK button).
+const RFONT='Tahoma,Verdana,"Segoe UI",sans-serif';
+function retroBevel(x,y,w,h){ L.fillStyle='#c3c3c3'; L.fillRect(x,y,w,h); L.fillStyle='#fff'; L.fillRect(x,y,w,1.5); L.fillRect(x,y,1.5,h); L.fillStyle='#404040'; L.fillRect(x,y+h-1.5,w,1.5); L.fillRect(x+w-1.5,y,1.5,h); L.fillStyle='#808080'; L.fillRect(x+1.5,y+h-3,w-3,1.5); L.fillRect(x+w-3,y+1.5,1.5,h-3); }
+function retroLabel(x,y,label,lamp,right){ L.font='11px '+RFONT; const w=L.measureText(label).width+30, x0=right?x-w:x; L.globalAlpha=1; retroBevel(x0,y,w,21);
+  L.fillStyle=lamp; L.fillRect(x0+7,y+6,8,8); L.strokeStyle='#000'; L.lineWidth=1; L.strokeRect(x0+7,y+6,8,8); L.fillStyle='#000'; L.textAlign='left'; L.fillText(label,x0+21,y+15); }
+function retroMsg(cx,y,title,big,sub,a,icon,mark){ sub=String(sub||'').slice(0,70);
+  L.font='700 20px '+RFONT; let w=L.measureText(big).width; if(sub){ L.font='11px '+RFONT; w=Math.max(w,L.measureText(sub).width); } w=Math.max(280,w+86); const h=sub?122:104, x=cx-w/2;
+  L.globalAlpha=0.28*a; L.fillStyle='#000'; L.fillRect(x+4,y+4,w,h); L.globalAlpha=a; retroBevel(x,y,w,h);
+  L.fillStyle='#000080'; L.fillRect(x+4,y+4,w-8,18); L.fillStyle='#fff'; L.font='700 11px '+RFONT; L.textAlign='left'; L.fillText(title,x+9,y+17);
+  retroBevel(x+w-21,y+6,15,14); L.fillStyle='#000'; L.textAlign='center'; L.fillText('\u00d7',x+w-13.5,y+17);
+  L.beginPath(); L.arc(x+34,y+54,15,0,7); L.fillStyle=icon; L.fill(); L.strokeStyle='#000'; L.lineWidth=1; L.stroke(); L.fillStyle='#fff'; L.font='700 21px "Times New Roman",serif'; L.fillText(mark,x+34,y+61);
+  L.fillStyle='#000'; L.textAlign='left'; L.font='700 20px '+RFONT; L.fillText(big,x+62,y+(sub?54:60)); if(sub){ L.font='11px '+RFONT; L.fillText(sub,x+62,y+73); }
+  retroBevel(cx-36,y+h-31,72,22); L.fillStyle='#000'; L.textAlign='center'; L.font='11px '+RFONT; L.fillText('OK',cx,y+h-16); }
 // The installed update's name stays on screen for the whole fight, and it arrives with a strip across the arena.
 function osChip(v,now){
   if(!osLive||v.phase==='draw'||v.phase==='over') return;
   const b=v.board, x0=b?b.x0:0, x1=b?b.x1:ARENA_W, top=b?GY-b.top:GY-400, cx=(x0+x1)/2;
+  if(RETRO){ L.save(); retroLabel(x0+10,top+10,'Update: '+osLive.name,'#00a000');
+    if(osToast&&now<osToast.until&&!koView){ const left=(osToast.until-now)/4200, a=Math.min(1,left*6,(1-left)*8+0.2); retroMsg(cx,top+(b?104:74),'INK-OS \u2014 update installed',osLive.name,osToast.notes[0],a,'#000080','i'); }
+    L.restore(); return; }
   L.save(); L.font='700 13px Karla,system-ui,sans-serif'; L.textAlign='left'; const label='UPDATE  '+osLive.name, tw=L.measureText(label).width;
   L.globalAlpha=0.92; L.fillStyle='#0b2a12'; L.fillRect(x0+10,top+10,tw+34,24); L.fillStyle='#3f3'; L.beginPath(); L.arc(x0+24,top+22,4.5,0,7); L.fill(); L.fillText(label,x0+36,top+27);
   if(osToast&&now<osToast.until&&!koView){ const left=(osToast.until-now)/4200, a=Math.min(1,left*6,(1-left)*8+0.2), y=top+(b?150:120);
@@ -6914,6 +6962,9 @@ function osChip(v,now){
 function nemChip(v,now){
   if(!nemLive||v.phase==='draw'||v.phase==='over') return;
   const b=v.board, x0=b?b.x0:0, x1=b?b.x1:ARENA_W, top=b?GY-b.top:GY-400, cx=(x0+x1)/2;
+  if(RETRO){ L.save(); retroLabel(x1-10,top+10,'Red is INK-OS: '+nemLive.name,'#c00000',true);
+    if(nemToast&&now<nemToast.until&&!koView){ const left=(nemToast.until-now)/4600, a=Math.min(1,left*6,(1-left)*8+0.2); retroMsg(cx,top+(b?104:74)+(osToast&&now<osToast.until?132:0),'INK-OS \u2014 studied you and built',nemToast.name,'\u201c'+nemToast.taunt+'\u201d',a,'#c00000','!'); }
+    L.restore(); return; }
   L.save(); L.font='700 13px Karla,system-ui,sans-serif'; const label='RED IS INK-OS  \u00b7  '+nemLive.name, tw=L.measureText(label).width;
   L.globalAlpha=0.92; L.fillStyle='#2a0b0b'; L.fillRect(x1-tw-44,top+10,tw+34,24); L.fillStyle='#ff5a4a'; L.beginPath(); L.arc(x1-tw-30,top+22,4.5,0,7); L.fill(); L.textAlign='left'; L.fillText(label,x1-tw-18,top+27);
   if(nemToast&&now<nemToast.until&&!koView){ const left=(nemToast.until-now)/4600, a=Math.min(1,left*6,(1-left)*8+0.2), y=top+(b?150:120)+(osToast&&now<osToast.until?116:0);
