@@ -628,6 +628,16 @@ body.handheld .tc.hhc [data-k="q"],body.handheld .tc.hhc [data-k="u"]{font-size:
 body.handheld .tc.hhc [data-k="j"] svg{width:55%;height:55%;max-width:34px;max-height:34px}
 body.handheld.playing #strip{border:0;box-shadow:none;z-index:1}
 body.handheld .tc.hhc .nolabel small{display:none}
+#tipwin{position:fixed;left:50%;transform:translateX(-50%);z-index:30;width:min(calc(100vw - 40px),340px);box-sizing:border-box;background:#c3c3c3;padding:3px;border:2px solid;border-color:#fff #404040 #404040 #fff;box-shadow:inset -1px -1px #808080,inset 1px 1px #dfdfdf,3px 3px 0 rgba(0,0,0,.3);font:13px Tahoma,Verdana,sans-serif;color:#000}
+#tipwin[hidden]{display:none}
+#tipwin.big{width:min(calc(100vw - 20px),560px)} #tipwin.big .tw-body{font-size:17px;padding:16px 14px}
+#tipwin .tw-bar{display:flex;align-items:center;gap:2px;height:22px;padding:0 2px 0 6px;background:linear-gradient(90deg,#0a246a,#a6caf0);color:#fff;font-weight:700}
+#tipwin .tw-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#tipwin .tw-bar button{flex:none;width:18px;height:16px;min-height:0;padding:0;display:grid;place-items:center;font:700 11px/1 Tahoma,Verdana,sans-serif;color:#000;background:#c3c3c3;border:2px solid;border-color:#fff #404040 #404040 #fff;box-shadow:inset -1px -1px #808080;touch-action:none}
+#tipwin .tw-bar button:active{border-color:#404040 #fff #fff #404040;box-shadow:inset 1px 1px #808080}
+#tipwin .tw-bar .tw-x{margin-left:2px}
+#tipwin .tw-body{margin-top:3px;padding:10px 12px;background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080;box-shadow:inset 1px 1px #404040;line-height:1.4}
+#tipwin.min .tw-body{display:none}
 body.handheld .tc.hhc .swap svg{width:46%;height:auto;max-width:30px} body.handheld .tc.hhc .swap small{margin-top:3px}
 body.handheld .tc.hhc[data-side="0"] .swap{border-top:6px solid #1d3fbf} body.handheld .tc.hhc[data-side="1"] .swap{border-top:6px solid #b0121f}
 body.handheld .tc.hhc .hhtoolname{pointer-events:none;box-sizing:border-box;padding:0 6px;font:700 12px/16px Tahoma,Verdana,sans-serif;color:#000;background:none;border:0;box-shadow:none;text-shadow:0 0 3px #fff,0 0 2px #fff;text-align:center;line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -5916,8 +5926,28 @@ function phoneGate1(){
   const msg=!net?'':net.gone?'That room has closed. Ask for the new code.':!net.hi?'Joining room '+net.code+'\u2026':net.side<0?'Room '+net.code+' already has its players. Watch on the big screen.':'';
   if(msg!==phoneSaid){ phoneSaid=msg; phoneEl.querySelector('.pjmsg').textContent=msg; }
 }
+// The tip, in a window of its own (retro style: title bar, minimize, maximize, close). It opens in the same place the tip
+// used to be drawn, during the countdown, and closes itself when the round starts. Close dismisses it for that countdown;
+// minimize folds it to its title bar; maximize toggles a larger one.
+let tipWin=null, tipFor='';
+function tipSync(v){
+  if(!PHONE||!padView){ if(tipWin) tipWin.hidden=true; return; }
+  if(!tipWin){ tipWin=document.createElement('div'); tipWin.id='tipwin'; tipWin.hidden=true;
+    tipWin.innerHTML='<div class="tw-bar"><span class="tw-name">Tip</span><button class="tw-min" aria-label="Minimize">_</button><button class="tw-max" aria-label="Maximize">\u25a1</button><button class="tw-x" aria-label="Close">\u00d7</button></div><div class="tw-body"></div>';
+    const on=(sel,fn)=>tipWin.querySelector(sel).addEventListener('pointerdown',e=>{ e.preventDefault(); e.stopPropagation(); fn(); });
+    on('.tw-x',()=>{ tipWin.hidden=true; tipWin.dataset.shut=tipFor; });
+    on('.tw-min',()=>tipWin.classList.toggle('min')); on('.tw-max',()=>{ tipWin.classList.remove('min'); tipWin.classList.toggle('big'); });
+    document.body.appendChild(tipWin); }
+  const show=v.phase==='count'&&playing;
+  if(!show){ if(!tipWin.hidden) tipWin.hidden=true; tipFor=''; delete tipWin.dataset.shut; tipWin.classList.remove('min','big'); return; }
+  const key=v.round+':'+(net&&net.code||'');
+  if(key!==tipFor){ tipFor=key; delete tipWin.dataset.shut; tipWin.classList.remove('min','big');
+    tipWin.querySelector('.tw-body').textContent=TIPS[(v.round*7+(net&&net.code?net.code.charCodeAt(0):0))%TIPS.length]; }
+  if(tipWin.dataset.shut===tipFor) return;
+  tipWin.style.top=Math.max(hhFit.b>hhFit.t?hhFit.t+8:10,innerHeight*0.18)+'px'; tipWin.hidden=false;
+}
 function syncUI(){
-  const v=view;
+  const v=view; tipSync(v);
   document.body.classList.toggle('ultdim',!!(v.ul&&v.phase==='fight')&&!DESK);      // and everything behind the fight blurs (retro desktop)
   document.body.classList.toggle('ultlock',!!(v.ul&&v.phase==='fight'));      // an ultimate is playing: the controller greys out
   for(const s of [0,1]){
@@ -6597,11 +6627,6 @@ function drawStrip(v){
     const bw=Math.min(room,g.measureText(txt).width+20), bh=fs+12, bx=(cw-bw)/2, by=(hhFit.b>hhFit.t?hhFit.t:8);
     g.fillStyle=mine?'#fff0f0':'#f0f0f0'; g.fillRect(bx,by,bw,bh); g.strokeStyle=mine?'#b0121f':'#555'; g.lineWidth=1; g.strokeRect(bx+.5,by+.5,bw-1,bh-1);
     g.fillStyle=mine?'#b0121f':'#333'; g.textAlign='center'; g.textBaseline='middle'; g.fillText(txt,cw/2,by+bh/2,room-20); g.textBaseline='alphabetic'; }
-  if(v.phase==='count'){ const tip=TIPS[(v.round*7+(net&&net.code?net.code.charCodeAt(0):0))%TIPS.length]; g.font='13px Tahoma,sans-serif';
-    const lines=[], words=tip.split(' '), maxW=Math.min(cw-40,420); let line=''; for(const w of words){ const t=line?line+' '+w:w; if(g.measureText(t).width>maxW-20&&line){ lines.push(line); line=w; } else line=t; } lines.push(line);
-    const bw=Math.min(maxW,Math.max(...lines.map(l=>g.measureText(l).width))+24), bh=lines.length*17+16, bx=(cw-bw)/2, byy=Math.max(hhFit.b>hhFit.t?hhFit.t+8:10,ch*0.18);
-    g.fillStyle='#fff'; g.fillRect(bx,byy,bw,bh); g.fillStyle='#808080'; g.fillRect(bx,byy,bw,2); g.fillRect(bx,byy,2,bh); g.fillStyle='#404040'; g.fillRect(bx+2,byy+2,bw-3,1); g.fillRect(bx+2,byy+2,1,bh-3); g.fillStyle='#dfdfdf'; g.fillRect(bx,byy+bh-2,bw,2); g.fillRect(bx+bw-2,byy,2,bh); g.fillStyle='#000';      // a white inset box g.textAlign='left'; g.textBaseline='top';
-    lines.forEach((l,i)=>g.fillText(l,bx+12,byy+8+i*17)); g.textBaseline='alphabetic'; }
 }
 // The strip's tools as strokes, in game units (y down, floor at 0). An arrow is a shaft and then a head, as a hand draws it.
 function hhShape(tool,a,b){
