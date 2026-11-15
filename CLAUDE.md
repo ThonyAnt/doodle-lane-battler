@@ -2,6 +2,13 @@
 
 Hackathon MVP. A two-player stickman fight where every weapon is something the player draws; a vision model decides what kind of weapon it is. The repo and package are still named `doodle-lane-battler` after the first game, a one-lane battler that lived at `/`. The owner had it removed as obsolete (its page `index.html`, its rooms and its routes `/read`, `/room`, `/events`, `/act`); `/` now redirects to `/duel`. See README.md for how to run it.
 
+## Addresses and layouts (owner's rules)
+
+- The game is the front page, `/`. `/duel`, `/duel.html` and `/index.html` redirect there (query kept); the API stays under `/duel/`. Join links and QR codes point at `/#CODE`.
+- A computer always gets the retro desktop (`RETRO`), at any window size. There is no `?plain=1` and no menu entry for the plain layout.
+- A phone or tablet (`PHONE`: a coarse pointer) is only ever a controller. Until it has a seat in a room it shows the join window (`phoneGate`, `#phoneJoin`) over the whole page, never the plain game or the start menu; with a seat it is always the controller view (`setPad`), whether or not the room has a big screen.
+- The plain stage is still drawn by the move tester (`/moves`), the replay viewer and the desktop overlay.
+
 ## Working rules
 
 - Do not run the test suites (`tools/test-*.js`, `tools/check-anim.js`, `tools/balance.js`, `tools/net-bench.js`) unless the owner asks. After a change, say that they were not run and offer to run them.

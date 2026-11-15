@@ -506,6 +506,18 @@ body.retro .osrow span{font:12px "Courier New",monospace;color:#000}
 body.retro .osrow input{background:#fff;color:#000;border:2px solid;border-color:#808080 #fff #fff #808080;box-shadow:inset 1px 1px #404040;font:11px Tahoma,Verdana,"Segoe UI",sans-serif;padding:2px 4px}
 body.retro .osrow input::placeholder{color:#808080}
 body.retro .osrow button{font:11px Tahoma,Verdana,"Segoe UI",sans-serif;font-weight:400;padding:2px 12px}
+/* A phone or tablet that is not a controller yet: a join window in the old-desktop look over the whole page (phoneGate) */
+#phoneJoin{position:fixed;inset:0;z-index:900;background:#008080;display:flex;align-items:center;justify-content:center;padding:16px;font:16px Tahoma,Verdana,"Segoe UI",sans-serif;color:#000}
+#phoneJoin[hidden]{display:none}
+body.phonejoin{overflow:hidden}
+#phoneJoin .pjwin{width:min(420px,100%);background:#c3c3c3;padding:3px;border:2px solid;border-color:#fff #404040 #404040 #fff;box-shadow:inset -1px -1px #808080,inset 1px 1px #dfdfdf,4px 4px 0 rgba(0,0,0,.3)}
+#phoneJoin .pjbar{background:linear-gradient(90deg,#000080,#1084d0);color:#fff;font-weight:700;padding:6px 8px}
+#phoneJoin .pjbody{padding:14px 12px 12px}
+#phoneJoin p{margin:0 0 10px;line-height:1.35}
+#phoneJoin .pjrow{display:flex;gap:8px;margin:14px 0 8px}
+#phoneJoin input{flex:1;min-width:0;font:700 22px "Courier New",monospace;letter-spacing:.3em;text-transform:uppercase;text-align:center;padding:8px 6px;background:#fff;color:#000;border-radius:0;border:2px solid;border-color:#808080 #fff #fff #808080;box-shadow:inset 1px 1px #404040}
+#phoneJoin button{font:16px Tahoma,Verdana,"Segoe UI",sans-serif;padding:8px 20px;background:#c3c3c3;color:#000;border-radius:0;border:2px solid;border-color:#fff #404040 #404040 #fff;box-shadow:inset -1px -1px #808080}
+#phoneJoin .pjmsg{min-height:1.35em;margin:0;color:#800000}
 </style>
 </head>
 <body>
@@ -4584,8 +4596,8 @@ const DESK=new URLSearchParams(location.search).has('desk'), DESK_SCALE=1.15, ho
 // Retro desktop: on a computer the game is staged on a pretend old desktop (after Alex's InkShop prototype). The menus,
 // sketchbook, health bars and notes are draggable windows, the fighters run along the taskbar, and the windows' title
 // bars are the platforms. It shares the overlay's machinery; only the backdrop and where the window edges come from differ.
-// Tablets and phones keep the plain layout. There is no switch to it on a computer any more (the owner had ?plain=1 and
-// the View menu entry removed): a wide screen with a mouse always gets the desktop.
+// Tablets and phones keep the plain layout, as controllers. A computer always gets the desktop, at any window size:
+// the owner had ?plain=1, the View menu entry and the 900 px width test removed.
 // ?stage=sheet plays on the spreadsheet stage. On the retro desktop the sheet is the document open in the app window.
 const STAGE=(st=>st==='sheet'||st==='deck'?st:'')(new URLSearchParams(location.search).get('stage'));      // 'sheet' spreadsheet, 'deck' slideshow, '' the desktop
 // /moves is the move tester: this page in practice mode with a panel of buttons, one for every move and ultimate.
@@ -4593,7 +4605,10 @@ const LAB=location.pathname==='/moves';
 // duel?replay=CODE watches a room's match again (see setReplay). It always uses the plain layout, whatever the stage was.
 const REPLAY=DESK||LAB?'':String(new URLSearchParams(location.search).get('replay')||'').toUpperCase();
 const RULES_HERE=rulesOf(document.currentScript?document.currentScript.textContent:'');      // the stamp of the rules this page is running
-const RETRO=!DESK&&!LAB&&!REPLAY&&innerWidth>=900&&!matchMedia('(pointer:coarse)').matches, TASK_H=32;
+const RETRO=!DESK&&!LAB&&!REPLAY&&!matchMedia('(pointer:coarse)').matches, TASK_H=32;
+// A phone or tablet is only ever a controller. Until it is one (it has a seat in a room) it shows a join window and
+// nothing else: the plain game is never on its screen (the owner's rule). See phoneGate.
+const PHONE=!RETRO&&!DESK&&!LAB&&!REPLAY; let phoneEl=null, phoneSaid='';
 const deskLike=()=>DESK||RETRO, floorGap=()=>RETRO?TASK_H:0;
 let ARENA_W=960, ARENA_PLATS=PLATS, deskStage=true, deskEdges=null, deskSent='', deskMenu=false, deskPaused=false, deskLive=null, OY=0;
 if(deskLike()){ document.documentElement.classList.add('deskmode'); document.body.classList.add('deskmode'); }
@@ -5115,7 +5130,7 @@ function replayBuild(){
   el.innerHTML=`<div class="row"><button id="repPlay" disabled>Play</button>
     <span id="repSpeeds">${[0.25,1,4].map(s=>`<button data-sp="${s}" aria-pressed="${s===1}">${s}\u00d7</button>`).join(' ')}</span>
     <input type="range" id="repBar" min="0" max="0" step="1" value="0" aria-label="Where in the match" disabled><span id="repTime">0:00 / 0:00</span></div>
-    <p id="repMsg" role="status"></p><p><a href="/duel">Back to the game</a></p>`;
+    <p id="repMsg" role="status"></p><p><a href="/">Back to the game</a></p>`;
   document.querySelector('.arenawrap').after(el);
   $('repPlay').onclick=()=>{ if(!rep) return; const c=rep.clock; if(!c.playing&&c.tick>=c.total) c.tick=0; c.playing=!c.playing; };      // at the end, Play starts it again
   $('repSpeeds').onclick=e=>{ const b=e.target.closest('button'); if(b&&rep) rep.clock.speed=+b.dataset.sp; };
@@ -5129,7 +5144,7 @@ function setReplay(code){
   if(net){ hangUp(); net=null; } setScreen(false); setPad(); sim=null; bot=null; rep=null; resetLocal(); lastPhase=''; overlayKey=''; deskStage=false; wobj.clear(); wPending[0]=[]; wPending[1]=[];
   local=[false,false]; ARENA_W=960; ARENA_PLATS=PLATS; view=createDuel().snapshot(); buildDesks(); buildControls(); $('overlay').hidden=true;
   replayBuild(); const say=t=>{ $('repMsg').textContent=t; };
-  if(!/^[A-Z]{4}$/.test(code)){ say('A replay link ends in a room\u2019s four letters, like duel?replay=ABCD.'); return; }
+  if(!/^[A-Z]{4}$/.test(code)){ say('A replay link ends in a room\u2019s four letters, like ?replay=ABCD.'); return; }
   say('Fetching the replay of room '+code+'\u2026');
   fetch('/duel/replay?room='+code).then(r=>r.json().catch(()=>null)).then(res=>{
     if(mode!=='replay') return;
@@ -5185,9 +5200,10 @@ $('drawTablets').onclick=()=>{ if(net&&net.watch) return; setMode('online'); cre
 $('drawHere').onclick=()=>{ if(net&&net.watch) setMode('bot'); };
 // Player view: a player in a room that has a big screen sees only the sketchbook, then only the controller.
 function setPad(){
-  const on=!RETRO&&!!(net&&net.side>=0&&net.screen); if(on===padView) return;      // the retro desktop shows everything itself
+  const on=!RETRO&&!!(net&&net.side>=0&&(net.screen||PHONE)); if(on===padView) return;      // the retro desktop shows everything itself; a phone with a seat is always a controller
   padView=on; document.body.classList.toggle('handheld',on); lastPhase=''; overlayKey='';
   const w=$('who'); w.hidden=!on; if(on){ w.textContent='You are '+NAME[net.side]+linkNote(); w.style.background=PCOL[net.side]; }
+  phoneGate();
 }
 // The game has two ways to play, both with this device as the screen and phones or tablets as the controllers:
 // one player against the bot, or two players against each other.
@@ -5218,7 +5234,7 @@ function joinRoom(code,watch){
   setScreen(watch); setPad();
   history.replaceState(null,'','#'+code); resetLocal();
   const on=(name,fn)=>subs.push([name,fn]);      // what to do with each event of the room, whichever link brings it
-  on('hello',d=>{ net.side=d.side; net.bot=!!d.bot; net.brain=d.brain||''; local=[d.side===0,d.side===1]; buildDesks(); buildControls(); lastPhase=''; setPad(); });
+  on('hello',d=>{ net.hi=true; net.side=d.side; net.bot=!!d.bot; net.brain=d.brain||''; local=[d.side===0,d.side===1]; buildDesks(); buildControls(); lastPhase=''; setPad(); });
   // Once a big screen has been seen the player view stays, so the screen reloading does not flip the layout mid-fight.
   on('players',d=>{ net.present=d.present; net.bot=!!d.bot; net.screen=net.screen||!!d.screen; setPad(); });
   on('state',accept);
@@ -5598,6 +5614,18 @@ function retroSync(menu){
     if(sim) sim.setLayout({w,board,plats:ARENA_PLATS}); else if(net&&net.watch) post({type:'layout',w,board,plats:ARENA_PLATS});
   }
 }
+// The join window of a phone or tablet that is not (yet) a controller. It covers the whole page.
+function phoneGate(){
+  if(!PHONE) return;
+  if(!phoneEl){ phoneEl=document.createElement('div'); phoneEl.id='phoneJoin';
+    phoneEl.innerHTML='<div class="pjwin"><div class="pjbar">Doodle Duel</div><div class="pjbody"><p><b>This device is a controller.</b></p><p>Open the game on a computer, start a match there, then scan its code with this device. Or type the room\u2019s four letters:</p>'
+      +'<form class="pjrow"><input id="pjCode" maxlength="4" placeholder="CODE" aria-label="Room code" autocomplete="off" autocapitalize="characters" spellcheck="false"><button>Join</button></form><p class="pjmsg" role="status"></p></div></div>';
+    document.body.appendChild(phoneEl);
+    phoneEl.querySelector('form').onsubmit=e=>{ e.preventDefault(); const c=phoneEl.querySelector('#pjCode').value.trim().toUpperCase(); if(!/^[A-Z]{4}$/.test(c)) return; if(net){ hangUp(); net=null; } joinRoom(c); }; }
+  const show=!padView; if(phoneEl.hidden===show) phoneEl.hidden=!show; document.body.classList.toggle('phonejoin',show);
+  const msg=!net?'':net.gone?'That room has closed. Ask for the new code.':!net.hi?'Joining room '+net.code+'\u2026':net.side<0?'Room '+net.code+' already has its players. Watch on the big screen.':'';
+  if(msg!==phoneSaid){ phoneSaid=msg; phoneEl.querySelector('.pjmsg').textContent=msg; }
+}
 function syncUI(){
   const v=view;
   document.body.classList.toggle('ultdim',!!(v.ul&&v.phase==='fight')&&!DESK);      // and everything behind the fight blurs (retro desktop)
@@ -5631,12 +5659,12 @@ function syncUI(){
   // overlay
   const o=$('overlay'); let key='';
   if(mode==='replay') key='';
-  else if(mode==='online'&&!net) key='menu';
+  else if(mode==='online'&&!net) key=PHONE?'':'menu';      // a phone has its own join window (phoneGate) and never the start menu
   else if(net&&net.gone) key='gone';
   else if(net&&(net.side>=0||net.watch)&&!net.present.every(Boolean)) key='wait'+net.code+net.side+net.present+net.bot;
   else if(net&&net.side<0&&v.phase==='draw') key='';
   else if(v.phase==='over') key='over'+v.champ;
-  if(key===overlayKey) return; overlayKey=key; o.hidden=!key; if(!key) return;
+  if(key===overlayKey&&o.hidden===!key) return; overlayKey=key; o.hidden=!key; if(!key) return;      // (resetting overlayKey to '' elsewhere must not leave an old box up)
   if(key==='menu'){
     o.innerHTML=`<div class="box"><h2>Doodle Duel</h2><p>This screen shows the fight. Each player scans its code and uses a phone or tablet as sketchbook and controller.</p>
       <div class="actions" style="justify-content:center"><button class="primary" id="mkBot">Player vs Bot</button><button class="primary" id="mkPvp">Player vs Player</button></div>
@@ -5651,7 +5679,7 @@ function syncUI(){
     o.innerHTML=`<div class="box"><h2>That room has closed</h2><p>Rooms close after a while with nobody in them.</p><button class="primary" id="mkRoom">Create a new room</button></div>`;
     $('mkRoom').onclick=()=>{ const w=net.watch; net=null; history.replaceState(null,'',location.pathname); createRoom(w); };
   }else if(key.startsWith('wait')){
-    const isLocal=/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname), base=isLocal&&serverInfo.lanUrl?serverInfo.lanUrl:location.origin, url=base+'/duel'+(NET_LINK?'?net='+NET_LINK:'')+'#'+net.code;      // devices that scan a ?net=ws screen come in on a socket too
+    const isLocal=/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname), base=isLocal&&serverInfo.lanUrl?serverInfo.lanUrl:location.origin, url=base+'/'+(NET_LINK?'?net='+NET_LINK:'')+'#'+net.code;      // devices that scan a ?net=ws screen come in on a socket too
     if(padView){ o.innerHTML=`<div class="box"><h2>Waiting for ${NAME[1-net.side]} to scan the big screen</h2><p style="margin:0">You can start drawing now.</p></div>`; return; }
     const head=net.watch?`<h2>Scan to play · room <span class="code">${net.code}</span></h2>
       <div class="seats">${[0,1].map(s=>`<span class="${net.present[s]?'in':''}" style="${net.present[s]?'background:'+PCOL[s]:''}">${NAME[s]}: ${net.bot&&s===1?(net.brain==='net'?'the trained bot ✓':'the bot ✓'):net.present[s]?'joined ✓':'waiting…'}</span>`).join('')}</div>
@@ -7109,6 +7137,7 @@ function frame(now){
   { const was=koView; koView=KO_ON&&!rep&&view&&ko.koMs>=0?koReplayFrame(ko.ring,ko.koMs,now-ko.koMs):null;
     if(koView&&!was){ fx=[]; shake=0; ultDmg[0]=ultDmg[1]=null; } }      // the replay starts: the knockout blow's own sparks and numbers do not hang over the picture from a second earlier
   osTick(now);
+  phoneGate();      // every frame, match or no match: a phone that is not a controller shows its join window
   if(view){ syncUI(); abilityTick(now); render(now); if(padView&&net&&net.side>=0){ const tc=document.querySelector('.tcs'); if(tc) document.body.style.setProperty('--pad',(tc.getBoundingClientRect().height+12)+'px'); $('strip').hidden=$('stripbar').hidden=false; drawStrip(view); } }
   requestAnimationFrame(frame);
 }
@@ -7342,7 +7371,7 @@ function labBuild(){
     #lab label{display:flex;align-items:center;gap:6px;font-size:13px;margin-right:14px} #lab input[type=range]{width:130px}
     #lab .pen{width:26px;height:26px;border-radius:50%;padding:0} #lab .pen.on{outline:3px solid var(--hi);outline-offset:1px}`; document.head.appendChild(css);
   const el=document.createElement('section'); el.id='lab';
-  el.innerHTML=`<h2>Move tester</h2><p>Pick a weapon, then a move. The blue fighter does it on the red dummy, which never dies. Keys still work (A D move, W jump, J attack, U ultimate), so combos and running attacks can be tried by hand. <a href="/duel">Back to the game</a></p>
+  el.innerHTML=`<h2>Move tester</h2><p>Pick a weapon, then a move. The blue fighter does it on the red dummy, which never dies. Keys still work (A D move, W jump, J attack, U ultimate), so combos and running attacks can be tried by hand. <a href="/">Back to the game</a></p>
     <div class="row"><b>Weapon</b><span id="labStyles" class="row" style="margin:0"></span></div>
     <div class="row"><b>Move</b><span id="labMoves" class="row" style="margin:0"></span></div>
     <div class="row"><b>Blocks</b><span style="font-size:13px;color:var(--muted)">The customization blocks, to try on the weapon under test. In a match these are earned by a creative drawing (as always-on abilities, or as templates a script calls). Hover for what each does.</span>

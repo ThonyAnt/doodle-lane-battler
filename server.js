@@ -1,5 +1,5 @@
 // Doodle Duel server: serves the game and hands everything under /duel to duel-server.js (drawings read with OpenAI,
-// online rooms). The old lane battler that used to live at / was removed; / now goes to /duel.
+// online rooms). The game is the front page, /; its old address /duel redirects there.
 // Run:  put your key in the .env file next to this script, then:  node server.js   (Node 18+, no dependencies)
 // Settings (.env or environment): OPENAI_API_KEY, OPENAI_MODEL (default gpt-6-luna), PORT (default 3000), OPENAI_BASE_URL.
 const http=require('http'), fs=require('fs'), path=require('path'), os=require('os');
@@ -32,7 +32,6 @@ const server=http.createServer(async (req,res)=>{
   const url=new URL(req.url,'http://x');
   try{
     if(await duel(req,res,url)) return;
-    if(req.method==='GET'&&(url.pathname==='/'||url.pathname==='/index.html')){ res.writeHead(302,{Location:'/duel'+url.search}); return res.end(); }
     if(req.method==='GET'&&FILES[url.pathname]){
       const [file,type]=FILES[url.pathname];
       res.writeHead(200,{'Content-Type':type,'Cache-Control':'no-cache'}); return fs.createReadStream(path.join(__dirname,file)).pipe(res);
@@ -45,7 +44,7 @@ const server=http.createServer(async (req,res)=>{
 // Duel rooms can also be reached by WebSocket (/duel/ws). NOWS=1 leaves that off, to try a network that drops upgrades.
 if(process.env.NOWS!=='1') duel.sockets(server);
 server.listen(PORT,()=>{
-  console.log('Doodle Duel on http://localhost:'+PORT+'/duel');
+  console.log('Doodle Duel on http://localhost:'+PORT);
   const lan=lanUrl(); if(lan) console.log('Other devices on the same Wi-Fi: '+lan);
   console.log('Drawings read by: '+(KEY?'OpenAI '+MODEL:'local guess (no OPENAI_API_KEY in .env)'));
 });

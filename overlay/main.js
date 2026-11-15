@@ -43,7 +43,7 @@ app.whenReady().then(async()=>{
   ipcMain.on('desk-focus',()=>{ if(!win.isDestroyed()) win.focus(); });
   ipcMain.on('desk-quit',()=>app.quit());
 
-  await win.loadURL('http://localhost:'+PORT+'/duel?desk=1');
+  await win.loadURL('http://localhost:'+PORT+'/?desk=1');
 
   if(selftest){
     // Start a practice fight with stock items, step it to mid-swing, and save what the window would show.

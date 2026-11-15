@@ -120,7 +120,7 @@ function fakePage(search,respond){
     requestAnimationFrame:f=>{ frames.push(f); return frames.length; }, cancelAnimationFrame(){},
     fetch:url=>Promise.resolve().then(()=>respond(String(url))).then(body=>body===undefined?Promise.reject(new Error('no answer')):{ok:!(body&&body.error),status:body&&body.error?404:200,json:()=>Promise.resolve(body)}),
     EventSource:function(){ return el(); }, ResizeObserver:function(){ return {observe(){},disconnect(){}}; }, MutationObserver:function(){ return {observe(){},disconnect(){}}; },
-    matchMedia:()=>({matches:false,addEventListener(){},addListener(){}}), innerWidth:800, innerHeight:800      /* narrower than 900: the page then uses the plain layout, which these tests were written for (?plain=1 is gone) */, devicePixelRatio:1,
+    matchMedia:q=>({matches:/pointer:\s*coarse/.test(q),addEventListener(){},addListener(){}}), innerWidth:800, innerHeight:800      /* a touch device: the page then uses the plain layout, which these tests were written for (?plain=1 is gone) */, devicePixelRatio:1,
     sessionStorage:keep(), localStorage:keep(), addEventListener(){}, removeEventListener(){}, alert(){}, getComputedStyle:()=>el(), Image:function(){ return el(); }, Audio:function(){ return el(); }};
   if(FS) ctx.InkScript=FS;      // the page loads inkscript.js with a script tag; here it is handed over
   ctx.window=ctx; ctx.self=ctx; ctx.globalThis=ctx; vm.createContext(ctx);
